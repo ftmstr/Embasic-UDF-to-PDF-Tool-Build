@@ -20,7 +20,7 @@ def pom(coord, *, license_name=None, bc_deps=True):
         license_name = "Mozilla Public License" if group == "com.lowagie" else "Bouncy Castle License"
     dep_text = ""
     if group == "com.lowagie" and bc_deps:
-        for g, a, v in audit.COMPONENTS[1:]:
+        for g, a, v in sorted(audit.BC):
             dep_text += f"<dependency><groupId>{g}</groupId><artifactId>{a}</artifactId><version>{v}</version></dependency>"
     return (f'<project xmlns="http://maven.apache.org/POM/4.0.0">'
         f"<groupId>{group}</groupId><artifactId>{artifact}</artifactId><version>{version}</version>"
