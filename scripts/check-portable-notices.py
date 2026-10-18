@@ -53,6 +53,8 @@ def verify(portable: Path, notice_bytes: dict[str, bytes]) -> dict:
                               if name == wanted or name.endswith("/" + wanted)]
                 if len(candidates) != 1:
                     raise NoticeError("notice_missing_or_ambiguous")
+                if z.getinfo(candidates[0]).file_size > NOTICE_LIMIT:
+                    raise NoticeError("embedded_notice_size_limit")
                 try:
                     data = z.read(candidates[0])
                 except (OSError, RuntimeError, ValueError, zipfile.BadZipFile) as exc:
