@@ -46,6 +46,12 @@ review must address the exact applicable historical terms and static
 shaded-JAR library replacement/relinking requirements. A hash match and a
 copy of the original terms are not a replacement mechanism.
 
+The private iText notice uses the literal historical term "GNU LIBRARY GENERAL PUBLIC LICENSE" but does not by itself establish which exact numbered LGPL text governs each relevant file. A separately archived iText 2.1.7 license example contains the **GNU Library GPL version 2 (1991)**; this is research evidence, not a definitive provenance determination for the current exact artifact. Thus the attestation accepts `LGPL-historical-reviewed` only after an authorized reviewer verifies the exact version and full applicable terms privately. It explicitly refuses an assumed `LGPL-2.1` route.
+
+The iText vendor's historical guidance also flags iText 2.1.7 as end-of-life, with potential security and historical third-party intellectual property concerns. This is a distinct technical/legal risk to assess or remediate before release; complete license notices alone do not eliminate it.
+- iText vendor historical warning: https://kb.itextpdf.com/it5kb/can-itext-2-1-7-itextsharp-4-1-6-or-earlier-be-use
+- Example historic 2.1.7 GNU Library GPL v2 archival text: https://gitlab.siu.edu.ar/siu/jasper/-/blob/master/JasperReports/iText-2.1.7-LICENSE.txt
+
 No license route is selected here. An owner-authorized legal/compliance
 review must record one of the valid routes **in a private evidence file**
 and review the actual packaging/source offer.
@@ -82,7 +88,7 @@ missing branding files, unreviewed provenance, denied public redistribution,
 or missing independent owner/license/branding review confirmations.
 
 Review is required for the project license, iText's explicit historical
-MPL-1.1 or LGPL-2.1 route, library source/relinkability plan,
+MPL-1.1 or reviewed historical LGPL route, library source/relinkability plan,
 Bouncy Castle six-coordinate inventory and notice, and each of the
 four actual brand assets. A checksum by itself **never** changes the
 authorisation Boolean. It does not create, publish, upload or sign an
