@@ -46,6 +46,13 @@ jobs:
           python3 scripts/audit-isolated-shade.py \
             --maven-cache "$HOME/.m2/repository" \
             --shaded-jar audit/target/upstream-pdf-library-inspection-only-0.0.0-audit-all.jar
+      - name: Test all-class duplicate and byte-integrity controls
+        run: python3 scripts/test-audit-shaded-classes.py
+      - name: Verify every actual shaded dependency class and duplicate conflict
+        run: |
+          python3 scripts/audit-shaded-classes.py \
+            --maven-cache "$HOME/.m2/repository" \
+            --shaded-jar audit/target/upstream-pdf-library-inspection-only-0.0.0-audit-all.jar
 
 # This workflow never uploads artifacts, publishes releases or uses credentials.
 # An inspection PASS is NOT a legal redistribution or software quality approval.
