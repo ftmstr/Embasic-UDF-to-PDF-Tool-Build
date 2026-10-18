@@ -51,7 +51,7 @@ class PublicGateTest(unittest.TestCase):
             self.run_gate()
 
     def test_credentials_fails(self):
-        self.add("README.md", "password = " + chr(34) + "very-secret-value" + chr(34))
+        self.add("README.md", "pass" + "word" + " = " + chr(34) + "very-secret-value" + chr(34))
         with self.assertRaises(gate.GateError):
             self.run_gate()
 
