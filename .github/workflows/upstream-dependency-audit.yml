@@ -1,0 +1,42 @@
+name: Independent Upstream PDF Dependency Audit
+
+on:
+  push:
+    branches: [main, "ci/**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pdf-upstream-audit-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  inspect-legacy-pdf-dependencies:
+    name: Audit upstream iText and Bouncy Castle Maven artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+          cache-dependency-path: audit/pom.xml
+      - name: Run synthetic dependency inspector tests
+        run: python3 scripts/test-audit-cached-maven.py
+      - name: Resolve four upstream dependencies (no application source)
+        run: |
+          mvn -B -ntp -f audit/pom.xml org.apache.maven.plugins:maven-dependency-plugin:3.8.1:resolve
+          mvn -B -ntp -f audit/pom.xml org.apache.maven.plugins:maven-dependency-plugin:3.8.1:tree
+      - name: Inventory exact cached upstream POM and JAR bytes
+        run: python3 scripts/audit-cached-maven.py --maven-cache "$HOME/.m2/repository"
+
+# This workflow never uploads artifacts, publishes releases or uses credentials.
+# An inspection PASS is NOT a legal redistribution or software quality approval.
