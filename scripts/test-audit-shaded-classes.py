@@ -49,6 +49,33 @@ class FullClassesTest(unittest.TestCase):
         self.assertEqual(report["unique_upstream_classes_verified"],4)
         self.assertEqual(report["identical_duplicate_class_occurrences"],2)
 
+    def test_application_candidate_mode_with_synthetic_local_classes(self):
+        fake = {"com/embasic/udf2pdf/App.class": b"synthetic-app-marker",
+                "com/embasic/udf2pdf/Model.class": b"synthetic-model-marker"}
+        make_zip(self.shaded, {**self.classes, **fake})
+        result = full.class_inventory(self.shaded, self.deps, mode="application")
+        self.assertEqual(result["mode"], "application")
+        self.assertFalse(result["license_or_distribution_approved"])
+
+    def test_application_candidate_requires_app_entry(self):
+        make_zip(self.shaded, self.classes)
+        with self.assertRaises(full.AuditFailure):
+            full.class_inventory(self.shaded, self.deps, mode="application")
+
+    def test_application_candidate_rejects_foreign_class(self):
+        fake = {"com/embasic/udf2pdf/App.class": b"synthetic-app-marker",
+                "com/example/Unknown.class": b"unexpected"}
+        make_zip(self.shaded, {**self.classes, **fake})
+        with self.assertRaises(full.AuditFailure):
+            full.class_inventory(self.shaded, self.deps, mode="application")
+
+    def test_application_candidate_rejects_audit_probe(self):
+        fake = {"com/embasic/udf2pdf/App.class": b"synthetic-app-marker",
+                probe.AUDIT_MAIN: b"synthetic-probe"}
+        make_zip(self.shaded, {**self.classes, **fake})
+        with self.assertRaises(full.AuditFailure):
+            full.class_inventory(self.shaded, self.deps, mode="application")
+
     def test_divergent_duplicate_class_rejected(self):
         new=("org.bouncycastle","bcmail-jdk14","1.38")
         cls=probe.DEPENDENCIES[new]
