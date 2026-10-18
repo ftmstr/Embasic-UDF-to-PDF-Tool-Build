@@ -1,0 +1,163 @@
+name: Windows Hosted CI (Secure Bootstrap)
+
+on:
+  push:
+    branches: [main, "ci/**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  public-source-gate:
+    name: Source publication preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      ready: ${{ steps.gate.outputs.ready }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify source gate unit tests (synthetic only)
+        run: python3 scripts/test-public-ci-gate.py
+      - id: gate
+        name: Enforce exact approved source commit or safe empty bootstrap
+        env:
+          PUBLIC_SOURCE_APPROVED_SHA: ${{ vars.PUBLIC_SOURCE_APPROVED_SHA }}
+          REVIEWED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: python3 scripts/public-ci-gate.py
+
+  hosted-windows-probe:
+    name: Hosted Windows + Java 17 + Maven probe
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Probe Java, Maven and JDK toolchain (not an app test)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          & java -version
+          if ($LASTEXITCODE -ne 0) { throw "java not available" }
+          & mvn -version
+          if ($LASTEXITCODE -ne 0) { throw "maven not available" }
+          $classes = Join-Path $env:RUNNER_TEMP "embasic-hosted-java-probe"
+          New-Item -ItemType Directory -Force -Path $classes | Out-Null
+          & javac --release 17 -d $classes scripts/HostedRunnerProbe.java
+          if ($LASTEXITCODE -ne 0) { throw "javac probe compile failed" }
+          & java -cp $classes HostedRunnerProbe
+          if ($LASTEXITCODE -ne 0) { throw "java probe failed" }
+
+  application-regression:
+    name: Maven + Java regression + synthetic UDF/PDF smoke
+    needs: [public-source-gate]
+    if: needs.public-source-gate.outputs.ready == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - name: Standalone Explorer selection and ordering tests
+        shell: pwsh
+        run: |
+          & pwsh -NoProfile -File scripts/verify-explorer-grid.ps1
+          if ($LASTEXITCODE -ne 0) { throw "Explorer regression failed" }
+      - name: Standalone UDF parser security and compatibility tests
+        shell: pwsh
+        run: |
+          & pwsh -NoProfile -File scripts/verify-udf-parser.ps1
+          if ($LASTEXITCODE -ne 0) { throw "UDF parser regression failed" }
+      - name: Maven clean verify (compile + configured tests)
+        shell: pwsh
+        run: |
+          & mvn -B -ntp clean verify
+          if ($LASTEXITCODE -ne 0) { throw "Maven verify failed" }
+      - name: Synthetic single-UDF to PDF smoke (no real UYAP documents)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $jar = "target/embasic-udf-to-pdf-1.4.0-all.jar"
+          if (-not (Test-Path $jar)) { throw "Shaded application JAR missing" }
+          & python scripts/create-smoke-udf.py build/smoke/sample.udf SMOKE-A 1 1
+          if ($LASTEXITCODE -ne 0) { throw "Synthetic fixture generation failed" }
+          & java -jar $jar build/smoke/sample.udf build/smoke/sample.pdf
+          if ($LASTEXITCODE -ne 0) { throw "Synthetic conversion failed" }
+          $classes = Join-Path $env:RUNNER_TEMP "embasic-pdf-smoke-classes"
+          New-Item -ItemType Directory -Force -Path $classes | Out-Null
+          & javac -cp $jar -d $classes scripts/PdfSmokeVerifier.java
+          if ($LASTEXITCODE -ne 0) { throw "PDF smoke verifier compile failed" }
+          & java -cp "$jar;$classes" PdfSmokeVerifier build/smoke/sample.pdf 1 "595.28x841.89::SMOKE-A"
+          if ($LASTEXITCODE -ne 0) { throw "PDF content smoke failed" }
+
+  approved-package:
+    name: Verified Windows app-image, portable ZIP and SHA-256 (approved only)
+    needs: [public-source-gate, application-regression]
+    if: |
+      github.event_name != 'pull_request' &&
+      github.ref == 'refs/heads/main' &&
+      needs.public-source-gate.outputs.ready == 'true' &&
+      vars.PUBLIC_BINARY_APPROVED_SHA == github.sha
+    runs-on: windows-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+      - name: Compile and verify actual binary dependencies and licenses
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          & mvn -B -ntp clean package
+          if ($LASTEXITCODE -ne 0) { throw "Maven package failed" }
+          & mvn -B -ntp org.apache.maven.plugins:maven-dependency-plugin:3.8.1:copy-dependencies "-DoutputDirectory=target/runtime-dependencies" "-DincludeScope=runtime"
+          if ($LASTEXITCODE -ne 0) { throw "Maven dependency resolution failed" }
+          & python scripts/verify-release-license-jars.py --pom pom.xml --shaded-jar target/embasic-udf-to-pdf-1.4.0-all.jar --dependency-dir target/runtime-dependencies --itext-notice THIRD-PARTY-iText.txt --third-party-notices THIRD-PARTY-NOTICES.txt
+          if ($LASTEXITCODE -ne 0) { throw "Binary license byte audit failed" }
+      - name: Create Windows app-image and portable ZIP (no installer/release)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          & jpackage --type app-image --name EmbasicUdfToPdf --input target --main-jar embasic-udf-to-pdf-1.4.0-all.jar --main-class com.embasic.udf2pdf.App --app-version 1.4.0 --dest dist
+          if ($LASTEXITCODE -ne 0) { throw "Windows jpackage failed" }
+          Copy-Item THIRD-PARTY-iText.txt dist/EmbasicUdfToPdf/
+          Copy-Item THIRD-PARTY-NOTICES.txt dist/EmbasicUdfToPdf/
+          Compress-Archive -Path dist/EmbasicUdfToPdf -DestinationPath dist/Embasic-UDF-to-PDF-Tool-Windows-x64.zip -Force
+          & python scripts/verify-release-license-jars.py --pom pom.xml --shaded-jar target/embasic-udf-to-pdf-1.4.0-all.jar --dependency-dir target/runtime-dependencies --itext-notice THIRD-PARTY-iText.txt --third-party-notices THIRD-PARTY-NOTICES.txt --portable-zip dist/Embasic-UDF-to-PDF-Tool-Windows-x64.zip
+          if ($LASTEXITCODE -ne 0) { throw "Portable ZIP notice audit failed" }
+          $jar = Get-FileHash target/embasic-udf-to-pdf-1.4.0-all.jar -Algorithm SHA256
+          $zip = Get-FileHash dist/Embasic-UDF-to-PDF-Tool-Windows-x64.zip -Algorithm SHA256
+          @("$($jar.Hash)  embasic-udf-to-pdf-1.4.0-all.jar", "$($zip.Hash)  Embasic-UDF-to-PDF-Tool-Windows-x64.zip") | Set-Content dist/SHA256SUMS.txt -Encoding ascii
+      - uses: actions/upload-artifact@v4
+        with:
+          name: embasic-udf-to-pdf-windows-verified
+          path: |
+            target/embasic-udf-to-pdf-1.4.0-all.jar
+            dist/Embasic-UDF-to-PDF-Tool-Windows-x64.zip
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 7
