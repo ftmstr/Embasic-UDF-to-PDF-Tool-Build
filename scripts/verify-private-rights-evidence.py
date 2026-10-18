@@ -90,11 +90,11 @@ def audit(root: Path, manifest: Path, approval: Path, private_commit: str) -> di
     itext = strict_dict(rights["itext"],
         ("route", "license_compliance_reviewed", "source_plan_reviewed",
          "relinking_plan_reviewed", "notice_sha256"), "itext")
-    if itext["route"] not in ("MPL-1.1", "LGPL-2.1"):
+    if itext["route"] not in ("MPL-1.1", "LGPL-historical-reviewed"):
         raise ApprovalError("itext_route_missing")
     yes(itext["license_compliance_reviewed"], "itext_compliance")
     yes(itext["source_plan_reviewed"], "itext_source_plan")
-    if itext["route"] == "LGPL-2.1":
+    if itext["route"] == "LGPL-historical-reviewed":
         yes(itext["relinking_plan_reviewed"], "itext_relinking_plan")
     elif type(itext["relinking_plan_reviewed"]) is not bool:
         raise ApprovalError("itext_relinking_review_value_invalid")
