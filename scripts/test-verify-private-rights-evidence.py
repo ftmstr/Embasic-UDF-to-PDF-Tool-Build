@@ -96,15 +96,20 @@ class PrivateRightsTests(unittest.TestCase):
         self.assertFalse(result["release_or_publication_executed"])
 
     def test_synthetic_lgpl_with_relinking_acknowledgment(self):
-        self.rights["itext"]["route"] = "LGPL-2.1"
+        self.rights["itext"]["route"] = "LGPL-historical-reviewed"
         self.rights["itext"]["relinking_plan_reviewed"] = True
         self.write()
         self.assertEqual(self.check()["reviewed_notice_count"], 2)
 
     def test_lgpl_without_relinking_rejected(self):
-        self.rights["itext"]["route"] = "LGPL-2.1"
+        self.rights["itext"]["route"] = "LGPL-historical-reviewed"
         self.write()
         self.denied("itext_relinking_plan_not_attested")
+
+    def test_arbitrary_unverified_lgpl_version_is_rejected(self):
+        self.rights["itext"]["route"] = "LGPL-2.1"
+        self.write()
+        self.denied("itext_route_missing")
 
     def test_license_route_not_implicitly_chosen(self):
         self.rights["itext"]["route"] = "UNKNOWN"
