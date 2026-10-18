@@ -16,6 +16,7 @@ import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.font.PDType1Font;
+import org.apache.pdfbox.pdmodel.font.PDType0Font;
 import org.apache.pdfbox.pdmodel.font.Standard14Fonts;
 import org.apache.pdfbox.pdmodel.graphics.image.LosslessFactory;
 import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
@@ -25,6 +26,7 @@ import org.apache.pdfbox.text.PDFTextStripper;
 public final class PdfBoxProbe {
     private static final String A = "EMBASIC-SYNTHETIC-PDFBOX-A";
     private static final String B = "EMBASIC-SYNTHETIC-PDFBOX-B";
+    private static final String TURKISH = "İıĞğŞşÜüÖöÇç";
 
     private PdfBoxProbe() {}
 
@@ -40,6 +42,21 @@ public final class PdfBoxProbe {
                 content.showText(marker);
                 content.endText();
                 if (withImage) {
+                    // The runner's installed TTF is used only in an ephemeral PDF.
+                    // No font files or generated PDFs are committed or uploaded.
+                    Path systemFont = Path.of("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf");
+                    if (!Files.isRegularFile(systemFont)) {
+                        systemFont = Path.of("/usr/share/fonts/truetype/liberation2/LiberationSans-Regular.ttf");
+                    }
+                    if (!Files.isRegularFile(systemFont)) {
+                        throw new IOException("SYNTHETIC_UNICODE_FONT_UNAVAILABLE");
+                    }
+                    PDType0Font unicodeFont = PDType0Font.load(doc, systemFont.toFile());
+                    content.beginText();
+                    content.setFont(unicodeFont, 12);
+                    content.newLineAtOffset(48, height - 93);
+                    content.showText(TURKISH);
+                    content.endText();
                     BufferedImage fake = new BufferedImage(10, 10, BufferedImage.TYPE_INT_RGB);
                     for (int y = 0; y < 10; y++) {
                         for (int x = 0; x < 10; x++) {
@@ -69,6 +86,7 @@ public final class PdfBoxProbe {
                     "page-2-height");
             String text = new PDFTextStripper().getText(doc);
             require(text.contains(A) && text.contains(B), "text-missing");
+            require(text.contains(TURKISH), "turkish-unicode-text-lost");
             require(text.indexOf(A) < text.indexOf(B), "wrong-order");
             require(doc.getPage(0).getResources().getXObjectNames().iterator().hasNext(),
                     "synthetic-image-missing");
@@ -89,7 +107,7 @@ public final class PdfBoxProbe {
             merger.setDestinationFileName(result.toString());
             merger.mergeDocuments(IOUtils.createMemoryOnlyStreamCache());
             verify(result);
-            System.out.println("PDFBOX_3_0_8_SYNTHETIC: PASS pages=2 order=true image=true");
+            System.out.println("PDFBOX_3_0_8_SYNTHETIC: PASS pages=2 order=true image=true turkish-unicode=true");
         } finally {
             try (Stream<Path> all = Files.walk(dir)) {
                 for (Path path : all.sorted(Comparator.reverseOrder()).toList()) {
