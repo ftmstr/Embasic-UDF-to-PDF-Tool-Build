@@ -46,6 +46,8 @@ jobs:
           python3 scripts/audit-isolated-shade.py \
             --maven-cache "$HOME/.m2/repository" \
             --shaded-jar audit/target/upstream-pdf-library-inspection-only-0.0.0-audit-all.jar
+      - name: Test Windows portable ZIP legal notice integrity guard (synthetic only)
+        run: python3 scripts/test-check-portable-notices.py
       - name: Test all-class duplicate and byte-integrity controls
         run: python3 scripts/test-audit-shaded-classes.py
       - name: Verify every actual shaded dependency class and duplicate conflict
