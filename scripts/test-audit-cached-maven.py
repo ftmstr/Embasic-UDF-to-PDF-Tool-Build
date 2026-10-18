@@ -89,7 +89,7 @@ class DependencyAuditTests(unittest.TestCase):
                     path.parent.mkdir(parents=True, exist_ok=True)
                     path.write_bytes(data)
             result = audit.read_inventory(root)
-            self.assertEqual(len(result["components"]), 4)
+            self.assertEqual(len(result["components"]), 6)
             self.assertEqual(result["status"], "INSPECTED_NOT_DISTRIBUTION_APPROVED")
             self.assertTrue(all(len(c["jar_sha256"]) == 64 for c in result["components"]))
 
