@@ -69,6 +69,13 @@ class NoticeTests(unittest.TestCase):
         with self.assertRaises(mod.NoticeError):
             mod.verify(self.zip,{mod.REQUIRED[0]:self.contents[mod.REQUIRED[0]]})
 
+    def test_oversized_archive_notice_rejected_before_read(self):
+        entries={f"Portable/{k}":v for k,v in self.contents.items()}
+        entries["Portable/THIRD-PARTY-iText.txt"]=b"x"*(mod.NOTICE_LIMIT+1)
+        self.makezip(entries)
+        with self.assertRaises(mod.NoticeError):
+            mod.verify(self.zip,self.contents)
+
     def test_corrupt_archive_rejected(self):
         self.zip.write_bytes(b"not an archive")
         with self.assertRaises(mod.NoticeError):
