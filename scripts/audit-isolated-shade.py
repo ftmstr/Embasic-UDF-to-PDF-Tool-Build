@@ -50,7 +50,7 @@ def checked_zip(path: Path) -> zipfile.ZipFile:
             if n in seen:
                 raise AuditFailure("duplicate_archive_member")
             seen.add(n)
-            if n.startswith("/") or "\\\\" in n or any(p in {".", ".."} for p in n.split("/")):
+            if n.startswith("/") or "\\" in n or any(p in {".", ".."} for p in n.split("/")):
                 raise AuditFailure("unsafe_archive_path")
             if m.file_size > MAX_MEMBER or total + m.file_size > MAX_EXPANDED:
                 raise AuditFailure("archive_expansion_limit")
