@@ -62,6 +62,12 @@ class DependencyAuditTests(unittest.TestCase):
     def test_jar_notice_member_inventory(self):
         self.assertIn("META-INF/LICENSE.txt", audit.inspect_jar(jar())["notice_member_names"])
 
+    def test_technical_notice_class_is_not_license_text(self):
+        result = audit.inspect_jar(jar([
+            ("org/example/NoticeReference.class", b"not a notice"),
+            ("META-INF/LICENSE.txt", b"synthetic actual notice")]))
+        self.assertEqual(result["notice_member_names"], ["META-INF/LICENSE.txt"])
+
     def test_jar_unsafe_member_rejected(self):
         with self.assertRaises(audit.AuditError):
             audit.inspect_jar(jar([("../escape", b"x")]))
