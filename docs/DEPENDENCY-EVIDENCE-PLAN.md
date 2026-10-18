@@ -14,3 +14,5 @@ Primary references:
 - https://www.mozilla.org/MPL/1.1/
 - https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html
 - https://www.bouncycastle.org/license/
+
+New observation: Maven resolved `org.bouncycastle:bctsp-jdk14:1.38` through relocation from the legacy requested coordinate, and resolved both old and new Bouncy Castle provider/mail groups. The previously assumed four-JAR inventory was incomplete and must be replaced by an actual resolved dependency-tree audit.
