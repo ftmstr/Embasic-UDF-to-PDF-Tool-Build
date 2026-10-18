@@ -35,6 +35,29 @@ class PublicGateTest(unittest.TestCase):
         self.add("README.md")
         self.assertFalse(self.run_gate())
 
+    def test_unapproved_bootstrap_document_is_rejected(self):
+        self.add("README.md")
+        self.add("docs/unreviewed-file.md")
+        with self.assertRaisesRegex(gate.GateError, "unapproved_bootstrap_file"):
+            self.run_gate()
+
+    def test_app_test_code_cannot_hide_in_bootstrap(self):
+        self.add("README.md")
+        self.add("src/test/java/Hidden.java")
+        with self.assertRaisesRegex(gate.GateError, "unapproved_bootstrap_file"):
+            self.run_gate()
+
+    def test_unapproved_binary_asset_is_rejected(self):
+        self.add("README.md")
+        self.add("artwork/new-logo.png")
+        with self.assertRaisesRegex(gate.GateError, "unapproved_bootstrap_file"):
+            self.run_gate()
+
+    def test_reviewed_bootstrap_script_allowed_without_app(self):
+        self.add("README.md")
+        self.add("scripts/verify-snapshot-manifest.py")
+        self.assertFalse(self.run_gate())
+
     def test_partial_snapshot_fails(self):
         self.add("pom.xml")
         with self.assertRaises(gate.GateError):
