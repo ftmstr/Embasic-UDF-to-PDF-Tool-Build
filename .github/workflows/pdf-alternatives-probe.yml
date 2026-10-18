@@ -58,7 +58,7 @@ jobs:
           cache: maven
           cache-dependency-path: audit-openpdf/pom.xml
       - name: Compile independent OpenPDF legacy-API probe
-        run: mvn -B -ntp -f audit-openpdf/pom.xml clean package
+        run: mvn -B -ntp -f audit-openpdf/pom.xml compile
       - name: Execute ephemeral paragraph/table/merge smoke
         run: mvn -B -ntp -f audit-openpdf/pom.xml org.codehaus.mojo:exec-maven-plugin:3.5.1:java -Dexec.mainClass=com.embasic.audit.openpdf.OpenPdfProbe
       - name: Inspect OpenPDF Maven dependency tree
