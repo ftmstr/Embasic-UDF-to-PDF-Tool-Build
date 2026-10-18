@@ -137,8 +137,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Maven package failed" }
           & mvn -B -ntp org.apache.maven.plugins:maven-dependency-plugin:3.8.1:copy-dependencies "-DoutputDirectory=target/runtime-dependencies" "-DincludeScope=runtime"
           if ($LASTEXITCODE -ne 0) { throw "Maven dependency resolution failed" }
-          & python scripts/verify-release-license-jars.py --pom pom.xml --shaded-jar target/embasic-udf-to-pdf-1.4.0-all.jar --dependency-dir target/runtime-dependencies --itext-notice THIRD-PARTY-iText.txt --third-party-notices THIRD-PARTY-NOTICES.txt
-          if ($LASTEXITCODE -ne 0) { throw "Binary license byte audit failed" }
+          & python scripts/audit-cached-maven.py --maven-cache "$HOME/.m2/repository"
+          if ($LASTEXITCODE -ne 0) { throw "Maven six-coordinate upstream audit failed" }
+          & python scripts/audit-shaded-classes.py --mode application --maven-cache "$HOME/.m2/repository" --shaded-jar target/embasic-udf-to-pdf-1.4.0-all.jar
+          if ($LASTEXITCODE -ne 0) { throw "Application shaded class integrity failed" }
+          # Binary hash checks cannot certify MPL/LGPL compliance or legal permission.
       - name: Create Windows app-image and portable ZIP (no installer/release)
         shell: pwsh
         run: |
@@ -149,8 +152,8 @@ jobs:
           Copy-Item THIRD-PARTY-iText.txt dist/EmbasicUdfToPdf/
           Copy-Item THIRD-PARTY-NOTICES.txt dist/EmbasicUdfToPdf/
           Compress-Archive -Path dist/EmbasicUdfToPdf -DestinationPath dist/Embasic-UDF-to-PDF-Tool-Windows-x64.zip -Force
-          & python scripts/verify-release-license-jars.py --pom pom.xml --shaded-jar target/embasic-udf-to-pdf-1.4.0-all.jar --dependency-dir target/runtime-dependencies --itext-notice THIRD-PARTY-iText.txt --third-party-notices THIRD-PARTY-NOTICES.txt --portable-zip dist/Embasic-UDF-to-PDF-Tool-Windows-x64.zip
-          if ($LASTEXITCODE -ne 0) { throw "Portable ZIP notice audit failed" }
+          & python scripts/check-portable-notices.py --portable-zip dist/Embasic-UDF-to-PDF-Tool-Windows-x64.zip --itext-notice THIRD-PARTY-iText.txt --third-party-notices THIRD-PARTY-NOTICES.txt
+          if ($LASTEXITCODE -ne 0) { throw "Portable ZIP notice byte integrity failed" }
           $jar = Get-FileHash target/embasic-udf-to-pdf-1.4.0-all.jar -Algorithm SHA256
           $zip = Get-FileHash dist/Embasic-UDF-to-PDF-Tool-Windows-x64.zip -Algorithm SHA256
           @("$($jar.Hash)  embasic-udf-to-pdf-1.4.0-all.jar", "$($zip.Hash)  Embasic-UDF-to-PDF-Tool-Windows-x64.zip") | Set-Content dist/SHA256SUMS.txt -Encoding ascii
