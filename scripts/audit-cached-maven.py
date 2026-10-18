@@ -18,9 +18,11 @@ COMPONENTS = (
     ("com.lowagie", "itext", "2.1.7"),
     ("bouncycastle", "bcmail-jdk14", "138"),
     ("bouncycastle", "bcprov-jdk14", "138"),
-    ("bouncycastle", "bctsp-jdk14", "138"),
+    ("org.bouncycastle", "bctsp-jdk14", "1.38"),
+    ("org.bouncycastle", "bcprov-jdk14", "1.38"),
+    ("org.bouncycastle", "bcmail-jdk14", "1.38"),
 )
-BC = set(COMPONENTS[1:])
+BC = {('bouncycastle','bcmail-jdk14','138'),('bouncycastle','bcprov-jdk14','138'),('bouncycastle','bctsp-jdk14','138')}
 NS = {"m": "http://maven.apache.org/POM/4.0.0"}
 MAX_JAR_BYTES = 32 * 1024 * 1024
 MAX_EXPANDED_BYTES = 180 * 1024 * 1024
