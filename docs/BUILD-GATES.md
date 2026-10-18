@@ -18,7 +18,7 @@ The exact release-candidate snapshot must be checked **outside** this public rep
 - A new clean Git history, inspected public tree, and a matching approved commit SHA set in the repository variable `PUBLIC_SOURCE_APPROVED_SHA`.
 - For binary uploads, separate artifact rights review and exact commit SHA in `PUBLIC_BINARY_APPROVED_SHA`.
 
-The `PUBLIC_SOURCE_APPROVED_SHA` variable is an **administrative release gate**, not a substitute for the preceding authorizations. For pull requests use the reviewed PR head commit. Never store confidential approvals in public GitHub variables or workflow logs.
+The `PUBLIC_SOURCE_APPROVED_SHA` variable is an **administrative release gate**, not a substitute for the preceding authorizations. For pull requests, approve the exact CI checkout/merge commit SHA, not merely the PR head, because the tested tree contains the base branch as well. Never store confidential approvals in public GitHub variables or workflow logs.
 
 ## CI execution
 
