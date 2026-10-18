@@ -22,6 +22,12 @@ REQUIRED = {
     "src/main/resources/com/embasic/udf2pdf/brand/logo-dark.png",
 }
 BOOTSTRAP_ALLOWED = {
+    "audit-pdfbox/pom.xml",
+    "audit-pdfbox/src/main/java/com/embasic/audit/pdfbox/PdfBoxProbe.java",
+    "audit-openpdf/pom.xml",
+    "audit-openpdf/src/main/java/com/embasic/audit/openpdf/OpenPdfProbe.java",
+    ".github/workflows/pdf-alternatives-probe.yml",
+    "docs/TURN-6-PDF-ENGINE-DECISION.md",
     ".github/workflows/upstream-dependency-audit.yml",
     ".github/workflows/windows-ci.yml",
     ".gitignore",
