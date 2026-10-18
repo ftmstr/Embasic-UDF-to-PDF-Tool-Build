@@ -46,6 +46,9 @@ BOOTSTRAP_ALLOWED = {
     "scripts/test-check-portable-notices.py",
     "scripts/test-public-ci-gate.py",
     "scripts/test-verify-snapshot-manifest.py",
+    "scripts/verify-private-rights-evidence.py",
+    "scripts/test-verify-private-rights-evidence.py",
+    "docs/TURN-5-LICENSE-ASSET-REVIEW.md",
     "scripts/verify-snapshot-manifest.py",
 }
 
