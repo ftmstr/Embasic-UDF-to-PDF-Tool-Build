@@ -31,8 +31,11 @@ public final class OpenPdfProbe {
             table.addCell("ONE");
             table.addCell("TWO");
             document.add(table);
+            document.close(); // Complete PDF trailer BEFORE closing the stream.
         } finally {
-            document.close();
+            if (document.isOpen()) {
+                document.close();
+            }
         }
     }
 
@@ -51,8 +54,11 @@ public final class OpenPdfProbe {
                     reader.close();
                 }
             }
+            merged.close(); // Complete cross-reference/trailer before stream close.
         } finally {
-            merged.close();
+            if (merged.isOpen()) {
+                merged.close();
+            }
         }
     }
 
