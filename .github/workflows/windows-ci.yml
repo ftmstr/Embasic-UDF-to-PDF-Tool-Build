@@ -31,7 +31,7 @@ jobs:
         name: Enforce exact approved source commit or safe empty bootstrap
         env:
           PUBLIC_SOURCE_APPROVED_SHA: ${{ vars.PUBLIC_SOURCE_APPROVED_SHA }}
-          REVIEWED_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          REVIEWED_HEAD_SHA: ${{ github.sha }}
         run: python3 scripts/public-ci-gate.py
 
   hosted-windows-probe:
