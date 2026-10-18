@@ -48,11 +48,13 @@ def inspect_pom(raw: bytes, component: tuple[str, str, str]) -> dict:
         root = ET.fromstring(raw)
     except ET.ParseError as exc:
         raise AuditError("invalid_pom") from exc
+    for node in root.iter():
+        node.tag = node.tag.rsplit("}", 1)[-1]
     for tag, expected in zip(("groupId", "artifactId", "version"), component):
-        if root.findtext("m:" + tag, namespaces=NS) != expected:
+        if root.findtext(tag) != expected:
             raise AuditError("unexpected_pom_identity")
-    licenses = sorted({(node.findtext("m:name", "", NS) or "").strip()
-        for node in root.findall("./m:licenses/m:license", NS)}) 
+    licenses = sorted({(node.findtext("name", "") or "").strip()
+        for node in root.findall("./licenses/license")}) 
     licenses = [v for v in licenses if v]
     if not licenses:
         raise AuditError("license_metadata_absent")
@@ -61,9 +63,9 @@ def inspect_pom(raw: bytes, component: tuple[str, str, str]) -> dict:
             raise AuditError("itext_license_metadata_mismatch")
     elif not any("bouncy castle" in v.lower() for v in licenses):
         raise AuditError("bc_license_metadata_mismatch")
-    dependencies = {(d.findtext("m:groupId", "", NS),
-        d.findtext("m:artifactId", "", NS), d.findtext("m:version", "", NS))
-        for d in root.findall("./m:dependencies/m:dependency", NS)}
+    dependencies = {(d.findtext("groupId", ""),
+        d.findtext("artifactId", ""), d.findtext("version", ""))
+        for d in root.findall("./dependencies/dependency")}
     if component[0] == "com.lowagie" and not BC.issubset(dependencies):
         raise AuditError("expected_bc_transitives_absent")
     return {"pom_licenses": licenses, "declares_expected_bc_dependencies": component[0] == "com.lowagie"}
