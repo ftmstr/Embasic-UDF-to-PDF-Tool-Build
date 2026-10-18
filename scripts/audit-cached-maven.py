@@ -90,7 +90,7 @@ def inspect_jar(raw: bytes) -> dict:
                 if item.file_size > MAX_JAR_BYTES or expanded > MAX_EXPANDED_BYTES:
                     raise AuditError("archive_expansion_limit")
                 leaf = name.rsplit("/", 1)[-1].lower()
-                if not item.is_dir() and leaf.startswith(("license", "notice", "copying")):
+                if not item.is_dir() and (leaf in {"license", "licence", "notice", "copying", "license.class"} or leaf.startswith(("license.", "licence.", "notice.", "copying."))):
                     notices.append(name)
             return {"entries": len(entries),
                     "notice_member_names": sorted(notices)[:20],
