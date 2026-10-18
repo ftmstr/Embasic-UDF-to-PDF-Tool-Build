@@ -104,6 +104,44 @@ Read the final CI job conclusions before marking either project PASS.
 - Exact sampled OpenPDF Maven artifact:
   https://central.sonatype.com/artifact/com.github.librepdf/openpdf/2.0.5
 
+## GitHub-hosted, source-free empirical findings (2026-10-18)
+
+Verified initial dual-probe Actions job:
+https://github.com/ftmstr/Embasic-UDF-to-PDF-Tool-Build/actions/runs/39148102710
+**SUCCESS** for both separate Java 17 candidate projects.
+
+- **PDFBox 3.0.8:** synthetic two-page creation with one embedded
+  generated image, distinct page dimensions, ordered PDF merge,
+  and round-trip PDF text extraction **PASS**. In a further
+  runner-only probe, system-supplied `PDType0Font` was used to embed
+  a Unicode TTF and read back `İıĞğŞşÜüÖöÇç` **PASS**
+  (https://github.com/ftmstr/Embasic-UDF-to-PDF-Tool-Build/actions/runs/39148251440,
+  PDFBox job). No fonts or generated PDF files were uploaded.
+  Actual observed Maven graph has `pdfbox`, `pdfbox-io`, `fontbox`
+  at 3.0.8 and `commons-logging` 1.4.0; no legacy
+  `com.lowagie:itext` or old Bouncy Castle `:138` in this minimal use case.
+- **OpenPDF 2.0.5:** synthetic `com.lowagie` paragraph, two-column
+  table, `PdfCopy` merge and `PdfReader` page checks **PASS**.
+  The first attempt hit transient Maven Central HTTP 429 on an
+  unnecessary clean plugin; a later run reached Java but the **probe**
+  had incorrectly closed its output stream before the PDF `Document`.
+  Both defects were corrected, then the actual synthetic Java run
+  finished successfully. This proves only the sampled APIs, not complete
+  `PdfRenderer` parity.
+- The pre-existing 90 Python synthetic security/dependency checks
+  remain a separate CI suite and must be rerun at the final PR commit;
+  Java probes are **two further integration checks**, not additional
+  Python `unittest` cases.
+
+**Architectural recommendation:** Favor PDFBox 3.0.8 as a future
+Apache-licensed *long-term backend target* if realistic private UDF
+layout fidelity can be achieved. **Do not replace the working writer
+yet.** OpenPDF 2.0.5 is a lower-diff *contingency candidate* for
+maintaining the current high-level iText-shaped layout while the full
+PDFBox renderer is researched, subject to specific MPL/LGPL compliance
+sign-off. Hybrid old iText + PDFBox is not a way to evade old
+library source/notice obligations.
+
 ## Security and release decision
 
 Original application copyright permission, PNG/ICO provenance and
