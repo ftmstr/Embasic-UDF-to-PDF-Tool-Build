@@ -21,7 +21,9 @@ assert spec is not None and spec.loader is not None
 spec.loader.exec_module(shade)
 AuditFailure = shade.AuditFailure
 
-def class_inventory(shaded: Path, dependencies: dict[tuple[str,str,str],Path]) -> dict:
+def class_inventory(shaded: Path, dependencies: dict[tuple[str,str,str],Path], mode: str = "isolated") -> dict:
+    if mode not in {"isolated", "application"}:
+        raise AuditFailure("unsupported_shade_mode")
     if set(dependencies) != set(shade.DEPENDENCIES):
         raise AuditFailure("dependency_set_incomplete")
     expected: dict[str, str] = {}
@@ -44,15 +46,24 @@ def class_inventory(shaded: Path, dependencies: dict[tuple[str,str,str],Path]) -
         raise AuditFailure("upstream_class_set_empty")
     with shade.checked_zip(shaded) as archive:
         names = set(archive.namelist())
-        if shade.AUDIT_MAIN not in names or shade.FORBIDDEN_APP in names:
-            raise AuditFailure("not_isolated_audit_artifact")
+        if mode == "isolated":
+            if shade.AUDIT_MAIN not in names or shade.FORBIDDEN_APP in names:
+                raise AuditFailure("not_isolated_audit_artifact")
+        else:
+            if shade.FORBIDDEN_APP not in names or shade.AUDIT_MAIN in names:
+                raise AuditFailure("not_approved_application_artifact")
         for name, value in expected.items():
             if name not in names:
                 raise AuditFailure("upstream_class_missing_from_shade")
             if shade.member_digest(archive, name) != value:
                 raise AuditFailure("upstream_class_changed_by_shade")
-        extra = sorted(x for x in names if x.endswith(".class")
-                       and x not in expected and x != shade.AUDIT_MAIN)
+        if mode == "isolated":
+            extra = sorted(x for x in names if x.endswith(".class")
+                           and x not in expected and x != shade.AUDIT_MAIN)
+        else:
+            extra = sorted(x for x in names if x.endswith(".class")
+                           and x not in expected and
+                           not x.startswith("com/embasic/udf2pdf/"))
         if extra:
             raise AuditFailure("unexpected_shaded_classes")
     return {
@@ -61,17 +72,23 @@ def class_inventory(shaded: Path, dependencies: dict[tuple[str,str,str],Path]) -
         "unique_upstream_classes_verified": len(expected),
         "identical_duplicate_class_occurrences": duplicates,
         "divergent_duplicate_classes": 0,
-        "scope": "Synthetic independent shade and class entries only; excludes legal notices, packaging and real Embasic application",
+        "scope": ("Synthetic independent shade only" if mode == "isolated"
+                  else "Approved application candidate binary: class bytes only"),
+        "mode": mode,
+        "license_or_distribution_approved": False,
     }
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--maven-cache", type=Path, required=True)
     parser.add_argument("--shaded-jar", type=Path, required=True)
+    parser.add_argument("--mode", choices=("isolated", "application"),
+                        default="isolated")
     args = parser.parse_args()
     try:
         data = class_inventory(args.shaded_jar,
-                {c:shade.maven_path(args.maven_cache,c) for c in shade.DEPENDENCIES})
+                {c:shade.maven_path(args.maven_cache,c) for c in shade.DEPENDENCIES},
+                mode=args.mode)
         print(json.dumps(data,indent=2,sort_keys=True))
         return 0
     except (OSError, zipfile.BadZipFile, AuditFailure) as exc:
