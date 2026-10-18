@@ -26,7 +26,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Verify source gate unit tests (synthetic only)
-        run: python3 scripts/test-public-ci-gate.py
+        run: |
+          python3 scripts/test-public-ci-gate.py
+          python3 scripts/test-verify-snapshot-manifest.py
       - id: gate
         name: Enforce exact approved source commit or safe empty bootstrap
         env:
