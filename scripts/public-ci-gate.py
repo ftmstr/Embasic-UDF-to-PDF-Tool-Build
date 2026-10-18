@@ -21,6 +21,34 @@ REQUIRED = {
     "src/main/resources/com/embasic/udf2pdf/brand/logo-light.png",
     "src/main/resources/com/embasic/udf2pdf/brand/logo-dark.png",
 }
+BOOTSTRAP_ALLOWED = {
+    ".github/workflows/upstream-dependency-audit.yml",
+    ".github/workflows/windows-ci.yml",
+    ".gitignore",
+    "README.md",
+    "audit/pom.xml",
+    "audit/src/main/java/com/embasic/audit/IsolatedProbe.java",
+    "docs/BUILD-GATES.md",
+    "docs/DEPENDENCY-EVIDENCE-PLAN.md",
+    "docs/RIGHTS-AND-ARTWORK-REVIEW.md",
+    "docs/TURN-3-SHADE-AND-LEGAL-GATES.md",
+    "docs/TURN-4-SNAPSHOT-EVIDENCE.md",
+    "docs/UPSTREAM-DEPENDENCY-EVIDENCE-20261018.md",
+    "scripts/HostedRunnerProbe.java",
+    "scripts/audit-cached-maven.py",
+    "scripts/audit-isolated-shade.py",
+    "scripts/audit-shaded-classes.py",
+    "scripts/check-portable-notices.py",
+    "scripts/public-ci-gate.py",
+    "scripts/test-audit-cached-maven.py",
+    "scripts/test-audit-isolated-shade.py",
+    "scripts/test-audit-shaded-classes.py",
+    "scripts/test-check-portable-notices.py",
+    "scripts/test-public-ci-gate.py",
+    "scripts/test-verify-snapshot-manifest.py",
+    "scripts/verify-snapshot-manifest.py",
+}
+
 BLOCKED_SUFFIX = {".udf", ".pdf", ".p12", ".pfx", ".jks", ".keystore",
                   ".pem", ".key", ".sqlite", ".db", ".log"}
 BLOCKED_NAMES = {".env", "id_rsa", "id_ed25519"}
@@ -60,6 +88,8 @@ def evaluate(root: Path, tracked: list[str], approved: str, sha: str) -> bool:
                 raise GateError("potential_sensitive_content_" + category)
     application_files = [n for n in names if n.startswith("src/main/") or n == "pom.xml"]
     if not application_files:
+        if names - BOOTSTRAP_ALLOWED:
+            raise GateError("unapproved_bootstrap_file")
         return False
     if REQUIRED - names:
         raise GateError("incomplete_application_snapshot")
