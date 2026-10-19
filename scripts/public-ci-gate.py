@@ -22,6 +22,8 @@ REQUIRED = {
     "src/main/resources/com/embasic/udf2pdf/brand/logo-dark.png",
 }
 BOOTSTRAP_ALLOWED = {
+    "audit-pdfbox/src/main/java/com/embasic/audit/pdfbox/PdfQualityOracle.java",
+    "docs/TURN-7-PDF-QUALITY-ORACLE.md",
     "audit-pdfbox/pom.xml",
     "audit-pdfbox/src/main/java/com/embasic/audit/pdfbox/PdfBoxProbe.java",
     "audit-openpdf/pom.xml",
