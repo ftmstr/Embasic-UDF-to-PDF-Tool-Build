@@ -107,6 +107,7 @@ public final class PdfBoxProbe {
             merger.setDestinationFileName(result.toString());
             merger.mergeDocuments(IOUtils.createMemoryOnlyStreamCache());
             verify(result);
+            require("2".equals(PdfQualityOracle.observed(result).get("pages")), "quality-oracle-read");
             System.out.println("PDFBOX_3_0_8_SYNTHETIC: PASS pages=2 order=true image=true turkish-unicode=true");
         } finally {
             try (Stream<Path> all = Files.walk(dir)) {
