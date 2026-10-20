@@ -132,6 +132,15 @@ public final class PdfBoxProbe {
         require(observedFonts > 0, "expected-embedded-synthetic-font");
         changed.put("page.1.fonts.embedded.min", Integer.toString(observedFonts + 1));
         expectOracleBlocked(pdf, changed, "resource_count_shortfall");
+        Path corrupt = workDir.resolve("synthetic-corrupt.pdf");
+        Files.writeString(corrupt, "SYNTHETIC-INVALID-PDF-DATA");
+        boolean corruptRejected = false;
+        try {
+            PdfQualityOracle.observed(corrupt);
+        } catch (IOException | IllegalStateException ex) {
+            corruptRejected = true;
+        }
+        require(corruptRejected, "corrupt-pdf-failed-open");
     }
 
     public static void main(String[] args) throws Exception {
