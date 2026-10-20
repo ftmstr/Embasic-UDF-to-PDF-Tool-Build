@@ -119,6 +119,14 @@ public final class PdfBoxProbe {
         expectOracleBlocked(pdf, changed, "page_count_mismatch");
         changed.remove("page.2.text.sha256");
         expectOracleBlocked(pdf, changed, "manifest_file_set");
+        changed = new HashMap<>(valid);
+        changed.put("page.2.width", "900");
+        expectOracleBlocked(pdf, changed, "page_dimension_mismatch");
+        changed.put("page.2.width", "NaN");
+        expectOracleBlocked(pdf, changed, "page_dimension_invalid");
+        changed = new HashMap<>(valid);
+        changed.put("page.1.images.min", "100");
+        expectOracleBlocked(pdf, changed, "resource_count_shortfall");
     }
 
     public static void main(String[] args) throws Exception {
