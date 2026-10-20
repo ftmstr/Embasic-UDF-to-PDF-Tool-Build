@@ -127,6 +127,11 @@ public final class PdfBoxProbe {
         changed = new HashMap<>(valid);
         changed.put("page.1.images.min", "100");
         expectOracleBlocked(pdf, changed, "resource_count_shortfall");
+        changed = new HashMap<>(valid);
+        int observedFonts = Integer.parseInt(valid.get("page.1.fonts.embedded.min"));
+        require(observedFonts > 0, "expected-embedded-synthetic-font");
+        changed.put("page.1.fonts.embedded.min", Integer.toString(observedFonts + 1));
+        expectOracleBlocked(pdf, changed, "resource_count_shortfall");
     }
 
     public static void main(String[] args) throws Exception {
