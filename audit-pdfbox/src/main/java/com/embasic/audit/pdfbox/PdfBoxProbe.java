@@ -151,6 +151,15 @@ public final class PdfBoxProbe {
                     && ex.getMessage().contains("manifest_duplicate_or_empty");
         }
         require(duplicateRejected, "duplicate-manifest-key-failed-open");
+        Files.writeString(badManifest, "pages=2\nmissing-equals-sign\n");
+        boolean syntaxRejected = false;
+        try {
+            PdfQualityOracle.parseManifest(badManifest);
+        } catch (IllegalStateException ex) {
+            syntaxRejected = ex.getMessage() != null
+                    && ex.getMessage().contains("manifest_syntax");
+        }
+        require(syntaxRejected, "malformed-manifest-failed-open");
     }
 
     public static void main(String[] args) throws Exception {
