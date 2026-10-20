@@ -141,6 +141,16 @@ public final class PdfBoxProbe {
             corruptRejected = true;
         }
         require(corruptRejected, "corrupt-pdf-failed-open");
+        Path badManifest = workDir.resolve("synthetic-baseline.properties");
+        Files.writeString(badManifest, "pages=2\npages=2\n");
+        boolean duplicateRejected = false;
+        try {
+            PdfQualityOracle.parseManifest(badManifest);
+        } catch (IllegalStateException ex) {
+            duplicateRejected = ex.getMessage() != null
+                    && ex.getMessage().contains("manifest_duplicate_or_empty");
+        }
+        require(duplicateRejected, "duplicate-manifest-key-failed-open");
     }
 
     public static void main(String[] args) throws Exception {
