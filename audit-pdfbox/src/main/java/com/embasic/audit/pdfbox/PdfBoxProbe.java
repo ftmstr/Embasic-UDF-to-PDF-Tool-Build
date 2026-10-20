@@ -95,6 +95,17 @@ public final class PdfBoxProbe {
         }
     }
 
+    private static void expectOracleBlocked(Path pdf, Map<String, String> manifest,
+                                            String error) throws IOException {
+        boolean rejected = false;
+        try {
+            PdfQualityOracle.verify(pdf, manifest);
+        } catch (IllegalStateException ex) {
+            rejected = ex.getMessage() != null && ex.getMessage().contains(error);
+        }
+        require(rejected, "quality-oracle-failed-open-" + error);
+    }
+
     public static void main(String[] args) throws Exception {
         Path dir = Files.createTempDirectory("embasic-public-pdfbox-probe-");
         try {
