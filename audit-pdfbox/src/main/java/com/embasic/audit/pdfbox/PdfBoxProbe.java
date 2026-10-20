@@ -106,6 +106,14 @@ public final class PdfBoxProbe {
         require(rejected, "quality-oracle-failed-open-" + error);
     }
 
+    private static void verifyOracleRegressions(Path pdf) throws Exception {
+        Map<String, String> valid = PdfQualityOracle.observed(pdf);
+        require(PdfQualityOracle.verify(pdf, valid) == 2, "oracle-valid-baseline");
+        Map<String, String> changed = new HashMap<>(valid);
+        changed.put("page.1.text.sha256", "0".repeat(64));
+        expectOracleBlocked(pdf, changed, "text_hash_mismatch");
+    }
+
     public static void main(String[] args) throws Exception {
         Path dir = Files.createTempDirectory("embasic-public-pdfbox-probe-");
         try {
