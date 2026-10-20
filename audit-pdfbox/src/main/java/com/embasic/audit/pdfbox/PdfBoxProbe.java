@@ -112,6 +112,13 @@ public final class PdfBoxProbe {
         Map<String, String> changed = new HashMap<>(valid);
         changed.put("page.1.text.sha256", "0".repeat(64));
         expectOracleBlocked(pdf, changed, "text_hash_mismatch");
+        changed.put("page.1.text.sha256", "not-a-digest");
+        expectOracleBlocked(pdf, changed, "text_hash_invalid");
+        changed = new HashMap<>(valid);
+        changed.put("pages", "1");
+        expectOracleBlocked(pdf, changed, "page_count_mismatch");
+        changed.remove("page.2.text.sha256");
+        expectOracleBlocked(pdf, changed, "manifest_file_set");
     }
 
     public static void main(String[] args) throws Exception {
