@@ -106,7 +106,7 @@ public final class PdfBoxProbe {
         require(rejected, "quality-oracle-failed-open-" + error);
     }
 
-    private static void verifyOracleRegressions(Path pdf) throws Exception {
+    private static void verifyOracleRegressions(Path pdf, Path workDir) throws Exception {
         Map<String, String> valid = PdfQualityOracle.observed(pdf);
         require(PdfQualityOracle.verify(pdf, valid) == 2, "oracle-valid-baseline");
         Map<String, String> changed = new HashMap<>(valid);
@@ -144,7 +144,7 @@ public final class PdfBoxProbe {
             merger.mergeDocuments(IOUtils.createMemoryOnlyStreamCache());
             verify(result);
             require("2".equals(PdfQualityOracle.observed(result).get("pages")), "quality-oracle-read");
-            verifyOracleRegressions(result);
+            verifyOracleRegressions(result, dir);
             System.out.println("PDFBOX_3_0_8_SYNTHETIC: PASS pages=2 order=true image=true turkish-unicode=true");
         } finally {
             try (Stream<Path> all = Files.walk(dir)) {
