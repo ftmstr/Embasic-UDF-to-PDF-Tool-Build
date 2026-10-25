@@ -28,7 +28,7 @@ public final class MixedDocumentFlowTest {
     g.setColor(Color.WHITE);g.fillRect(0,0,596,842);
     ok(flow.pageable().getPrintable(0).print(g,flow.pageable().getPageFormat(0),0)==java.awt.print.Printable.PAGE_EXISTS,"printable");
   }finally{g.dispose();}
-  ok(image.getRGB(48,48)!=Color.WHITE.getRGB(),"content near top");
+  ok(image.getRGB(48,70)!=Color.WHITE.getRGB(),"table border after first paragraph");
   StringBuilder large=new StringBuilder("<syntheticDocument><paragraph>Giriş</paragraph><table widths='80,100'>");
   for(int i=0;i<40;i++)large.append("<row height='30'><cell colspan='2'>Satır ").append(i).append("</cell></row>");
   large.append("</table><paragraph>Bitiş</paragraph></syntheticDocument>");
