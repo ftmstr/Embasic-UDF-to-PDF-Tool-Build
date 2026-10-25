@@ -36,4 +36,5 @@ jobs:
           CP="audit/target/classes:$(cat "$RUNNER_TEMP/embasic-cp.txt")"
           java -Djava.awt.headless=true -cp "$CP" com.embasic.audit.fidelity.DocumentModelAdapterTest
           java -Djava.awt.headless=true -cp "$CP" com.embasic.audit.fidelity.SyntheticUdfLayoutTest
+          java -Djava.awt.headless=true -cp "$CP" com.embasic.audit.fidelity.UdfXmlModelAdapterTest
 # Contains only independent synthetic sources; not an authentic UDF fidelity certification.
