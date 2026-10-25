@@ -31,7 +31,7 @@ public final class TablePageRendererTest {
    for(int i=0;i<30;i++)many.add(new TableGeometry.Row(java.util.List.of(new TableGeometry.Cell(2,1,"Row "+i)),35));
    var paged=TablePageRenderer.synthetic(many,new float[]{90,130});
    ok(paged.getNumberOfPages()>1,"page splitting");
-   reject(()->TablePageRenderer.synthetic(java.util.List.of(new TableGeometry.Row(java.util.List.of(new TableGeometry.Cell(1,1,"TEXT LONGER THAN NARROW CELL")),20)),new float[]{8}));
+   reject(()->{ try { var narrow=TablePageRenderer.synthetic(java.util.List.of(new TableGeometry.Row(java.util.List.of(new TableGeometry.Cell(1,1,"TEXT LONGER THAN NARROW CELL")),20)),new float[]{8}); BufferedImage image=new BufferedImage(596,842,BufferedImage.TYPE_INT_RGB); Graphics2D paint=image.createGraphics(); try { narrow.getPrintable(0).print(paint,narrow.getPageFormat(0),0); } finally { paint.dispose(); } } catch(IllegalArgumentException e){ throw e; } catch(Exception e){ throw new IllegalStateException(e); } });
    Path pdf=Files.createTempFile("embasic-table-vector-", ".pdf");Files.delete(pdf);
    try{
      Path f=Path.of("/usr/share/fonts/truetype/dejavu");
