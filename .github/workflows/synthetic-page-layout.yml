@@ -38,4 +38,5 @@ jobs:
           java -Djava.awt.headless=true -cp "$CP" com.embasic.audit.fidelity.SyntheticUdfLayoutTest
           java -Djava.awt.headless=true -cp "$CP" com.embasic.audit.fidelity.UdfXmlModelAdapterTest
           java -Djava.awt.headless=true -cp "$CP" com.embasic.audit.fidelity.XmlToPageLayoutTest
+          java -Djava.awt.headless=true -cp "$CP" com.embasic.audit.fidelity.TableGeometryTest
 # Contains only independent synthetic sources; not an authentic UDF fidelity certification.
