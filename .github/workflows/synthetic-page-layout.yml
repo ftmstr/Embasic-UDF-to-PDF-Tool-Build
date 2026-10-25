@@ -40,4 +40,5 @@ jobs:
           java -Djava.awt.headless=true -cp "$CP" com.embasic.audit.fidelity.XmlToPageLayoutTest
           java -Djava.awt.headless=true -cp "$CP" com.embasic.audit.fidelity.TableGeometryTest
           java -Djava.awt.headless=true -cp "$CP" com.embasic.audit.fidelity.TablePageRendererTest
+          java -Djava.awt.headless=true -cp "$CP" com.embasic.audit.fidelity.SyntheticXmlTableBridgeTest
 # Contains only independent synthetic sources; not an authentic UDF fidelity certification.
