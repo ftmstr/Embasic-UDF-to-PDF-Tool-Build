@@ -1,0 +1,39 @@
+name: Synthetic Page Layout Proof
+on:
+  push:
+    branches: [main, "ci/**"]
+    paths:
+      - "audit/src/main/java/com/embasic/audit/fidelity/**"
+      - "audit/pom.xml"
+      - ".github/workflows/synthetic-page-layout.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  layout-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+          cache-dependency-path: audit/pom.xml
+      - name: Install open-source test fonts
+        run: sudo apt-get update -qq && sudo apt-get install -y fonts-dejavu-core
+      - name: Compile synthetic Java probes
+        run: mvn -B -ntp -f audit/pom.xml -Dmaven.compiler.release=17 clean package
+      - name: Resolve runtime classpath
+        run: mvn -B -ntp -f audit/pom.xml dependency:build-classpath -Dmdep.outputFile="$RUNNER_TEMP/embasic-cp.txt"
+      - name: Run synthetic tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          CP="audit/target/classes:$(cat "$RUNNER_TEMP/embasic-cp.txt")"
+          java -Djava.awt.headless=true -cp "$CP" com.embasic.audit.fidelity.DocumentModelAdapterTest
+          java -Djava.awt.headless=true -cp "$CP" com.embasic.audit.fidelity.SyntheticUdfLayoutTest
+# Contains only independent synthetic sources; not an authentic UDF fidelity certification.
