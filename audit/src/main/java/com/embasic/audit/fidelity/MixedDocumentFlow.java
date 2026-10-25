@@ -86,7 +86,7 @@ public final class MixedDocumentFlow {
           if(remaining<18){pages.add(new ArrayList<>());page++;y=TOP;remaining=BOTTOM-y;}
           int end=start;float total=0;
           while(end<rows.size()&&total+rows.get(end).height()<=remaining){total+=rows.get(end).height();end++;}
-          if(end==start){pages.add(new ArrayList<>());page++;y=TOP;continue;}
+          if(end==start){if(y==TOP)throw new IllegalArgumentException("Table row exceeds page");pages.add(new ArrayList<>());page++;y=TOP;continue;}
           // Do not split a spanning cell: push the spanning group to next page.
           boolean spans=false;
           for(int r=start;r<end;r++)for(var cell:rows.get(r).cells())if(r+cell.rowspan()>end)spans=true;
