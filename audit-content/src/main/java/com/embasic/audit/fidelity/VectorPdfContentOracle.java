@@ -109,7 +109,7 @@ public final class VectorPdfContentOracle {
       require(extracted.indexOf("Row0") >= 0, "first row extracted");
       require(extracted.indexOf("Row59") > extracted.indexOf("Row0"), "last row follows first");
       require(inspectGlyphPositions(pdf)>100, "multipage glyph positions");
-      require(containsEmbeddedFont(pdf), "embedded font in multi-page");
+      require(allFontsEmbedded(pdf), "embedded font in multi-page");
     } finally { Files.deleteIfExists(multipage); }
     System.out.println("PASS: " + checks + " independent PDFBox content checks");
   }
