@@ -44,4 +44,5 @@ jobs:
           java -Djava.awt.headless=true -cp "$CP" com.embasic.audit.fidelity.MixedDocumentFlowTest
           java -Djava.awt.headless=true -cp "$CP" com.embasic.audit.fidelity.UnifiedDocumentPipelineTest
           java -Djava.awt.headless=true -cp "$CP" com.embasic.audit.fidelity.UnifiedRobustnessTest
+          java -Djava.awt.headless=true -cp "$CP" com.embasic.audit.fidelity.VectorPdfContentOracle
 # Contains only independent synthetic sources; not an authentic UDF fidelity certification.
