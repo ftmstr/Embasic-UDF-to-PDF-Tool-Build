@@ -44,5 +44,9 @@ jobs:
           java -Djava.awt.headless=true -cp "$CP" com.embasic.audit.fidelity.MixedDocumentFlowTest
           java -Djava.awt.headless=true -cp "$CP" com.embasic.audit.fidelity.UnifiedDocumentPipelineTest
           java -Djava.awt.headless=true -cp "$CP" com.embasic.audit.fidelity.UnifiedRobustnessTest
-          java -Djava.awt.headless=true -cp "$CP" com.embasic.audit.fidelity.VectorPdfContentOracle
+      - name: Install legacy audit fixture classes for independent oracle
+        run: mvn -B -ntp -f audit/pom.xml -DskipTests install
+      - name: Compile and run separate PDFBox content oracle
+        run: mvn -B -ntp -f audit-content/pom.xml compile org.codehaus.mojo:exec-maven-plugin:3.5.1:java -Dexec.mainClass=com.embasic.audit.fidelity.VectorPdfContentOracle -Dexec.cleanupDaemonThreads=false -Djava.awt.headless=true
+
 # Contains only independent synthetic sources; not an authentic UDF fidelity certification.
