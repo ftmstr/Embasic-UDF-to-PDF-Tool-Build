@@ -5,6 +5,7 @@ on:
     paths:
       - "audit/src/main/java/com/embasic/audit/fidelity/**"
       - "audit/pom.xml"
+      - "audit-content/**"
       - ".github/workflows/synthetic-page-layout.yml"
   workflow_dispatch:
 permissions:
