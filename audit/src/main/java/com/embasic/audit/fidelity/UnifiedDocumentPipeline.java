@@ -3,6 +3,7 @@ import java.awt.*;
 import java.awt.font.FontRenderContext;
 import java.awt.geom.AffineTransform;
 import java.awt.print.Printable;
+import java.text.BreakIterator;
 import java.io.*;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
@@ -92,6 +93,23 @@ public final class UnifiedDocumentPipeline {
     return new Model(version,blocks);
   }
 
+  /** Iterate Unicode grapheme clusters without splitting surrogate pairs or combining marks. */
+  private static List<String> graphemeTokens(String text) {
+    List<String> tokens=new ArrayList<>();
+    BreakIterator it=BreakIterator.getCharacterInstance(Locale.ROOT);
+    it.setText(text);int start=it.first(),end;
+    while((end=it.next())!=BreakIterator.DONE){
+      String cluster=text.substring(start,end);
+      if(!tokens.isEmpty() && !cluster.equals("\\n") && !cluster.equals("\\t")
+         && !Character.isWhitespace(cluster.codePointAt(0))
+         && !Character.isWhitespace(tokens.get(tokens.size()-1).codePointAt(0))) {
+        int last=tokens.size()-1;
+        tokens.set(last,tokens.get(last)+cluster);
+      } else tokens.add(cluster);
+      start=end;
+    }
+    return tokens;
+  }
   private record DrawText(String text,float x,float y,UdfXmlModelAdapter.Style style){}
   private record DrawCell(TableGeometry.Placement cell){}
   public static Output render(Model model) {
@@ -106,7 +124,7 @@ public final class UnifiedDocumentPipeline {
           Font font=new Font(style.family(),style.bold()?Font.BOLD:Font.PLAIN,1).deriveFont(style.size());
           float advance=DocumentModelAdapter.lineHeight(font,FRC);
           line=Math.max(line,advance);
-          for(String token:run.text().split("(?<=\\s)|(?=\\s)",-1)){
+          for(String token:graphemeTokens(run.text())){
             if(token.isEmpty())continue;
             if(token.equals("\n")){x=LEFT;y+=line;line=advance;continue;}
             if(token.equals("\t")){x=LEFT+((float)Math.floor((x-LEFT)/36)+1)*36;continue;}
