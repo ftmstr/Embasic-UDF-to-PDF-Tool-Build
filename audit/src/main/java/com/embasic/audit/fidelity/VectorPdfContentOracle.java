@@ -9,6 +9,8 @@ import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDResources;
 import org.apache.pdfbox.pdmodel.font.PDFont;
+import org.apache.pdfbox.pdmodel.graphics.PDXObject;
+import org.apache.pdfbox.pdmodel.graphics.form.PDFormXObject;
 import org.apache.pdfbox.rendering.PDFRenderer;
 import org.apache.pdfbox.text.PDFTextStripper;
 
@@ -20,15 +22,23 @@ public final class VectorPdfContentOracle {
     if (!valid) throw new AssertionError(message);
     checks++;
   }
-  private static boolean containsEmbeddedFont(PDDocument pdf) throws Exception {
-    for (PDPage page : pdf.getPages()) {
-      PDResources resources = page.getResources();
-      if (resources == null) continue;
-      for (var name : resources.getFontNames()) {
-        PDFont font = resources.getFont(name);
-        if (font != null && font.isEmbedded()) return true;
-      }
+  private static boolean containsEmbeddedFont(PDResources resources, Set<PDResources> visited) throws Exception {
+    if (resources == null || !visited.add(resources)) return false;
+    for (var name : resources.getFontNames()) {
+      PDFont font = resources.getFont(name);
+      if (font != null && font.isEmbedded()) return true;
     }
+    for (var name : resources.getXObjectNames()) {
+      PDXObject object = resources.getXObject(name);
+      if (object instanceof PDFormXObject form &&
+          containsEmbeddedFont(form.getResources(), visited)) return true;
+    }
+    return false;
+  }
+  private static boolean containsEmbeddedFont(PDDocument pdf) throws Exception {
+    Set<PDResources> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+    for (PDPage page : pdf.getPages())
+      if (containsEmbeddedFont(page.getResources(), visited)) return true;
     return false;
   }
   private static Path save(PageLayoutProbe.PageLayout pages) throws Exception {
