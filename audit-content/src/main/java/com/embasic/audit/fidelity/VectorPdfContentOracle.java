@@ -121,6 +121,9 @@ public final class VectorPdfContentOracle {
       var vector=new VectorStrokeOracle(pdf.getPage(0));
       vector.processPage(pdf.getPage(0));
       require(!vector.strokes().isEmpty(), "PDF vector path stroke operators");
+      require(VectorStrokeOracle.hasRectangle(vector.strokes(),48,
+          PageLayoutProbe.HEIGHT-112,220,30,2.5),
+          "expected 220 x 30 table rectangle at PDF bottom-origin coordinates: "+vector.strokes());
     } finally { Files.deleteIfExists(file); }
 
     List<TableGeometry.Row> rows = new ArrayList<>();
