@@ -118,6 +118,9 @@ public final class VectorPdfContentOracle {
           if ((rendered.getRGB(xx, yy) & 0xffffff) != 0xffffff) dark++;
       require(dark > 100, "table and text must render nonwhite pixels");
       require(borderSamples(rendered,48,82,220,30)>=15, "synthetic table rectangular border coordinates");
+      var vector=new VectorStrokeOracle(pdf.getPage(0));
+      vector.processPage(pdf.getPage(0));
+      require(!vector.strokes().isEmpty(), "PDF vector path stroke operators");
     } finally { Files.deleteIfExists(file); }
 
     List<TableGeometry.Row> rows = new ArrayList<>();
@@ -129,6 +132,12 @@ public final class VectorPdfContentOracle {
       require(pdf.getNumberOfPages() > 1, "multiple pages");
       String extracted = new PDFTextStripper().getText(pdf);
       require(extracted.indexOf("Row0") >= 0, "first row extracted");
+      int cursor=-1;
+      for(int i=0;i<60;i++){
+        int at=extracted.indexOf("Row"+i);
+        require(at>=0&&at>cursor,"all 60 rows present in order: "+i);
+        cursor=at;
+      }
       require(extracted.indexOf("Row59") > extracted.indexOf("Row0"), "last row follows first");
       require(inspectGlyphPositions(pdf)>100, "multipage glyph positions");
       require(allFontsEmbedded(pdf), "embedded font in multi-page");
