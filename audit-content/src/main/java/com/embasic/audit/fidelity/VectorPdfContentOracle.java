@@ -64,6 +64,27 @@ public final class VectorPdfContentOracle {
     inspector.getText(pdf);
     return glyphs[0];
   }
+  /** Raster geometry sanity checks at exact 72-DPI PDF point scale (not a native oracle). */
+  private static boolean darkNear(BufferedImage image,int x,int y) {
+    for(int yy=Math.max(0,y-2);yy<=Math.min(image.getHeight()-1,y+2);yy++)
+      for(int xx=Math.max(0,x-2);xx<=Math.min(image.getWidth()-1,x+2);xx++) {
+        int rgb=image.getRGB(xx,yy)&0xffffff;
+        if(((rgb>>16)&255)<90 && ((rgb>>8)&255)<90 && (rgb&255)<90)return true;
+      }
+    return false;
+  }
+  private static int borderSamples(BufferedImage image,int x,int y,int width,int height){
+    int good=0;
+    for(int dx=10;dx<width-10;dx+=15) {
+      if(darkNear(image,x+dx,y))good++;
+      if(darkNear(image,x+dx,y+height))good++;
+    }
+    for(int dy=10;dy<height-5;dy+=10) {
+      if(darkNear(image,x,y+dy))good++;
+      if(darkNear(image,x+width,y+dy))good++;
+    }
+    return good;
+  }
   private static Path save(PageLayoutProbe.PageLayout pages) throws Exception {
     Path file = Files.createTempFile("embasic-oracle-", ".pdf");
     Files.delete(file);
@@ -96,6 +117,7 @@ public final class VectorPdfContentOracle {
         for (int xx = 40; xx < 290 && xx < rendered.getWidth(); xx++)
           if ((rendered.getRGB(xx, yy) & 0xffffff) != 0xffffff) dark++;
       require(dark > 100, "table and text must render nonwhite pixels");
+      require(borderSamples(rendered,48,82,220,30)>=15, "synthetic table rectangular border coordinates");
     } finally { Files.deleteIfExists(file); }
 
     List<TableGeometry.Row> rows = new ArrayList<>();
