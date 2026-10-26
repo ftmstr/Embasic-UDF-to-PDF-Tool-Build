@@ -27,6 +27,12 @@
           <shadedArtifactAttached>true</shadedArtifactAttached>
           <shadedClassifierName>audit-all</shadedClassifierName>
           <createDependencyReducedPom>false</createDependencyReducedPom>
+          <filters>
+            <filter>
+              <artifact>com.embasic.audit:upstream-pdf-library-inspection-only</artifact>
+              <excludes><exclude>com/embasic/audit/fidelity/**</exclude></excludes>
+            </filter>
+          </filters>
         </configuration>
       </execution></executions>
     </plugin>
