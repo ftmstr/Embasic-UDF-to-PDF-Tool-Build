@@ -13,6 +13,7 @@ import org.apache.pdfbox.pdmodel.graphics.PDXObject;
 import org.apache.pdfbox.pdmodel.graphics.form.PDFormXObject;
 import org.apache.pdfbox.rendering.PDFRenderer;
 import org.apache.pdfbox.text.PDFTextStripper;
+import org.apache.pdfbox.text.TextPosition;
 
 /** Independent PDFBox inspection of generated, fictional Java2D vector PDFs only. */
 public final class VectorPdfContentOracle {
@@ -22,24 +23,46 @@ public final class VectorPdfContentOracle {
     if (!valid) throw new AssertionError(message);
     checks++;
   }
-  private static boolean containsEmbeddedFont(PDResources resources, Set<PDResources> visited) throws Exception {
-    if (resources == null || !visited.add(resources)) return false;
+  private static int[] countFonts(PDResources resources, Set<PDResources> visited) throws Exception {
+    if (resources == null || !visited.add(resources)) return new int[]{0,0};
+    int total=0,embedded=0;
     for (var name : resources.getFontNames()) {
       PDFont font = resources.getFont(name);
-      if (font != null && font.isEmbedded()) return true;
+      if (font != null) { total++; if (font.isEmbedded()) embedded++; }
     }
     for (var name : resources.getXObjectNames()) {
       PDXObject object = resources.getXObject(name);
-      if (object instanceof PDFormXObject form &&
-          containsEmbeddedFont(form.getResources(), visited)) return true;
+      if (object instanceof PDFormXObject form) {
+        int[] nested=countFonts(form.getResources(),visited);
+        total+=nested[0]; embedded+=nested[1];
+      }
     }
-    return false;
+    return new int[]{total,embedded};
   }
-  private static boolean containsEmbeddedFont(PDDocument pdf) throws Exception {
+  private static boolean allFontsEmbedded(PDDocument pdf) throws Exception {
     Set<PDResources> visited = Collections.newSetFromMap(new IdentityHashMap<>());
-    for (PDPage page : pdf.getPages())
-      if (containsEmbeddedFont(page.getResources(), visited)) return true;
-    return false;
+    int count=0, embedded=0;
+    for (PDPage page : pdf.getPages()) {
+      int[] value=countFonts(page.getResources(),visited);
+      count+=value[0];embedded+=value[1];
+    }
+    return count>0 && count==embedded;
+  }
+  /** PDF coordinates: glyph positions must be finite and inside their A4 page. */
+  private static int inspectGlyphPositions(PDDocument pdf) throws Exception {
+    final int[] glyphs={0};
+    PDFTextStripper inspector=new PDFTextStripper(){
+      @Override protected void processTextPosition(TextPosition text) {
+        float x=text.getXDirAdj(),y=text.getYDirAdj();
+        if (!Float.isFinite(x)||!Float.isFinite(y)||x<0||y<0
+            ||x>PageLayoutProbe.WIDTH+2||y>PageLayoutProbe.HEIGHT+2)
+          throw new IllegalStateException("Out-of-page glyph coordinate");
+        glyphs[0]++;
+        super.processTextPosition(text);
+      }
+    };
+    inspector.getText(pdf);
+    return glyphs[0];
   }
   private static Path save(PageLayoutProbe.PageLayout pages) throws Exception {
     Path file = Files.createTempFile("embasic-oracle-", ".pdf");
@@ -62,8 +85,10 @@ public final class VectorPdfContentOracle {
       require(pdf.getNumberOfPages() == 1, "single page");
       String text = new PDFTextStripper().getText(pdf);
       require(text.contains("İzmir"), "Turkish word extraction");
+      require(text.contains("ğüşöçı"), "Turkish diacritic extraction");
+      require(inspectGlyphPositions(pdf)>5, "glyph coordinates valid");
       require(text.contains("TABLO"), "table text extraction");
-      require(containsEmbeddedFont(pdf), "embedded font");
+      require(allFontsEmbedded(pdf), "embedded font");
       BufferedImage rendered = new PDFRenderer(pdf).renderImageWithDPI(0, 72);
       require(rendered.getWidth() > 590 && rendered.getHeight() > 830, "A4 dimensions");
       int dark = 0;
@@ -83,6 +108,7 @@ public final class VectorPdfContentOracle {
       String extracted = new PDFTextStripper().getText(pdf);
       require(extracted.indexOf("Row0") >= 0, "first row extracted");
       require(extracted.indexOf("Row59") > extracted.indexOf("Row0"), "last row follows first");
+      require(inspectGlyphPositions(pdf)>100, "multipage glyph positions");
       require(containsEmbeddedFont(pdf), "embedded font in multi-page");
     } finally { Files.deleteIfExists(multipage); }
     System.out.println("PASS: " + checks + " independent PDFBox content checks");
