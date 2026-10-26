@@ -43,4 +43,5 @@ jobs:
           java -Djava.awt.headless=true -cp "$CP" com.embasic.audit.fidelity.SyntheticXmlTableBridgeTest
           java -Djava.awt.headless=true -cp "$CP" com.embasic.audit.fidelity.MixedDocumentFlowTest
           java -Djava.awt.headless=true -cp "$CP" com.embasic.audit.fidelity.UnifiedDocumentPipelineTest
+          java -Djava.awt.headless=true -cp "$CP" com.embasic.audit.fidelity.UnifiedRobustnessTest
 # Contains only independent synthetic sources; not an authentic UDF fidelity certification.
