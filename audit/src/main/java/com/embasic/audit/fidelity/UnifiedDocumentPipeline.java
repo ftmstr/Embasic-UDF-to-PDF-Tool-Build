@@ -126,8 +126,8 @@ public final class UnifiedDocumentPipeline {
           line=Math.max(line,advance);
           for(String token:graphemeTokens(run.text())){
             if(token.isEmpty())continue;
-            if(token.equals("\n")){x=LEFT;y+=line;line=advance;continue;}
-            if(token.equals("\t")){x=LEFT+((float)Math.floor((x-LEFT)/36)+1)*36;continue;}
+            if(token.equals("\n")){x=LEFT;y+=line;line=advance;if(y>BOTTOM){pages.add(new ArrayList<>());page++;y=TOP+12;}continue;}
+            if(token.equals("\t")){x=LEFT+((float)Math.floor((x-LEFT)/36)+1)*36;if(x>RIGHT){x=LEFT;y+=line;}if(y>BOTTOM){pages.add(new ArrayList<>());page++;y=TOP+12;}continue;}
             float width=(float)font.getStringBounds(token,FRC).getWidth();
             if(width>RIGHT-LEFT)throw new IllegalArgumentException("Unbreakable text");
             if(x+width>RIGHT){x=LEFT;y+=line;line=advance;}
