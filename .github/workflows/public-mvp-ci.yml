@@ -48,4 +48,17 @@ jobs:
       - name: CLI synthetic UDF to PDF smoke
         run: python app/scripts/smoke_cli.py app/target/embasic-public-desktop-0.1.0-SNAPSHOT-all.jar
 
+
+      - name: Build portable Windows app-image (CI validation only)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          & jpackage --type app-image --name EmbasicUdfToPdfPublicMVP --app-version 0.1.0 --input app/target --main-jar embasic-public-desktop-0.1.0-SNAPSHOT-all.jar --main-class com.embasic.publicapp.DesktopApp --dest app/target/win-image
+          if ($LASTEXITCODE -ne 0) { throw "Windows app-image packaging failed" }
+          $launcher = "app/target/win-image/EmbasicUdfToPdfPublicMVP/EmbasicUdfToPdfPublicMVP.exe"
+          if (-not (Test-Path -LiteralPath $launcher)) { throw "Packaged launcher not found" }
+          & python app/scripts/smoke_packaged.py $launcher
+          if ($LASTEXITCODE -ne 0) { throw "Packaged launcher conversion failed" }
+
 # Does not publish executable artifacts or bypass source/license/rights release gates.
