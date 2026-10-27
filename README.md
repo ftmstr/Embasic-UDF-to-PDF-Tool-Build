@@ -1,42 +1,46 @@
-# Embasic UDF to PDF Tool — Public Build Workspace
+# Embasic UDF to PDF — Public-only Development
 
-This repository is the **clean-history, public CI workspace** for the Windows Java 17 / Swing / Maven Embasic UDF to PDF Tool project.
+**As of 2026-10-27, this Public repository is the only active development destination.** The historical Private repository is no longer a source of truth, build dependency, or source-transfer target. Do not copy, reference, or publish its contents, history, artifacts, or genuine UYAP documents here.
 
-## Current state
+## What is working in source
 
-**Bootstrap only — application sources have NOT been copied.** No production-ready JAR, ZIP, Windows executable, installer, or UDF compatibility certification is available here.
+- `app/`: **new, independently authored Java 17 Swing / PDFBox 3.0.8 desktop MVP**. Opens a thumbnail workspace, adds multiple files from a dialog or Explorer drop, reorders selected file cards, supports basic light/dark colors, and saves a PDF in item order. File reading and previews happen off the Swing UI thread.
+- Safe `.udf` ZIP scanning and fail-closed `content.xml` parser: limited `template` / `format_id` / `content` / `elements` / `paragraph` XML subset with UTF-16 offsets and named basic styles. Unsupported tables, images, headers, signatures, exotic fonts, or unknown versions **fail with an explicit error**; no silent omission.
+- PDFBox Unicode-font-backed A4 PDF output, same-directory temporary staging, PDF re-open validation, overwrite confirmation/guard, ordered multiple documents.
+- `.github/workflows/public-mvp-ci.yml`: compile/JUnit/CLI-smoke on Ubuntu and Windows. **No binary publishing**.
 
-The original private repository is authoritative. It must remain private and retain its history and development branches. Never mirror, fork, cherry-pick historical commits, or publish its original CI logs or artifacts into this workspace.
+This is **not** a verified UYAP-equivalent converter. No authentic UDF fixtures are stored or used here.
 
-## Publication gates
+## Build and run locally
 
-Before importing any application source, require an independently reviewed, zero-history snapshot and documented approvals for:
-
-1. Ownership/publication terms for original project source code.
-2. iText 2.1.7 MPL 1.1 / LGPL alternative, actual shaded-JAR compliance and third-party notices, including Bouncy Castle transitive packages.
-3. Logo and icon origin, metadata, and public redistribution rights.
-4. Complete source-tree private-identity, credential, UYAP document and binary scan; immutable snapshot checksums.
-5. Human review of the exact bytes to be transferred. Keep private approval manifests and identity dictionaries **outside** this public repository.
-
-**Fail closed** when any gate is incomplete. In particular, do not upload personal or authentic UYAP files, private documentation, security scans containing private data, credentials, private signing keys, historic Git data, CI logs, or previous build artifacts.
-
-## Planned CI
-
-The CI design uses GitHub-hosted `windows-latest`, minimum `contents: read` token access, and zero secrets on pull requests. A source-free runner probe may run at bootstrap; it is **not** an application build. Application compilation, regression tests, synthetic UDF smoke, and packaging are enabled only when the source snapshot and its approval gate are present.
-
-Once reviewed source is imported:
+Requires Maven and Java 17 or newer. A suitable font must be installed on the local PC (Windows Arial/Segoe UI or Linux DejaVu Sans). Font files are not distributed here.
 
 ```powershell
-mvn -B -ntp clean verify
-pwsh -NoProfile -File scripts/verify-explorer-grid.ps1
-pwsh -NoProfile -File scripts/verify-udf-parser.ps1
-mvn -B -ntp -DskipTests package
+mvn -B -ntp -f app/pom.xml clean verify
+java -jar app/target/embasic-public-desktop-0.1.0-SNAPSHOT-all.jar
 ```
 
-The scripts above belong to the approved application snapshot and are not present during bootstrap. Windows packaging requires JDK 17+ with `jpackage`. Binary artifacts and SHA-256 checks are permitted **only after separate redistribution approval**. Releases remain disabled.
+Command-line smoke mode:
 
-See [BUILD-GATES.md](docs/BUILD-GATES.md) when available.
+```powershell
+java -jar app/target/embasic-public-desktop-0.1.0-SNAPSHOT-all.jar --merge output.pdf one.udf two.udf
+```
 
-## Security
+This initial app supports a **very limited UDF subset**. Its presence in GitHub does **not** mean a released Windows executable exists.
 
-Submit synthetic test data only. Never attach real case files, signing material, sensitive names, identifiers, or private reports to public issues or pull requests.
+## Other directories and release controls
+
+- `audit/`, `audit-content/`, `audit-pdfbox/`, `audit-openpdf/`: isolated synthetic fidelity, font, drawing geometry and PDF content tests. **Not** the active executable app.
+- `docs/BUILD-GATES.md` and `.github/workflows/windows-ci.yml`: earlier import/release approval controls retained intact. They intentionally do not approve or publish the new binary.
+- Publication of a downloadable Windows package will require public-only application acceptance tests, review of Apache PDFBox and transitive dependency notices/licenses, approval of exact release bytes/checksums, and a verified Windows launcher smoke. No proprietary resources or OS fonts may be redistributed without authorization.
+- No automatic release, Git tag, installer, or ZIP is being asserted.
+
+## Immediate product priorities
+
+1. Windows CI for the new Public app; fix any build or UDF parsing failures.
+2. Add and validate UDF table/image/page-layout subsets with rights-clean synthetic fixtures; do not silently accept unsupported elements.
+3. Add more faithful document preview/reordering/selection; harden output rollback and logging.
+4. Verify Windows portable app-image and redistribution notices **before** enabling artifact publishing.
+5. Conduct strictly offline accuracy comparison against owner-authorized UYAP-native PDFs; never upload case files to Public GitHub.
+
+**License note:** The new code is original in this Public repo; the presence of code does not grant blanket redistribution permission for third-party fonts, logos, legacy Private code or previously bundled libraries. Binary release authorization remains a separate decision.
