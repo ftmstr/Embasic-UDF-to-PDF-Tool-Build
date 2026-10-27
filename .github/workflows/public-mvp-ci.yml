@@ -54,9 +54,14 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
-          & jpackage --type app-image --name EmbasicUdfToPdfPublicMVP --app-version 0.1.0 --input app/target --main-jar embasic-public-desktop-0.1.0-SNAPSHOT-all.jar --main-class com.embasic.publicapp.DesktopApp --dest app/target/win-image
+          $packageInput = Join-Path $env:RUNNER_TEMP "embasic-mvp-input"
+          $packageOutput = Join-Path $env:RUNNER_TEMP "embasic-mvp-output"
+          New-Item -ItemType Directory -Force -Path $packageInput | Out-Null
+          New-Item -ItemType Directory -Force -Path $packageOutput | Out-Null
+          Copy-Item -LiteralPath "app/target/embasic-public-desktop-0.1.0-SNAPSHOT-all.jar" -Destination $packageInput
+          & jpackage --type app-image --name EmbasicUdfToPdfPublicMVP --app-version 0.1.0 --input $packageInput --main-jar embasic-public-desktop-0.1.0-SNAPSHOT-all.jar --main-class com.embasic.publicapp.DesktopApp --dest $packageOutput
           if ($LASTEXITCODE -ne 0) { throw "Windows app-image packaging failed" }
-          $launcher = "app/target/win-image/EmbasicUdfToPdfPublicMVP/EmbasicUdfToPdfPublicMVP.exe"
+          $launcher = Join-Path $packageOutput "EmbasicUdfToPdfPublicMVP/EmbasicUdfToPdfPublicMVP.exe"
           if (-not (Test-Path -LiteralPath $launcher)) { throw "Packaged launcher not found" }
           & python app/scripts/smoke_packaged.py $launcher
           if ($LASTEXITCODE -ne 0) { throw "Packaged launcher conversion failed" }
