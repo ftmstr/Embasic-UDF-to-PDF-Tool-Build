@@ -124,6 +124,12 @@ public final class VectorPdfContentOracle {
       require(VectorStrokeOracle.hasRectangle(vector.strokes(),48,
           PageLayoutProbe.HEIGHT-112,220,30,2.5),
           "expected 220 x 30 table rectangle at PDF bottom-origin coordinates: "+vector.strokes());
+      require(!VectorStrokeOracle.hasRectangle(vector.strokes(),48,
+          PageLayoutProbe.HEIGHT-112,200,30,2.5),
+          "must reject incorrect 200 pt table width");
+      require(!VectorStrokeOracle.hasRectangle(vector.strokes(),63,
+          PageLayoutProbe.HEIGHT-112,220,30,2.5),
+          "must reject shifted 15 pt table coordinate");
     } finally { Files.deleteIfExists(file); }
 
     List<TableGeometry.Row> rows = new ArrayList<>();
