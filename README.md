@@ -44,3 +44,17 @@ This initial app supports a **very limited UDF subset**. Its presence in GitHub 
 5. Conduct strictly offline accuracy comparison against owner-authorized UYAP-native PDFs; never upload case files to Public GitHub.
 
 **License note:** The new code is original in this Public repo; the presence of code does not grant blanket redistribution permission for third-party fonts, logos, legacy Private code or previously bundled libraries. Binary release authorization remains a separate decision.
+
+## Public MVP — PowerShell release dashboard (2026-10-28)
+
+Run the **color PowerShell roadmap** directly in the Public checkout:
+
+```powershell
+pwsh -NoProfile -File app/scripts/Show-EmbasicProgress.ps1
+pwsh -NoProfile -File app/scripts/Show-EmbasicProgress.ps1 -Offline
+pwsh -NoProfile -File app/scripts/Show-EmbasicProgress.ps1 -Offline -AsJson
+```
+
+The dashboard reports a manually weighted release-readiness estimate (**42.7% at the 2026-10-28 review**), milestone evidence and GitHub Actions status. The forecast is **conditional and low confidence**: an early Public beta in about 3–6 weeks; a broader final candidate in approximately 10–18 weeks *only if* owner-authorized test fixtures, redistribution rights and UYAP visual fidelity work are resolved. These dates are **not a promise** and all-UDF-version parity is not certified. The dashboard source and JSON schema run through the Windows CI job.
+
+**Safety fixes:** PDFBox wrapped large-font lines now retain their proper line height; unknown page properties are rejected rather than quietly rendered on A4. The older source-publication, license and binary-release approval gates remain closed.
