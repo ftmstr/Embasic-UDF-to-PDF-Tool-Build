@@ -104,7 +104,11 @@ public final class UdfReader {
                 case "content" -> { if (content != null) throw new IllegalArgumentException("Çift content"); content = e; }
                 case "elements" -> { if (body != null) throw new IllegalArgumentException("Çift elements"); body = e; }
                 case "styles" -> { if (styles != null) throw new IllegalArgumentException("Çift styles"); styles = e; }
-                case "properties" -> { /* No layout assertion: this MVP renders A4 only. */ }
+                case "properties" -> {
+                    // Reject silently discarded page size/margin or layout metadata.
+                    if (e.hasAttributes() || !children(e).isEmpty() || !e.getTextContent().isBlank())
+                        throw new IllegalArgumentException("Bu MVP özel sayfa özelliklerini henüz desteklemiyor");
+                }
                 default -> throw new IllegalArgumentException("Desteklenmeyen XML bileşeni: " + e.getTagName());
             }
         }
