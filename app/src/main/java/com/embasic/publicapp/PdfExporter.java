@@ -158,8 +158,10 @@ public final class PdfExporter {
             float length = width(text, font, size);
             if (length > RIGHT - LEFT)
                 throw new IllegalArgumentException("Sayfaya sığmayan kelime: " + text.substring(0, Math.min(30, text.length())));
-            lineHeight = Math.max(lineHeight, size * 1.4f);
+            // Recompute the *new* line's height after wrapping; otherwise a
+            // large-font run can overlap the following text after newLine() resets it.
             if (x + length > RIGHT) newLine();
+            lineHeight = Math.max(lineHeight, size * 1.4f);
             stream.beginText();
             stream.setFont(font, size);
             Color color = style.color();
