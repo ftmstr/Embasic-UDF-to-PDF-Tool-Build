@@ -49,6 +49,26 @@ jobs:
         run: python app/scripts/smoke_cli.py app/target/embasic-public-desktop-0.1.0-SNAPSHOT-all.jar
 
 
+      - name: Validate colorful PowerShell dashboard, JSON score and forecast
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $raw = & pwsh -NoProfile -File app/scripts/Show-EmbasicProgress.ps1 -Offline -AsJson
+          if ($LASTEXITCODE -ne 0) { throw "PowerShell dashboard failed" }
+          $dashboard = $raw | ConvertFrom-Json
+          if ($dashboard.SchemaVersion -ne 1 -or $dashboard.ProgressPercent -lt 0 -or $dashboard.ProgressPercent -gt 100) {
+            throw "Dashboard score invalid"
+          }
+          if ((($dashboard.Milestones | Measure-Object -Property Weight -Sum).Sum) -ne 100) {
+            throw "Dashboard weights invalid"
+          }
+          if ([DateTime]$dashboard.Forecast.FinalEarliest -ge [DateTime]$dashboard.Forecast.FinalLatest) {
+            throw "Invalid final release forecast window"
+          }
+          & pwsh -NoProfile -File app/scripts/Show-EmbasicProgress.ps1 -Offline
+          if ($LASTEXITCODE -ne 0) { throw "Color dashboard display failed" }
+
       - name: Build portable Windows app-image (CI validation only)
         if: runner.os == 'Windows'
         shell: pwsh
