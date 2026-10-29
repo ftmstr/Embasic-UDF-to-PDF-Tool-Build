@@ -147,4 +147,27 @@ final class StructuredUdfRegressionTest {
         String nested="<table widths='100'><row height='30'><cell><paragraph/></cell></row></table>";
         assertThrows(IllegalArgumentException.class,()->parse(container(nested,"")));
     }
+    @Test void syntheticXmlMetadataAndMalformedBoldFailClosed() throws Exception {
+        String plain = "<template format_id='1.0'><content>ABC</content>"
+                + "<elements><paragraph><content startOffset='0' length='3'/>"
+                + "</paragraph></elements></template>";
+        for (String invalid : List.of(
+                plain.replace("format_id='1.0'", "format_id='1.0' pageMode='unknown'"),
+                plain.replace("<content>ABC</content>", "<content hidden='true'>ABC</content>"),
+                plain.replace("<elements>", "<elements reverse='true'>"),
+                plain.replace("<paragraph>", "<paragraph pageBreak='true'>"),
+                plain.replace("length='3'", "length='3' letterSpacing='4'"),
+                plain.replace("<content>ABC</content>", "<content><span>ABC</span></content>"),
+                plain.replace("length='3'", "length='3' bold='maybe'"),
+                plain.replace("<elements>", "<styles><style name='strong' bold='maybe'/></styles><elements>"),
+                plain.replace("<elements>", "<styles><style name='strong' unsupported='1'/></styles><elements>")
+        )) {
+            assertThrows(IllegalArgumentException.class, () -> parse(invalid), invalid);
+        }
+        String valid = plain.replace("<elements>",
+                "<styles><style name='strong' bold='true'/></styles><elements>")
+                .replace("length='3'", "length='3' resolver='strong'");
+        assertTrue(parse(valid).paragraphs().get(0).runs().get(0).style().bold());
+    }
+
 }
