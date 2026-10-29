@@ -37,6 +37,9 @@ import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
+import javax.swing.JSlider;
+import javax.swing.Timer;
+import javax.swing.Icon;
 import javax.swing.KeyStroke;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
@@ -46,7 +49,7 @@ import javax.swing.filechooser.FileNameExtensionFilter;
 
 /** Public-only Swing preview MVP. Native UYAP output parity and all UDF versions are NOT claimed. */
 public final class DesktopApp extends JFrame {
-    private static final int CARD_WIDTH = 188, CARD_HEIGHT = 238;
+    private static final int PREVIEW_WIDTH = 244, PREVIEW_HEIGHT = 322;
     private final List<Item> items = new ArrayList<>();
     private final LinkedHashSet<Item> selected = new LinkedHashSet<>();
     private final ThreadPoolExecutor previews = new ThreadPoolExecutor(2, 2, 0L,
@@ -59,6 +62,11 @@ public final class DesktopApp extends JFrame {
     private final JLabel status = new JLabel("Dosyaları çalışma alanına bırakın veya + kartına basın");
     private final JButton saveButton = new JButton("PDF olarak kaydet");
     private final JButton themeButton = new JButton("Aydınlık tema");
+    private final JSlider thumbnailZoom = new JSlider(ThumbnailSizing.MIN_WIDTH,
+            ThumbnailSizing.MAX_WIDTH, ThumbnailSizing.DEFAULT_WIDTH);
+    private final JLabel zoomLabel = new JLabel();
+    private final Timer zoomRefresh = new Timer(90, e -> rebuild());
+    private final Timer previewRefresh = new Timer(110, e -> { rebuild(); updateFileStatus(); });
     private boolean dark = true, converting;
     private Item anchor;
     private Item focused;
@@ -92,6 +100,18 @@ public final class DesktopApp extends JFrame {
         actions.add(addButton);
         themeButton.addActionListener(e -> { dark = !dark; themeButton.setText(dark ? "Aydınlık tema" : "Karanlık tema"); rebuild(); });
         actions.add(themeButton);
+        thumbnailZoom.setPreferredSize(new Dimension(118, 26));
+        thumbnailZoom.setToolTipText("Dosya kartlarının boyutunu değiştir (Ctrl + fare tekerleği)");
+        zoomLabel.setToolTipText("Kart boyutu");
+        updateZoomLabel();
+        zoomRefresh.setRepeats(false);
+        previewRefresh.setRepeats(false);
+        thumbnailZoom.addChangeListener(e -> {
+            updateZoomLabel();
+            zoomRefresh.restart(); // Collapse a fast slider drag into a single grid rebuild.
+        });
+        actions.add(zoomLabel);
+        actions.add(thumbnailZoom);
         saveButton.addActionListener(e -> save());
         actions.add(saveButton);
         top.add(actions, BorderLayout.EAST);
@@ -101,9 +121,17 @@ public final class DesktopApp extends JFrame {
         scroll.getVerticalScrollBar().setUnitIncrement(20);
         scroll.setBorder(BorderFactory.createEmptyBorder(0, 20, 0, 20));
         add(scroll, BorderLayout.CENTER);
+        scroll.addMouseWheelListener(e -> {
+            if (e.isControlDown()) {
+                int steps = -e.getWheelRotation();
+                if (steps != 0) thumbnailZoom.setValue(
+                        ThumbnailSizing.zoomBy(thumbnailZoom.getValue(), steps));
+                e.consume();
+            }
+        });
         scroll.getViewport().addChangeListener(e -> {
             int width = scroll.getViewport().getWidth();
-            int cols = Math.max(1, width / (CARD_WIDTH + 17));
+            int cols = ThumbnailSizing.columns(width, thumbnailZoom.getValue());
             if (cols != lastColumns) { lastColumns = cols; rebuild(); }
         });
 
@@ -146,6 +174,16 @@ public final class DesktopApp extends JFrame {
         var input = getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
         var action = getRootPane().getActionMap();
         input.put(KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.CTRL_DOWN_MASK), "selectAll");
+        bindZoomShortcut(KeyEvent.VK_EQUALS, 1);
+        bindZoomShortcut(KeyEvent.VK_ADD, 1);
+        bindZoomShortcut(KeyEvent.VK_MINUS, -1);
+        bindZoomShortcut(KeyEvent.VK_SUBTRACT, -1);
+        input.put(KeyStroke.getKeyStroke(KeyEvent.VK_0, InputEvent.CTRL_DOWN_MASK), "resetZoom");
+        action.put("resetZoom", new javax.swing.AbstractAction() {
+            @Override public void actionPerformed(java.awt.event.ActionEvent e) {
+                thumbnailZoom.setValue(ThumbnailSizing.DEFAULT_WIDTH);
+            }
+        });
         action.put("selectAll", new javax.swing.AbstractAction() {
             @Override public void actionPerformed(java.awt.event.ActionEvent e) { selected.addAll(items); rebuild(); }
         });
@@ -169,6 +207,19 @@ public final class DesktopApp extends JFrame {
         rebuild();
     }
 
+    private void updateZoomLabel() {
+        zoomLabel.setText("Kart " + thumbnailZoom.getValue() + " px");
+    }
+    private void bindZoomShortcut(int key, int direction) {
+        String actionName="thumbnailZoom." + key;
+        getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(
+                KeyStroke.getKeyStroke(key, InputEvent.CTRL_DOWN_MASK), actionName);
+        getRootPane().getActionMap().put(actionName, new javax.swing.AbstractAction() {
+            @Override public void actionPerformed(java.awt.event.ActionEvent e) {
+                thumbnailZoom.setValue(ThumbnailSizing.zoomBy(thumbnailZoom.getValue(), direction));
+            }
+        });
+    }
     private void bindArrow(int key, int amount) {
         bindArrow(key, amount, false);
     }
@@ -229,31 +280,31 @@ public final class DesktopApp extends JFrame {
                         if (item.cancelled) return;
                         BufferedImage image = PdfExporter.firstPage(parsed);
                         if (item.cancelled) return;
-                        BufferedImage thumb = new BufferedImage(146, 194, BufferedImage.TYPE_INT_RGB);
+                        BufferedImage thumb = new BufferedImage(PREVIEW_WIDTH, PREVIEW_HEIGHT, BufferedImage.TYPE_INT_RGB);
                         Graphics2D g = thumb.createGraphics();
                         try {
-                            g.setColor(Color.WHITE); g.fillRect(0,0,146,194);
+                            g.setColor(Color.WHITE); g.fillRect(0,0,PREVIEW_WIDTH,PREVIEW_HEIGHT);
                             g.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
                                     RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-                            double ratio=Math.min(146.0/image.getWidth(),194.0/image.getHeight());
+                            double ratio=Math.min((double)PREVIEW_WIDTH/image.getWidth(),
+                                    (double)PREVIEW_HEIGHT/image.getHeight());
                             int width=Math.max(1,(int)Math.round(image.getWidth()*ratio));
                             int height=Math.max(1,(int)Math.round(image.getHeight()*ratio));
-                            g.drawImage(image,(146-width)/2,(194-height)/2,width,height,null);
+                            g.drawImage(image,(PREVIEW_WIDTH-width)/2,
+                                    (PREVIEW_HEIGHT-height)/2,width,height,null);
                         } finally { g.dispose(); }
                         SwingUtilities.invokeLater(() -> {
                             if (item.cancelled || !items.contains(item)) return;
                             item.document = parsed;
                             item.thumbnail = new ImageIcon(thumb);
                             item.info = "Hazır";
-                            rebuild();
-                            updateFileStatus();
+                            previewRefresh.restart();
                         });
                     } catch (Exception ex) {
                         SwingUtilities.invokeLater(() -> {
                             if (item.cancelled || !items.contains(item)) return;
                             item.info = "Desteklenmiyor: " + friendly(ex);
-                            rebuild();
-                            updateFileStatus();
+                            previewRefresh.restart();
                         });
                     }
                 });
@@ -291,14 +342,16 @@ public final class DesktopApp extends JFrame {
 
     private JPanel card(Item item) {
         JPanel card = new JPanel(new BorderLayout(3, 5));
-        card.setPreferredSize(new Dimension(CARD_WIDTH, CARD_HEIGHT));
+        ThumbnailSizing.Size size=ThumbnailSizing.at(thumbnailZoom.getValue());
+        card.setPreferredSize(new Dimension(size.cardWidth(), size.cardHeight()));
         card.setBackground(cardColor());
         card.setBorder(BorderFactory.createCompoundBorder(
             BorderFactory.createLineBorder(selected.contains(item) || focused == item ? accent() : cardColor(),
                 selected.contains(item) ? 2 : 1, true),
             BorderFactory.createEmptyBorder(8, 7, 8, 7)));
-        JLabel preview = new JLabel(item.thumbnail == null ? "UDF" : "", item.thumbnail, SwingConstants.CENTER);
-        preview.setPreferredSize(new Dimension(154, 190));
+        JLabel preview = new JLabel(item.thumbnail == null ? "UDF" : "",
+                thumbnailIcon(item, size), SwingConstants.CENTER);
+        preview.setPreferredSize(new Dimension(size.imageWidth(), size.imageHeight()));
         preview.setForeground(foreground());
         card.add(preview, BorderLayout.CENTER);
         JPanel labels = new JPanel(new BorderLayout());
@@ -362,11 +415,33 @@ public final class DesktopApp extends JFrame {
         if (component instanceof java.awt.Container container)
             for (Component child : container.getComponents()) attachMouse(child, mouse);
     }
+    private Icon thumbnailIcon(Item item, ThumbnailSizing.Size size) {
+        if (item.thumbnail == null) return null;
+        // Paint scaled from an already-decoded thumbnail; never re-open UDF on slider changes.
+        Image image = item.thumbnail.getImage();
+        return new Icon() {
+            @Override public int getIconWidth() { return size.imageWidth(); }
+            @Override public int getIconHeight() { return size.imageHeight(); }
+            @Override public void paintIcon(Component component, java.awt.Graphics graphics, int x, int y) {
+                Graphics2D draw=(Graphics2D)graphics.create();
+                try {
+                    draw.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
+                            RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+                    double fit=Math.min((double)getIconWidth()/image.getWidth(null),
+                            (double)getIconHeight()/image.getHeight(null));
+                    int w=Math.max(1,(int)Math.round(image.getWidth(null)*fit));
+                    int h=Math.max(1,(int)Math.round(image.getHeight(null)*fit));
+                    draw.drawImage(image,x+(getIconWidth()-w)/2,y+(getIconHeight()-h)/2,w,h,null);
+                } finally { draw.dispose(); }
+            }
+        };
+    }
     private JPanel addCard() {
         JPanel plus = new JPanel(new BorderLayout());
         plus.setBackground(cardColor());
         plus.setBorder(BorderFactory.createDashedBorder(accent(), 4f, 4f));
-        plus.setPreferredSize(new Dimension(CARD_WIDTH, CARD_HEIGHT));
+        ThumbnailSizing.Size size=ThumbnailSizing.at(thumbnailZoom.getValue());
+        plus.setPreferredSize(new Dimension(size.cardWidth(), size.cardHeight()));
         JLabel label = new JLabel("<html><center><span style='font-size:24pt'>+</span><br>UDF dosyası seç</center></html>", SwingConstants.CENTER);
         label.setForeground(foreground());
         plus.add(label, BorderLayout.CENTER);
@@ -382,9 +457,9 @@ public final class DesktopApp extends JFrame {
         getContentPane().setBackground(bg);
         grid.setBackground(bg);
         grid.removeAll();
-        int cols = Math.max(1, scroll.getViewport().getWidth() / (CARD_WIDTH + 17));
+        int cols = ThumbnailSizing.columns(scroll.getViewport().getWidth(), thumbnailZoom.getValue());
         lastColumns = cols;
-        grid.setLayout(new java.awt.GridLayout(0, cols, 12, 12));
+        grid.setLayout(new java.awt.GridLayout(0, cols, ThumbnailSizing.GAP, ThumbnailSizing.GAP));
         for (Item it : items) grid.add(card(it));
         grid.add(addCard());
         saveButton.setEnabled(!converting && !items.isEmpty() && items.stream().allMatch(x -> x.document != null));
