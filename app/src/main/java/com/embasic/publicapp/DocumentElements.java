@@ -80,6 +80,8 @@ public final class DocumentElements {
         switch (size.toUpperCase(Locale.ROOT)) {
             case "A4" -> { w = 595.28f; h = 841.89f; }
             case "LETTER" -> { w = 612f; h = 792f; }
+            case "LEGAL" -> { w = 612f; h = 1008f; }
+            case "A5" -> { w = 419.53f; h = 595.28f; }
             default -> throw new IllegalArgumentException("Desteklenmeyen sayfa boyutu: " + size);
         }
         String orientation = properties.hasAttribute("orientation")
@@ -122,25 +124,44 @@ public final class DocumentElements {
         if (rows.isEmpty()) throw new IllegalArgumentException("Boş tablo");
         return new TableBlock(widths, rows);
     }
-    public static ImageBlock image(Element image) throws Exception {
-        onlyAttributes(image, "mime", "encoding", "width", "height");
-        if (!children(image).isEmpty()) throw new IllegalArgumentException("İç içe görsel elemanı desteklenmiyor");
+    /** Only literal ZIP-local synthetic PNG resource paths; no URLs or filesystem fallbacks. */
+    public static String mediaPath(String reference) {
+        if (reference == null || reference.isBlank() || reference.length() > 240
+                || reference.contains("\\") || reference.contains("%") || reference.contains(":")
+                || reference.startsWith("/") || reference.endsWith("/")
+                || reference.contains("//") || reference.contains("?") || reference.contains("#"))
+            throw new IllegalArgumentException("Güvensiz PNG kaynak yolu");
+        String[] segments=reference.split("/",-1);
+        if (segments.length < 2 || segments.length > 8
+                || !(segments[0].equals("media") || segments[0].equals("images")))
+            throw new IllegalArgumentException("PNG yalnız media/ veya images/ içinden okunabilir");
+        for (String s:segments)
+            if (s.isBlank() || s.equals(".") || s.equals("..")
+                    || !s.matches("[a-zA-Z0-9_ .-]+"))
+                throw new IllegalArgumentException("Geçersiz PNG kaynak yolu");
+        if (!reference.toLowerCase(Locale.ROOT).endsWith(".png"))
+            throw new IllegalArgumentException("Yalnız PNG referansına izin verilir");
+        return reference.toLowerCase(Locale.ROOT);
+    }
+    /** ZIP referenced image or inline base64, never a silent fallback between the two. */
+    public static ImageBlock image(Element image, java.util.Map<String,byte[]> media) throws Exception {
+        if (!image.hasAttribute("ref")) return image(image);
+        onlyAttributes(image,"ref","mime","width","height");
         if (!"image/png".equals(image.getAttribute("mime"))
-                || !"base64".equals(image.getAttribute("encoding")))
-            throw new IllegalArgumentException("Yalnız sentetik base64 PNG görseli destekleniyor");
-        float w = positive(image.getAttribute("width"), "görsel genişliği", 1000);
-        float h = positive(image.getAttribute("height"), "görsel yüksekliği", 1000);
-        String encoded = image.getTextContent().replaceAll("\\s+", "");
-        if (encoded.isEmpty() || encoded.length() > 1_400_000)
-            throw new IllegalArgumentException("PNG veri sınırı");
-        byte[] bytes;
-        try { bytes = Base64.getDecoder().decode(encoded); }
-        catch (IllegalArgumentException e) { throw new IllegalArgumentException("Geçersiz PNG base64", e); }
-        if (bytes.length < 24 || bytes.length > 1_048_576
+                || !children(image).isEmpty() || !image.getTextContent().isBlank())
+            throw new IllegalArgumentException("PNG referansı içerik ve encoding ile karıştırılamaz");
+        String ref=mediaPath(image.getAttribute("ref"));
+        byte[] data=media.get(ref);
+        if(data==null)throw new IllegalArgumentException("UDF ZIP içinde PNG bulunamadı: "+ref);
+        float w=positive(image.getAttribute("width"),"görsel genişliği",1000);
+        float h=positive(image.getAttribute("height"),"görsel yüksekliği",1000);
+        return validatePng(data,w,h);
+    }
+    private static ImageBlock validatePng(byte[] bytes,float w,float h) throws Exception {
+        if (bytes == null || bytes.length < 24 || bytes.length > 1_048_576
                 || (bytes[0] & 0xff) != 0x89 || bytes[1] != 'P'
                 || bytes[2] != 'N' || bytes[3] != 'G')
             throw new IllegalArgumentException("PNG biçimi veya boyutu geçersiz");
-        // Inspect dimensions before a full bitmap allocation: compressed images can expand.
         try (var input = ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))) {
             var readers = ImageIO.getImageReaders(input);
             if (!readers.hasNext()) throw new IllegalArgumentException("PNG çözücü bulunamadı");
@@ -156,6 +177,22 @@ public final class DocumentElements {
                     throw new IllegalArgumentException("PNG çözümlenemedi");
             } finally { reader.dispose(); }
         }
-        return new ImageBlock(bytes, w, h);
+        return new ImageBlock(bytes,w,h);
+    }
+    public static ImageBlock image(Element image) throws Exception {
+        onlyAttributes(image, "mime", "encoding", "width", "height");
+        if (!children(image).isEmpty()) throw new IllegalArgumentException("İç içe görsel elemanı desteklenmiyor");
+        if (!"image/png".equals(image.getAttribute("mime"))
+                || !"base64".equals(image.getAttribute("encoding")))
+            throw new IllegalArgumentException("Yalnız sentetik base64 PNG görseli destekleniyor");
+        float w = positive(image.getAttribute("width"), "görsel genişliği", 1000);
+        float h = positive(image.getAttribute("height"), "görsel yüksekliği", 1000);
+        String encoded = image.getTextContent().replaceAll("\\s+", "");
+        if (encoded.isEmpty() || encoded.length() > 1_400_000)
+            throw new IllegalArgumentException("PNG veri sınırı");
+        byte[] bytes;
+        try { bytes = Base64.getDecoder().decode(encoded); }
+        catch (IllegalArgumentException e) { throw new IllegalArgumentException("Geçersiz PNG base64", e); }
+        return validatePng(bytes,w,h);
     }
 }
