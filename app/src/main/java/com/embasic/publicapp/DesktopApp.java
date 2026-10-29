@@ -390,10 +390,22 @@ public final class DesktopApp extends JFrame {
                 Component hit = SwingUtilities.getDeepestComponentAt(grid, released.x, released.y);
                 while (hit != null && hit.getParent() != grid) hit = hit.getParent();
                 Object target = hit instanceof JComponent jc ? jc.getClientProperty("udf-item") : null;
-                if (dragged && target instanceof Item other && other != item) {
-                    List<Item> reordered = GridReorder.before(items,selected,other);
-                    items.clear();
-                    items.addAll(reordered);
+                if (dragged && hit instanceof JComponent dropCard) {
+                    List<Item> reordered = null;
+                    if (target instanceof Item other && other != item) {
+                        // A grid is ordered left-to-right: left half inserts before,
+                        // right half inserts after. Both preserve multi-card order.
+                        boolean after = released.x >= dropCard.getX() + dropCard.getWidth() / 2;
+                        reordered = after ? GridReorder.after(items, selected, other)
+                                : GridReorder.before(items, selected, other);
+                    } else if (Boolean.TRUE.equals(dropCard.getClientProperty("udf-add-card"))) {
+                        // The trailing + tile is also an intuitive end-of-list drop zone.
+                        reordered = GridReorder.toEnd(items, selected);
+                    }
+                    if (reordered != null) {
+                        items.clear();
+                        items.addAll(reordered);
+                    }
                 }
                 List<Item> releasedSelection = GridPointerSelection.release(selected, item, collapseOnClick, dragged);
                 selected.clear();
@@ -436,6 +448,7 @@ public final class DesktopApp extends JFrame {
     }
     private JPanel addCard() {
         JPanel plus = new JPanel(new BorderLayout());
+        plus.putClientProperty("udf-add-card", Boolean.TRUE);
         plus.setBackground(cardColor());
         plus.setBorder(BorderFactory.createDashedBorder(accent(), 4f, 4f));
         ThumbnailSizing.Size size=ThumbnailSizing.at(thumbnailZoom.getValue());
