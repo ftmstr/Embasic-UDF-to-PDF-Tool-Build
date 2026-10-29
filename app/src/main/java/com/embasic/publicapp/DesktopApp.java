@@ -61,6 +61,7 @@ public final class DesktopApp extends JFrame {
     private final JButton themeButton = new JButton("Aydınlık tema");
     private boolean dark = true, converting;
     private Item anchor;
+    private Item focused;
     private int lastColumns = 0;
 
     private static final class Item {
@@ -148,11 +149,60 @@ public final class DesktopApp extends JFrame {
         action.put("selectAll", new javax.swing.AbstractAction() {
             @Override public void actionPerformed(java.awt.event.ActionEvent e) { selected.addAll(items); rebuild(); }
         });
+        bindArrow(KeyEvent.VK_LEFT, -1);
+        bindArrow(KeyEvent.VK_RIGHT, 1);
+        bindArrow(KeyEvent.VK_UP, -1, true);
+        bindArrow(KeyEvent.VK_DOWN, 1, true);
+        input.put(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.CTRL_DOWN_MASK), "toggleFocused");
+        action.put("toggleFocused", new javax.swing.AbstractAction() {
+            @Override public void actionPerformed(java.awt.event.ActionEvent e) {
+                if (focused == null || !items.contains(focused)) return;
+                if (!selected.add(focused)) selected.remove(focused);
+                anchor = focused;
+                rebuild();
+            }
+        });
         input.put(KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, 0), "remove");
         action.put("remove", new javax.swing.AbstractAction() {
             @Override public void actionPerformed(java.awt.event.ActionEvent e) { for (Item it : selected) it.cancelled = true; items.removeAll(selected); selected.clear(); rebuild(); updateFileStatus(); }
         });
         rebuild();
+    }
+
+    private void bindArrow(int key, int amount) {
+        bindArrow(key, amount, false);
+    }
+    private void bindArrow(int key, int amount, boolean vertical) {
+        int[] modifiers = {0, InputEvent.SHIFT_DOWN_MASK, InputEvent.CTRL_DOWN_MASK,
+                InputEvent.SHIFT_DOWN_MASK | InputEvent.CTRL_DOWN_MASK};
+        for (int mods : modifiers) {
+            final int fixedMods = mods;
+            String actionName = "gridArrow." + key + "." + mods;
+            getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(
+                    KeyStroke.getKeyStroke(key,mods),actionName);
+            getRootPane().getActionMap().put(actionName,new javax.swing.AbstractAction() {
+                @Override public void actionPerformed(java.awt.event.ActionEvent e) {
+                    moveKeyboard(amount * (vertical ? Math.max(1,lastColumns) : 1),
+                            (fixedMods & InputEvent.SHIFT_DOWN_MASK) != 0,
+                            (fixedMods & InputEvent.CTRL_DOWN_MASK) != 0);
+                }
+            });
+        }
+    }
+    private void moveKeyboard(int step, boolean extend, boolean focusOnly) {
+        if (items.isEmpty()) return;
+        var next = GridKeyboardSelection.move(items,selected,anchor,focused,step,extend,focusOnly);
+        selected.clear();
+        selected.addAll(next.selected());
+        anchor=next.anchor();
+        focused=next.focused();
+        rebuild();
+        int index=items.indexOf(focused);
+        if(index>=0 && index<grid.getComponentCount() &&
+                grid.getComponent(index) instanceof JComponent card) {
+            card.scrollRectToVisible(new java.awt.Rectangle(0,0,
+                    Math.max(1,card.getWidth()),Math.max(1,card.getHeight())));
+        }
     }
 
     private void chooseFiles() {
@@ -244,7 +294,7 @@ public final class DesktopApp extends JFrame {
         card.setPreferredSize(new Dimension(CARD_WIDTH, CARD_HEIGHT));
         card.setBackground(cardColor());
         card.setBorder(BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(selected.contains(item) ? accent() : cardColor(),
+            BorderFactory.createLineBorder(selected.contains(item) || focused == item ? accent() : cardColor(),
                 selected.contains(item) ? 2 : 1, true),
             BorderFactory.createEmptyBorder(8, 7, 8, 7)));
         JLabel preview = new JLabel(item.thumbnail == null ? "UDF" : "", item.thumbnail, SwingConstants.CENTER);
@@ -276,6 +326,7 @@ public final class DesktopApp extends JFrame {
                     for (int i = Math.min(start, idx); i <= Math.max(start, idx); i++) selected.add(items.get(i));
                 } else { selected.clear(); selected.add(item); }
                 anchor = item;
+                focused = item;
                 // Avoid replacing components while mouse drag is in progress.
                 card.setBorder(BorderFactory.createLineBorder(accent(), 2, true));
             }
@@ -320,6 +371,8 @@ public final class DesktopApp extends JFrame {
     }
     private void rebuild() {
         if (!SwingUtilities.isEventDispatchThread()) { SwingUtilities.invokeLater(this::rebuild); return; }
+        if (focused != null && !items.contains(focused)) focused=null;
+        if (anchor != null && !items.contains(anchor)) anchor=null;
         Color bg = background(), fg = foreground();
         getContentPane().setBackground(bg);
         grid.setBackground(bg);
