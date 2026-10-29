@@ -315,28 +315,27 @@ public final class DesktopApp extends JFrame {
         card.add(labels, BorderLayout.SOUTH);
         MouseAdapter mouse = new MouseAdapter() {
             private Point pressed;
+            private boolean collapseOnClick;
             @Override public void mousePressed(MouseEvent e) {
                 pressed = SwingUtilities.convertPoint((Component) e.getSource(), e.getPoint(), grid);
-                int idx = items.indexOf(item);
-                if ((e.getModifiersEx() & InputEvent.CTRL_DOWN_MASK) != 0) {
-                    if (!selected.add(item)) selected.remove(item);
-                } else if ((e.getModifiersEx() & InputEvent.SHIFT_DOWN_MASK) != 0 && anchor != null) {
-                    int start = items.indexOf(anchor);
-                    selected.clear();
-                    for (int i = Math.min(start, idx); i <= Math.max(start, idx); i++) selected.add(items.get(i));
-                } else { selected.clear(); selected.add(item); }
-                anchor = item;
+                var next = GridPointerSelection.press(items, selected, anchor, item,
+                        (e.getModifiersEx() & InputEvent.SHIFT_DOWN_MASK) != 0,
+                        (e.getModifiersEx() & InputEvent.CTRL_DOWN_MASK) != 0);
+                selected.clear();
+                selected.addAll(next.selected());
+                anchor = next.anchor();
+                collapseOnClick = next.collapseOnClick();
                 focused = item;
                 // Avoid replacing components while mouse drag is in progress.
                 card.setBorder(BorderFactory.createLineBorder(accent(), 2, true));
             }
             @Override public void mouseReleased(MouseEvent e) {
                 Point released = SwingUtilities.convertPoint((Component) e.getSource(), e.getPoint(), grid);
+                boolean dragged = pressed != null && pressed.distance(released) > 12;
                 Component hit = SwingUtilities.getDeepestComponentAt(grid, released.x, released.y);
                 while (hit != null && hit.getParent() != grid) hit = hit.getParent();
                 Object target = hit instanceof JComponent jc ? jc.getClientProperty("udf-item") : null;
-                if (pressed != null && pressed.distance(released) > 12
-                    && target instanceof Item other && other != item) {
+                if (dragged && target instanceof Item other && other != item) {
                     List<Item> moving = new ArrayList<>();
                     for (Item it : items) if (selected.contains(it)) moving.add(it);
                     if (!moving.contains(other)) {
@@ -345,6 +344,13 @@ public final class DesktopApp extends JFrame {
                         items.addAll(Math.max(0, at), moving);
                     }
                 }
+                if (collapseOnClick && !dragged) {
+                    selected.clear();
+                    selected.addAll(GridPointerSelection.release(List.of(item), item, true, false));
+                    anchor = item;
+                }
+                collapseOnClick = false;
+                pressed = null;
                 rebuild();
             }
         };
