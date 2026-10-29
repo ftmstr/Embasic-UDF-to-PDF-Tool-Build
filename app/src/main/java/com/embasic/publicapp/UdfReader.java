@@ -31,6 +31,9 @@ public final class UdfReader {
     private static final int MAX_ENTRIES = 2048;
     private static final int MAX_CONTENT_XML = 4 * 1024 * 1024;
     private static final long MAX_TOTAL_UNCOMPRESSED = 32L * 1024 * 1024;
+    private static final int MAX_MEDIA_FILES = 64;
+    private static final int MAX_MEDIA_TOTAL = 8 * 1024 * 1024;
+    private static final int MAX_MEDIA_PNG = 1_048_576;
     public record Style(float size, boolean bold, Color color) {}
     public record Run(String text, Style style) {}
     public record Paragraph(List<Run> runs) {
@@ -58,6 +61,8 @@ public final class UdfReader {
             throw new IllegalArgumentException("Geçerli, okunabilir bir .udf dosyası seçin");
         byte[] data = null;
         long total = 0;
+        int mediaTotal = 0;
+        Map<String,byte[]> media = new HashMap<>();
         try (ZipFile zip = new ZipFile(file.toFile())) {
             Enumeration<? extends ZipEntry> entries = zip.entries();
             int count = 0;
@@ -84,15 +89,31 @@ public final class UdfReader {
                         if (bytes.length > MAX_CONTENT_XML) throw new IllegalArgumentException("UDF XML boyut sınırı aşıldı");
                         data = bytes;
                     }
+                } else if (normalized.endsWith(".png")
+                        && (normalized.startsWith("media/") || normalized.startsWith("images/"))) {
+                    // Exactly scoped resource namespace; no extraction to disk and no network fallback.
+                    DocumentElements.mediaPath(normalized);
+                    if (media.size() >= MAX_MEDIA_FILES || entry.getSize() > MAX_MEDIA_PNG)
+                        throw new IllegalArgumentException("UDF PNG kaynak sınırı aşıldı");
+                    try (InputStream in = zip.getInputStream(entry)) {
+                        byte[] bytes = in.readNBytes(MAX_MEDIA_PNG + 1);
+                        if (bytes.length > MAX_MEDIA_PNG || (long) mediaTotal + bytes.length > MAX_MEDIA_TOTAL)
+                            throw new IllegalArgumentException("UDF PNG veri sınırı aşıldı");
+                        mediaTotal += bytes.length;
+                        media.put(normalized, bytes);
+                    }
                 }
             }
         }
         if (data == null) throw new IllegalArgumentException("UDF içinde content.xml bulunamadı");
-        return parse(data, file.getFileName().toString());
+        return parse(data, file.getFileName().toString(), media);
     }
 
     /** Public synthetic fixture contract: UTF-16 startOffset/length; other variants are not guessed. */
     public static DocumentSpec parse(byte[] xml, String name) throws Exception {
+        return parse(xml, name, Map.of());
+    }
+    private static DocumentSpec parse(byte[] xml, String name, Map<String,byte[]> media) throws Exception {
         if (xml == null || xml.length == 0 || xml.length > MAX_CONTENT_XML)
             throw new IllegalArgumentException("UDF XML boyutu geçersiz");
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
@@ -140,7 +161,7 @@ public final class UdfReader {
                 continue;
             }
             if ("image".equals(p.getTagName())) {
-                blocks.add(DocumentElements.image(p));
+                blocks.add(DocumentElements.image(p, media));
                 continue;
             }
             if (!p.getTagName().equals("paragraph"))
