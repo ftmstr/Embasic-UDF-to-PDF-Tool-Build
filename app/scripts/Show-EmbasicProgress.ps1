@@ -24,9 +24,9 @@ $forecastBase = [DateTime]::ParseExact($reviewDate, 'yyyy-MM-dd', [System.Global
 # Weight totals are exactly 100. Completion is engineering judgement, not telemetry.
 $milestones = @(
     [pscustomobject]@{ Name='Public kod tabani / Maven'; Weight=12; Complete=100; Evidence='Public kaynak + Linux/Windows Maven CI' }
-    [pscustomobject]@{ Name='Windows launcher / smoke'; Weight=12; Complete=100; Evidence='jpackage EXE smoke 40507439840' }
-    [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=67; Evidence='Hazir/hata/bekleme durum sayaclari; masaustu kabul testi yok' }
-    [pscustomobject]@{ Name='UDF turleri ve surumleri'; Weight=26; Complete=11; Evidence='Sentetik tablo/PNG/A4-Letter destegi; gercek UYAP surumleri test edilmedi' }
+    [pscustomobject]@{ Name='Windows launcher / smoke'; Weight=12; Complete=100; Evidence='jpackage EXE smoke 40919356940' }
+    [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=68; Evidence='Sinirli 160 kart, kuyruk kapasitesi ve silinmis kart guard; GUI kabul testi yok' }
+    [pscustomobject]@{ Name='UDF turleri ve surumleri'; Weight=26; Complete=12; Evidence='Sentetik ZIP PNG referans, A5/LEGAL; gercek UYAP schema dogrulanmadi' }
     [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Sentetik PDFBox var; resmî golden yok' }
     [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Sentetik gate var; binary dagitim onayi yok' }
     [pscustomobject]@{ Name='Beta kabul / dagitim'; Weight=8; Complete=10; Evidence='Paket CI ici; indirme paketi yayinlanmadi' }
