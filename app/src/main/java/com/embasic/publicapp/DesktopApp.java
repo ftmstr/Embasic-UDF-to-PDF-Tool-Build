@@ -346,7 +346,7 @@ public final class DesktopApp extends JFrame {
                 }
                 if (collapseOnClick && !dragged) {
                     selected.clear();
-                    selected.addAll(GridPointerSelection.release(List.of(item), item, true, false));
+                    selected.addAll(GridPointerSelection.release(selected, item, collapseOnClick, dragged));
                     anchor = item;
                 }
                 collapseOnClick = false;
