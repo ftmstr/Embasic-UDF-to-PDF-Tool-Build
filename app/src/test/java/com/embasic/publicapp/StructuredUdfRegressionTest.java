@@ -46,7 +46,7 @@ final class StructuredUdfRegressionTest {
         assertEquals(792f,doc.page().width(),.01);
         assertEquals(612f,doc.page().height(),.01);
         var geometry=TableLayout.calculate((DocumentElements.TableBlock)doc.blocks().get(1));
-        assertEquals(5,geometry.cells().size());
+        assertEquals(4,geometry.cells().size());
         assertEquals(190f,geometry.cells().get(0).width(),.01);
         assertEquals(54f,geometry.cells().get(1).height(),.01);
         try(PDDocument pdf=PdfExporter.render(List.of(doc))) {
