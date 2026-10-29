@@ -127,6 +127,7 @@ public final class UdfReader {
         factory.setXIncludeAware(false);
         Element root = factory.newDocumentBuilder().parse(new ByteArrayInputStream(xml)).getDocumentElement();
         if (!root.getTagName().equals("template")) throw new IllegalArgumentException("Desteklenmeyen UDF XML kökü");
+        onlyAttributes(root, "format_id");
         String version = root.getAttribute("format_id");
         if (version.isBlank()) throw new IllegalArgumentException("UDF format_id bulunamadı; sürüm doğrulanamadı");
         Element content = null, body = null, styles = null, properties = null;
@@ -143,11 +144,19 @@ public final class UdfReader {
             }
         }
         if (content == null || body == null) throw new IllegalArgumentException("Eksik content/elements");
+        onlyAttributes(content);
+        onlyAttributes(body);
+        if (!children(content).isEmpty())
+            throw new IllegalArgumentException("İç içe metin elemanı desteklenmiyor");
         String raw = content.getTextContent();
         Map<String, Style> named = new HashMap<>();
         if (styles != null) {
+            onlyAttributes(styles);
             for (Element e : children(styles)) {
                 if (!e.getTagName().equals("style")) throw new IllegalArgumentException("Desteklenmeyen stil");
+                onlyAttributes(e, "name", "size", "bold", "foreground");
+                if (!children(e).isEmpty() || !e.getTextContent().isBlank())
+                    throw new IllegalArgumentException("Desteklenmeyen stil içeriği");
                 String key = e.getAttribute("name");
                 if (key.isBlank() || named.containsKey(key)) throw new IllegalArgumentException("Tekrarlanan stil");
                 named.put(key, resolve(e, DEFAULT));
@@ -166,9 +175,15 @@ public final class UdfReader {
             }
             if (!p.getTagName().equals("paragraph"))
                 throw new IllegalArgumentException("Bu MVP henüz " + p.getTagName() + " bileşenini desteklemiyor");
+            onlyAttributes(p);
+            if (!p.getTextContent().isBlank() && children(p).isEmpty())
+                throw new IllegalArgumentException("Desteklenmeyen paragraf metni");
             List<Run> runs = new ArrayList<>();
             for (Element e : children(p)) {
                 if (!e.getTagName().equals("content")) throw new IllegalArgumentException("Desteklenmeyen paragraf elemanı");
+                onlyAttributes(e, "startOffset", "length", "resolver", "size", "bold", "foreground");
+                if (!children(e).isEmpty() || !e.getTextContent().isBlank())
+                    throw new IllegalArgumentException("Desteklenmeyen metin aralığı içeriği");
                 int start = requiredInt(e, "startOffset");
                 int length = requiredInt(e, "length");
                 if (start < 0 || length < 0 || (long) start + length > raw.length())
@@ -190,6 +205,17 @@ public final class UdfReader {
         return new DocumentSpec(name, version, paragraphs, blocks, DocumentElements.page(properties));
     }
 
+    private static void onlyAttributes(Element element, String... allowed) {
+        Set<String> names = Set.of(allowed);
+        var attributes = element.getAttributes();
+        for (int i = 0; i < attributes.getLength(); i++) {
+            String name = attributes.item(i).getNodeName();
+            if (!names.contains(name))
+                throw new IllegalArgumentException("Desteklenmeyen " + element.getTagName()
+                        + " özelliği: " + name);
+        }
+    }
+
     private static int requiredInt(Element e, String key) {
         try { return Integer.parseInt(e.getAttribute(key)); }
         catch (NumberFormatException ex) { throw new IllegalArgumentException("Geçersiz " + key, ex); }
@@ -197,7 +223,13 @@ public final class UdfReader {
     private static Style resolve(Element e, Style base) {
         float size = e.hasAttribute("size") ? Float.parseFloat(e.getAttribute("size")) : base.size();
         if (!Float.isFinite(size) || size < 6 || size > 48) throw new IllegalArgumentException("Geçersiz font boyutu");
-        boolean bold = e.hasAttribute("bold") ? Boolean.parseBoolean(e.getAttribute("bold")) : base.bold();
+        boolean bold = base.bold();
+        if (e.hasAttribute("bold")) {
+            String value = e.getAttribute("bold");
+            if (!"true".equals(value) && !"false".equals(value))
+                throw new IllegalArgumentException("Geçersiz kalın yazı ayarı: " + value);
+            bold = Boolean.parseBoolean(value);
+        }
         Color color = base.color();
         if (e.hasAttribute("foreground")) {
             String value = e.getAttribute("foreground");
