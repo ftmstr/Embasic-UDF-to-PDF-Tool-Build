@@ -25,7 +25,7 @@ $forecastBase = [DateTime]::ParseExact($reviewDate, 'yyyy-MM-dd', [System.Global
 $milestones = @(
     [pscustomobject]@{ Name='Public kod tabani / Maven'; Weight=12; Complete=100; Evidence='Public kaynak + Linux/Windows Maven CI' }
     [pscustomobject]@{ Name='Windows launcher / smoke'; Weight=12; Complete=100; Evidence='jpackage EXE smoke 40919356940' }
-    [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=69; Evidence='Arrow/Shift/Ctrl keyboard navigation ve secim testleri; gercek GUI kabul testi yok' }
+    [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=70; Evidence='Thumb zoom 132-272 px, batch preview refresh, JUnit; gercek Windows GUI kabul testi yok' }
     [pscustomobject]@{ Name='UDF turleri ve surumleri'; Weight=26; Complete=12; Evidence='Sentetik ZIP PNG referans, A5/LEGAL; gercek UYAP schema dogrulanmadi' }
     [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Sentetik PDFBox var; resmî golden yok' }
     [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Sentetik gate var; binary dagitim onayi yok' }
