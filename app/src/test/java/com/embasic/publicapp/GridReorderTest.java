@@ -29,7 +29,7 @@ final class GridReorderTest {
         var files=List.of("A","B","C","D","E");
         assertEquals(List.of("D","A","B","C","E"),
             GridReorder.before(files,List.of("D"),"A"));
-        assertEquals(List.of("A","C","E","B","D"),
+        assertEquals(List.of("A","C","B","D","E"),
             GridReorder.before(files,List.of("B","D"),"E"));
     }
 }
