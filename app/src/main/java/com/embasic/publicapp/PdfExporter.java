@@ -101,30 +101,48 @@ public final class PdfExporter {
                 if (reloaded.getNumberOfPages() != pages || pages < 1)
                     throw new IOException("PDF sayfa doğrulaması başarısız");
             }
-            try {
-                Files.move(staging, abs, StandardCopyOption.ATOMIC_MOVE,
-                    StandardCopyOption.REPLACE_EXISTING);
-            } catch (AtomicMoveNotSupportedException e) {
-                // Never delete an existing document before a validated replacement is available.
-                if (Files.exists(abs)) {
-                    Path backup = Files.createTempFile(folder, ".embasic-backup-", ".pdf");
-                    Files.deleteIfExists(backup);
-                    Files.move(abs, backup);
-                    boolean replaced = false;
-                    try {
-                        Files.move(staging, abs);
-                        replaced = true;
-                    } finally {
-                        if (replaced) Files.deleteIfExists(backup);
-                        else Files.move(backup, abs, StandardCopyOption.REPLACE_EXISTING);
-                    }
-                } else {
-                    Files.move(staging, abs);
-                }
-            }
+            publishValidated(staging, abs, overwrite);
             return pages;
         } finally {
             Files.deleteIfExists(staging);
+        }
+    }
+
+    /**
+     * Commit an already validated PDF. In particular, a target created after the
+     * initial save() check must never be overwritten without user consent.
+     * No-replace moves are deliberately NOT marked ATOMIC_MOVE: Java permits
+     * provider-specific replacement behavior with ATOMIC_MOVE.
+     */
+    static void publishValidated(Path staging, Path target, boolean overwrite) throws IOException {
+        if (!overwrite) {
+            try {
+                Files.move(staging, target);
+            } catch (java.nio.file.FileAlreadyExistsException e) {
+                throw new IllegalArgumentException("PDF zaten var, üzerine yazma onayı gerekli", e);
+            }
+            return;
+        }
+        try {
+            Files.move(staging, target, StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING);
+        } catch (AtomicMoveNotSupportedException e) {
+            // Preserve the existing PDF until a validated replacement is ready.
+            if (Files.exists(target)) {
+                Path backup = Files.createTempFile(target.getParent(), ".embasic-backup-", ".pdf");
+                Files.deleteIfExists(backup);
+                Files.move(target, backup);
+                boolean replaced = false;
+                try {
+                    Files.move(staging, target);
+                    replaced = true;
+                } finally {
+                    if (replaced) Files.deleteIfExists(backup);
+                    else Files.move(backup, target, StandardCopyOption.REPLACE_EXISTING);
+                }
+            } else {
+                Files.move(staging, target);
+            }
         }
     }
 
