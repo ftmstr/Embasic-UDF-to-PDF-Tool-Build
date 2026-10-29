@@ -94,3 +94,10 @@ The ZIP must include `content.xml` and a literal `media/logo.png` entry. This is
 Desktop preview uses two bounded background workers, a card limit of `FileImportPolicy.MAX_CARDS`, native-aspect thumbnail scaling and cancellation checks when a file card is removed. This does **not** certify performance with authentic large UDFs or all file variations. Unit tests exercise 2,500 proposed paths, safe ZIP media resolution and ordered PDF text/image output; the Windows/Linux CI is authoritative for execution status.
 
 **Remaining blockers:** no real native UYAP visual-parity evidence, incomplete image/metadata schema support, no supervised Windows GUI acceptance test, and unresolved third-party license/NOTICE and release-gate approvals. No downloadable Windows binary or final release has been authorized.
+
+## Tur 40 — Viewport-only virtualized thumbnail grid (2026-10-29)
+
+The Public Swing workspace now uses `VirtualGridLayout` to compute stable card bounds from file count, zoom level and viewport width. Only cards in the visible rows plus **one buffer row on each side** have Swing components. Other UDFs remain in the original ordered list, with selection and PDF export still based on that list. Keyboard navigation scrolls to the *logical position* of an offscreen card. The `+` add-file card remains at index `items.size()` and uses the same zoom/card geometry. Scroll callbacks use a short nonrepeating Swing timer, avoiding 160-card component rebuilds on every viewport event. Existing 160-item cap and two background preview workers remain.
+
+`VirtualGridLayoutTest` checks boundary/clipping math, mixed zoom widths, all visible cards across a **2,500-card synthetic geometry**, and the 160+add-card use case. `GridReorder` extracts stable multi-card reorder independent of rendered components, and `GridReorderTest` covers moving selected cards with offscreen members and invalid targets. These are deterministic synthetic tests, **not a supervised Windows GUI benchmark**. Real UYAP document parity, redistribution rights, and the existing Windows release approval gates remain unresolved.
+
