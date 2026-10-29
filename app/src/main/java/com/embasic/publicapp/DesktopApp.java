@@ -344,9 +344,9 @@ public final class DesktopApp extends JFrame {
                         items.addAll(Math.max(0, at), moving);
                     }
                 }
-                List<Item> released = GridPointerSelection.release(selected, item, collapseOnClick, dragged);
+                List<Item> releasedSelection = GridPointerSelection.release(selected, item, collapseOnClick, dragged);
                 selected.clear();
-                selected.addAll(released);
+                selected.addAll(releasedSelection);
                 if (collapseOnClick && !dragged) anchor = item;
                 collapseOnClick = false;
                 pressed = null;
