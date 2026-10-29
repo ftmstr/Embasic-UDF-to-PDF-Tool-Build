@@ -32,4 +32,26 @@ final class GridReorderTest {
         assertEquals(List.of("A","C","B","D","E"),
             GridReorder.before(files,List.of("B","D"),"E"));
     }
+    @Test void droppingAfterTargetMovesGroupInOriginalOrder() {
+        var files = List.of("A", "B", "C", "D", "E", "F");
+        assertEquals(List.of("A", "D", "B", "C", "E", "F"),
+            GridReorder.after(files, List.of("C", "B"), "D"));
+        assertEquals(List.of("A", "C", "D", "E", "B", "F"),
+            GridReorder.after(files, List.of("B"), "E"));
+        assertEquals(files, GridReorder.after(files, List.of("B", "D"), "D"),
+            "Dropping onto a selected target must not split the group");
+        assertThrows(IllegalArgumentException.class,
+            () -> GridReorder.after(files, List.of("B"), "missing"));
+        assertEquals("B", files.get(1), "Source list must remain untouched");
+    }
+
+    @Test void droppingOnPlusTileMovesSelectedCardsToEnd() {
+        var files = List.of("A", "B", "C", "D", "E");
+        assertEquals(List.of("A", "C", "E", "B", "D"),
+            GridReorder.toEnd(files, List.of("D", "B")));
+        assertEquals(files, GridReorder.toEnd(files, List.of()));
+        assertEquals(files, GridReorder.toEnd(files, List.of("missing")));
+        assertThrows(IllegalArgumentException.class, () -> GridReorder.toEnd(null, List.of("A")));
+    }
+
 }
