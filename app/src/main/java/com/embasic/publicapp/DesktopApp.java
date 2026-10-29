@@ -23,8 +23,10 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.RejectedExecutionException;
 import javax.swing.BorderFactory;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
@@ -47,7 +49,8 @@ public final class DesktopApp extends JFrame {
     private static final int CARD_WIDTH = 188, CARD_HEIGHT = 238;
     private final List<Item> items = new ArrayList<>();
     private final LinkedHashSet<Item> selected = new LinkedHashSet<>();
-    private final ExecutorService previews = Executors.newFixedThreadPool(2, job -> {
+    private final ThreadPoolExecutor previews = new ThreadPoolExecutor(2, 2, 0L,
+            TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(192), job -> {
         Thread thread = new Thread(job, "embasic-preview");
         thread.setDaemon(true); return thread;
     });
@@ -65,6 +68,7 @@ public final class DesktopApp extends JFrame {
         volatile UdfReader.DocumentSpec document;
         volatile ImageIcon thumbnail;
         volatile String info = "Okunuyor...";
+        volatile boolean cancelled;
         Item(Path path) { this.path = path; }
     }
 
@@ -108,10 +112,11 @@ public final class DesktopApp extends JFrame {
         JPanel ordered = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
         JButton left = new JButton("← Taşı"), right = new JButton("Taşı →"), remove = new JButton("Kaldır"), clear = new JButton("Temizle");
         left.addActionListener(e -> shift(-1)); right.addActionListener(e -> shift(1));
-        remove.addActionListener(e -> { items.removeAll(selected); selected.clear(); rebuild(); updateFileStatus(); });
+        remove.addActionListener(e -> { for (Item it : selected) it.cancelled = true; items.removeAll(selected); selected.clear(); rebuild(); updateFileStatus(); });
         clear.addActionListener(e -> {
             if (items.isEmpty() || JOptionPane.showConfirmDialog(this, "Tüm dosyalar kaldırılsın mı?", "Temizle",
                     JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) return;
+            for (Item it : items) it.cancelled = true;
             items.clear(); selected.clear(); rebuild(); updateFileStatus();
         });
         ordered.add(left); ordered.add(right); ordered.add(remove); ordered.add(clear);
@@ -145,7 +150,7 @@ public final class DesktopApp extends JFrame {
         });
         input.put(KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, 0), "remove");
         action.put("remove", new javax.swing.AbstractAction() {
-            @Override public void actionPerformed(java.awt.event.ActionEvent e) { items.removeAll(selected); selected.clear(); rebuild(); updateFileStatus(); }
+            @Override public void actionPerformed(java.awt.event.ActionEvent e) { for (Item it : selected) it.cancelled = true; items.removeAll(selected); selected.clear(); rebuild(); updateFileStatus(); }
         });
         rebuild();
     }
@@ -161,36 +166,58 @@ public final class DesktopApp extends JFrame {
     }
 
     private void addFiles(List<Path> paths) {
-        int added = 0;
-        for (Path path : paths) {
-            Path normalized = path.toAbsolutePath().normalize();
-            if (!normalized.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".udf")) continue;
-            if (items.stream().anyMatch(x -> x.path.equals(normalized))) continue;
+        FileImportPolicy.Selection plan = FileImportPolicy.plan(
+                items.stream().map(item -> item.path).toList(), paths);
+        for (Path normalized : plan.accepted()) {
             Item item = new Item(normalized);
-            items.add(item); added++;
-            previews.submit(() -> {
-                try {
-                    UdfReader.DocumentSpec parsed = UdfReader.read(item.path);
-                    BufferedImage image = PdfExporter.firstPage(parsed);
-                    Image scaled = image.getScaledInstance(146, 194, Image.SCALE_SMOOTH);
-                    SwingUtilities.invokeLater(() -> {
-                        item.document = parsed;
-                        item.thumbnail = new ImageIcon(scaled);
-                        item.info = "Hazır";
-                        rebuild();
-                        updateFileStatus();
-                    });
-                } catch (Exception ex) {
-                    SwingUtilities.invokeLater(() -> {
-                        item.info = "Desteklenmiyor: " + friendly(ex);
-                        rebuild();
-                        updateFileStatus();
-                    });
-                }
-            });
+            items.add(item);
+            try {
+                previews.submit(() -> {
+                    if (item.cancelled) return;
+                    try {
+                        UdfReader.DocumentSpec parsed = UdfReader.read(item.path);
+                        if (item.cancelled) return;
+                        BufferedImage image = PdfExporter.firstPage(parsed);
+                        if (item.cancelled) return;
+                        BufferedImage thumb = new BufferedImage(146, 194, BufferedImage.TYPE_INT_RGB);
+                        Graphics2D g = thumb.createGraphics();
+                        try {
+                            g.setColor(Color.WHITE); g.fillRect(0,0,146,194);
+                            g.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
+                                    RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+                            double ratio=Math.min(146.0/image.getWidth(),194.0/image.getHeight());
+                            int width=Math.max(1,(int)Math.round(image.getWidth()*ratio));
+                            int height=Math.max(1,(int)Math.round(image.getHeight()*ratio));
+                            g.drawImage(image,(146-width)/2,(194-height)/2,width,height,null);
+                        } finally { g.dispose(); }
+                        SwingUtilities.invokeLater(() -> {
+                            if (item.cancelled || !items.contains(item)) return;
+                            item.document = parsed;
+                            item.thumbnail = new ImageIcon(thumb);
+                            item.info = "Hazır";
+                            rebuild();
+                            updateFileStatus();
+                        });
+                    } catch (Exception ex) {
+                        SwingUtilities.invokeLater(() -> {
+                            if (item.cancelled || !items.contains(item)) return;
+                            item.info = "Desteklenmiyor: " + friendly(ex);
+                            rebuild();
+                            updateFileStatus();
+                        });
+                    }
+                });
+            } catch (RejectedExecutionException queueFull) {
+                item.info = "Önizleme kuyruğu dolu — kaldırıp yeniden ekleyin";
+            }
         }
         rebuild();
         updateFileStatus();
+        if (plan.limitReached())
+            JOptionPane.showMessageDialog(this,
+                    "En fazla " + FileImportPolicy.MAX_CARDS + " UDF kartı yüklenebilir. "
+                    + "Diğer dosyaları eklemek için önce bazı kartları kaldırın.",
+                    "Dosya sayısı sınırı", JOptionPane.WARNING_MESSAGE);
     }
 
     private void updateFileStatus() {
