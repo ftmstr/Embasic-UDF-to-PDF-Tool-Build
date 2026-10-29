@@ -78,6 +78,24 @@ final class PublicDesktopSmokeTest {
                 .getBytes(StandardCharsets.UTF_8), "x.udf"));
     }
 
+    @Test void unknownArchivePayloadsAreRejectedInsteadOfSilentlyIgnored() throws Exception {
+        // Only the public synthetic subset is supported: content.xml and ZIP-local PNGs.
+        // Unknown members may carry layout or document content and must not disappear.
+        int index = 0;
+        for (String extra : List.of("metadata.xml", "notes.txt", "assets/hidden.png")) {
+            Path input = root.resolve("unknown-member-" + index++ + ".udf");
+            try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(input))) {
+                zip.putNextEntry(new ZipEntry("content.xml"));
+                zip.write(xml("VISIBLE").getBytes(StandardCharsets.UTF_8));
+                zip.closeEntry();
+                zip.putNextEntry(new ZipEntry(extra));
+                zip.write("UNSUPPORTED".getBytes(StandardCharsets.UTF_8));
+                zip.closeEntry();
+            }
+            assertThrows(IllegalArgumentException.class, () -> UdfReader.read(input), extra);
+        }
+    }
+
     @Test void surrogateSplittingAndDuplicateXmlFailClosed() throws Exception {
         var xml = "<template format_id='1.0'><content>😀</content><elements><paragraph>"
                 + "<content startOffset='1' length='1'/></paragraph></elements></template>";
