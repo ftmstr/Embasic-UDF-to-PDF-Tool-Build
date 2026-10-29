@@ -140,10 +140,22 @@ public final class DocumentElements {
                 || (bytes[0] & 0xff) != 0x89 || bytes[1] != 'P'
                 || bytes[2] != 'N' || bytes[3] != 'G')
             throw new IllegalArgumentException("PNG biçimi veya boyutu geçersiz");
-        BufferedImage decoded = ImageIO.read(new ByteArrayInputStream(bytes));
-        if (decoded == null || decoded.getWidth() < 1 || decoded.getHeight() < 1
-                || (long) decoded.getWidth() * decoded.getHeight() > 4_000_000L)
-            throw new IllegalArgumentException("PNG görüntü doğrulaması başarısız");
+        // Inspect dimensions before a full bitmap allocation: compressed images can expand.
+        try (var input = ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))) {
+            var readers = ImageIO.getImageReaders(input);
+            if (!readers.hasNext()) throw new IllegalArgumentException("PNG çözücü bulunamadı");
+            var reader = readers.next();
+            try {
+                if (!"png".equalsIgnoreCase(reader.getFormatName()))
+                    throw new IllegalArgumentException("PNG olmayan görüntü");
+                reader.setInput(input, true, true);
+                int width = reader.getWidth(0), height = reader.getHeight(0);
+                if (width < 1 || height < 1 || (long) width * height > 4_000_000L)
+                    throw new IllegalArgumentException("PNG piksel sınırı aşıldı");
+                if (reader.read(0) == null)
+                    throw new IllegalArgumentException("PNG çözümlenemedi");
+            } finally { reader.dispose(); }
+        }
         return new ImageBlock(bytes, w, h);
     }
 }
