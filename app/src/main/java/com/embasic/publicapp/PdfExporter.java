@@ -57,10 +57,14 @@ public final class PdfExporter {
             for (UdfReader.DocumentSpec document : docs) {
                 try (Layout layout = new Layout(pdf, regular, bold, document.page())) {
                     layout.newPage();
-                    for (DocumentElements.Block block : document.blocks()) {
+                    List<DocumentElements.Block> blocks = document.blocks();
+                    for (int index = 0; index < blocks.size(); index++) {
+                        DocumentElements.Block block = blocks.get(index);
                         if (block instanceof DocumentElements.ParagraphBlock p) {
                             for (UdfReader.Run run : p.paragraph().runs()) layout.add(run);
-                            layout.endParagraph();
+                            // Only add paragraph spacing when another block follows.
+                            // A trailing gap at the bottom must not emit an empty PDF page.
+                            if (index + 1 < blocks.size()) layout.endParagraph();
                         } else if (block instanceof DocumentElements.TableBlock table) {
                             layout.table(table);
                         } else if (block instanceof DocumentElements.ImageBlock image) {
