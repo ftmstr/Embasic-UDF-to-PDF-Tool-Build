@@ -391,13 +391,9 @@ public final class DesktopApp extends JFrame {
                 while (hit != null && hit.getParent() != grid) hit = hit.getParent();
                 Object target = hit instanceof JComponent jc ? jc.getClientProperty("udf-item") : null;
                 if (dragged && target instanceof Item other && other != item) {
-                    List<Item> moving = new ArrayList<>();
-                    for (Item it : items) if (selected.contains(it)) moving.add(it);
-                    if (!moving.contains(other)) {
-                        items.removeAll(moving);
-                        int at = items.indexOf(other);
-                        items.addAll(Math.max(0, at), moving);
-                    }
+                    List<Item> reordered = GridReorder.before(items,selected,other);
+                    items.clear();
+                    items.addAll(reordered);
                 }
                 List<Item> releasedSelection = GridPointerSelection.release(selected, item, collapseOnClick, dragged);
                 selected.clear();
