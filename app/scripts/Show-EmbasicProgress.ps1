@@ -19,13 +19,14 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $today = [DateTimeOffset]::UtcNow.ToOffset([TimeSpan]::FromHours(3))
-$reviewDate = '2026-10-28'
+$reviewDate = '2026-10-29'
+$forecastBase = [DateTime]::ParseExact($reviewDate, 'yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture)
 # Weight totals are exactly 100. Completion is engineering judgement, not telemetry.
 $milestones = @(
     [pscustomobject]@{ Name='Public kod tabani / Maven'; Weight=12; Complete=100; Evidence='Public kaynak + Linux/Windows Maven CI' }
     [pscustomobject]@{ Name='Windows launcher / smoke'; Weight=12; Complete=100; Evidence='jpackage EXE smoke 40507439840' }
-    [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=65; Evidence='Swing temel akisi var; UI kabul testi yok' }
-    [pscustomobject]@{ Name='UDF turleri ve surumleri'; Weight=26; Complete=10; Evidence='Sinirli paragraf XML alt kumesi' }
+    [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=67; Evidence='Hazir/hata/bekleme durum sayaclari; masaustu kabul testi yok' }
+    [pscustomobject]@{ Name='UDF turleri ve surumleri'; Weight=26; Complete=11; Evidence='Sentetik tablo/PNG/A4-Letter destegi; gercek UYAP surumleri test edilmedi' }
     [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Sentetik PDFBox var; resmî golden yok' }
     [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Sentetik gate var; binary dagitim onayi yok' }
     [pscustomobject]@{ Name='Beta kabul / dagitim'; Weight=8; Complete=10; Evidence='Paket CI ici; indirme paketi yayinlanmadi' }
@@ -77,10 +78,10 @@ $report = [pscustomobject]@{
     Milestones=$milestones
     Ci=$ci
     Forecast=[pscustomobject]@{
-        BetaEarliest=$today.AddDays(21).ToString('yyyy-MM-dd')
-        BetaLatest=$today.AddDays(42).ToString('yyyy-MM-dd')
-        FinalEarliest=$today.AddDays(70).ToString('yyyy-MM-dd')
-        FinalLatest=$today.AddDays(126).ToString('yyyy-MM-dd')
+        BetaEarliest=$forecastBase.AddDays(21).ToString('yyyy-MM-dd')
+        BetaLatest=$forecastBase.AddDays(42).ToString('yyyy-MM-dd')
+        FinalEarliest=$forecastBase.AddDays(70).ToString('yyyy-MM-dd')
+        FinalLatest=$forecastBase.AddDays(126).ToString('yyyy-MM-dd')
         Confidence='LOW'
         Assumptions='Daily development, rights-cleared UDF samples, successful Windows UI tests, approved redistribution; any blocker moves the dates'
     }
