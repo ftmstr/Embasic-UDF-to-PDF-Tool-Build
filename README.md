@@ -59,6 +59,12 @@ The dashboard reports a manually weighted release-readiness estimate (**42.7% at
 
 **Safety fixes:** PDFBox wrapped large-font lines now retain their proper line height; unknown page properties are rejected rather than quietly rendered on A4. The older source-publication, license and binary-release approval gates remain closed.
 
+## Tur 39 (continued) — Bounded thumbnail zoom and coalesced previews (2026-10-29)
+
+The single-grid Swing workspace now supports an adjustable thumbnail slider (132–272 logical pixels), `Ctrl + Plus/Minus`, `Ctrl + 0` to reset, and `Ctrl + mouse wheel` for zoom. The `+` add-file card scales using the same `ThumbnailSizing` arithmetic. Zoom only resizes already decoded thumbnail images; it **does not reopen UDF files**. The asynchronous preview pipeline creates higher-resolution thumbnails once and batches rapidly completed previews via a short, non-repeating Swing redraw timer. A separate redraw timer throttles slider movement.
+
+`ThumbnailSizingTest` covers zoom limits, keyboard steps, card/image bounds and viewport column counts. No actual large-volume GUI benchmark or virtualization has been verified; the existing 160-card cap is retained. The original UYAP fidelity and binary distribution blockers remain unchanged.
+
 ## Tur 39 — Explorer multi-card drag and stable Shift-click anchor (2026-10-29)
 
 When multiple UDF cards are selected (Ctrl+click), pressing an already selected card no longer discards the other selected cards before dragging. Dropping the selection on an unselected card retains the selected group and moves it in order. A simple click without dragging still collapses the selection to that card. Repeated Shift+click now keeps the original range anchor, allowing the range to shrink as well as grow. The pure pointer-selection contract has regression tests; this is **not** a supervised Windows mouse/drag acceptance test.
