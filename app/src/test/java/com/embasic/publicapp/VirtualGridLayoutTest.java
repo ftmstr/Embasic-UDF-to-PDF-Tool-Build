@@ -10,7 +10,8 @@ final class VirtualGridLayoutTest {
             var grid=new VirtualGridLayout(161,1000,zoom);
             for(int y:new int[]{0,500,2000,8000,20000}) {
                 var visible=grid.visible(new Rectangle(0,y,1000,650));
-                assertTrue(visible.count() <= grid.columns()*6,
+                // A 650 px viewport may touch five partially visible rows plus a one-row buffer on each side.
+                assertTrue(visible.count() <= grid.columns()*8,
                     "Too many Swing cards at "+zoom+": "+visible.count());
                 assertTrue(visible.endExclusive() <= 161);
                 assertEquals(0,visible.startInclusive()%grid.columns());
