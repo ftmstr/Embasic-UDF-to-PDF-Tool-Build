@@ -5,7 +5,7 @@
 ## What is working in source
 
 - `app/`: **new, independently authored Java 17 Swing / PDFBox 3.0.8 desktop MVP**. Opens a thumbnail workspace, adds multiple files from a dialog or Explorer drop, reorders selected file cards, supports basic light/dark colors, and saves a PDF in item order. File reading and previews happen off the Swing UI thread.
-- Safe `.udf` ZIP scanning and fail-closed `content.xml` parser: limited `template` / `format_id` / `content` / `elements` / `paragraph` XML subset with UTF-16 offsets and named basic styles. Unsupported tables, images, headers, signatures, exotic fonts, or unknown versions **fail with an explicit error**; no silent omission.
+- Safe `.udf` ZIP scanning and fail-closed `content.xml` parser: limited `template` / `format_id` / `content` / `elements` / `paragraph` XML subset with UTF-16 offsets and named basic styles. Controlled synthetic table, ZIP-local PNG reference, and page-layout subsets are implemented; unsupported elements, headers, signatures, exotic fonts, and unverified variants **fail with an explicit error**; no silent omission.
 - PDFBox Unicode-font-backed A4 PDF output, same-directory temporary staging, PDF re-open validation, overwrite confirmation/guard, ordered multiple documents.
 - `.github/workflows/public-mvp-ci.yml`: compile/JUnit/CLI-smoke on Ubuntu and Windows. **No binary publishing**.
 
@@ -58,6 +58,10 @@ pwsh -NoProfile -File app/scripts/Show-EmbasicProgress.ps1 -Offline -AsJson
 The dashboard reports a manually weighted release-readiness estimate (**42.7% at the 2026-10-28 review**), milestone evidence and GitHub Actions status. The forecast is **conditional and low confidence**: an early Public beta in about 3–6 weeks; a broader final candidate in approximately 10–18 weeks *only if* owner-authorized test fixtures, redistribution rights and UYAP visual fidelity work are resolved. These dates are **not a promise** and all-UDF-version parity is not certified. The dashboard source and JSON schema run through the Windows CI job.
 
 **Safety fixes:** PDFBox wrapped large-font lines now retain their proper line height; unknown page properties are rejected rather than quietly rendered on A4. The older source-publication, license and binary-release approval gates remain closed.
+
+## Tur 39 — Explorer multi-card drag and stable Shift-click anchor (2026-10-29)
+
+When multiple UDF cards are selected (Ctrl+click), pressing an already selected card no longer discards the other selected cards before dragging. Dropping the selection on an unselected card retains the selected group and moves it in order. A simple click without dragging still collapses the selection to that card. Repeated Shift+click now keeps the original range anchor, allowing the range to shrink as well as grow. The pure pointer-selection contract has regression tests; this is **not** a supervised Windows mouse/drag acceptance test.
 
 ## Tur 38 — Explorer-style keyboard selection (2026-10-29)
 
