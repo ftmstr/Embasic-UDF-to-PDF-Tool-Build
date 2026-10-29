@@ -101,8 +101,7 @@ final class StructuredUdfRegressionTest {
         var noTableWidth="<table><row height='25'><cell>A</cell></row></table>";
         assertThrows(IllegalArgumentException.class,()->parse(container(noTableWidth,"")));
         var badSpan="<table widths='80,100'><row height='25'><cell colspan='3'>X</cell></row></table>";
-        var doc=parse(container(badSpan,""));
-        assertThrows(IllegalArgumentException.class,()->PdfExporter.render(List.of(doc)));
+        assertThrows(IllegalArgumentException.class,()->parse(container(badSpan,"")));
         var missingCell="<table widths='80,100'><row height='25'><cell>X</cell></row></table>";
         var partial=parse(container(missingCell,""));
         assertThrows(IllegalArgumentException.class,()->PdfExporter.render(List.of(partial)));
