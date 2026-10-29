@@ -108,11 +108,11 @@ public final class DesktopApp extends JFrame {
         JPanel ordered = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
         JButton left = new JButton("← Taşı"), right = new JButton("Taşı →"), remove = new JButton("Kaldır"), clear = new JButton("Temizle");
         left.addActionListener(e -> shift(-1)); right.addActionListener(e -> shift(1));
-        remove.addActionListener(e -> { items.removeAll(selected); selected.clear(); rebuild(); });
+        remove.addActionListener(e -> { items.removeAll(selected); selected.clear(); rebuild(); updateFileStatus(); });
         clear.addActionListener(e -> {
             if (items.isEmpty() || JOptionPane.showConfirmDialog(this, "Tüm dosyalar kaldırılsın mı?", "Temizle",
                     JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) return;
-            items.clear(); selected.clear(); rebuild();
+            items.clear(); selected.clear(); rebuild(); updateFileStatus();
         });
         ordered.add(left); ordered.add(right); ordered.add(remove); ordered.add(clear);
         bottom.add(ordered, BorderLayout.EAST);
@@ -145,7 +145,7 @@ public final class DesktopApp extends JFrame {
         });
         input.put(KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, 0), "remove");
         action.put("remove", new javax.swing.AbstractAction() {
-            @Override public void actionPerformed(java.awt.event.ActionEvent e) { items.removeAll(selected); selected.clear(); rebuild(); }
+            @Override public void actionPerformed(java.awt.event.ActionEvent e) { items.removeAll(selected); selected.clear(); rebuild(); updateFileStatus(); }
         });
         rebuild();
     }
@@ -178,17 +178,33 @@ public final class DesktopApp extends JFrame {
                         item.thumbnail = new ImageIcon(scaled);
                         item.info = "Hazır";
                         rebuild();
+                        updateFileStatus();
                     });
                 } catch (Exception ex) {
                     SwingUtilities.invokeLater(() -> {
                         item.info = "Desteklenmiyor: " + friendly(ex);
                         rebuild();
+                        updateFileStatus();
                     });
                 }
             });
         }
-        if (added > 0) status.setText(added + " UDF eklendi; önizlemeler hazırlanıyor");
         rebuild();
+        updateFileStatus();
+    }
+
+    private void updateFileStatus() {
+        if (converting) return;
+        long ready = items.stream().filter(item -> item.document != null).count();
+        long pending = items.stream().filter(item -> item.document == null &&
+                "Okunuyor...".equals(item.info)).count();
+        long errors = items.size() - ready - pending;
+        status.setText("UDF: " + items.size() + "  |  Hazır: " + ready +
+                "  |  İşleniyor: " + pending + "  |  Desteklenmeyen: " + errors +
+                (errors > 0 ? "  — Hatalı kartları kaldırmadan PDF kaydedilemez" : ""));
+        status.setToolTipText(errors > 0
+                ? "Kırmızı durumlu kartlardaki nedenleri kontrol edin; içerik kaybı önleniyor."
+                : "Dosyalar kart sırasına göre PDF oluşturur.");
     }
 
     private Color background() { return dark ? new Color(20, 27, 42) : new Color(237, 242, 249); }
