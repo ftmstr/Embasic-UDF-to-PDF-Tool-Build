@@ -102,6 +102,10 @@ public final class UdfReader {
                         mediaTotal += bytes.length;
                         media.put(normalized, bytes);
                     }
+                } else {
+                    // Unknown archive payloads may contain document content or formatting.
+                    // Never report a successful PDF after silently discarding them.
+                    throw new IllegalArgumentException("Desteklenmeyen UDF ZIP bileşeni: " + normalized);
                 }
             }
         }
