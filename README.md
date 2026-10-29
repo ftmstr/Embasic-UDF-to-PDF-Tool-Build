@@ -59,6 +59,10 @@ The dashboard reports a manually weighted release-readiness estimate (**42.7% at
 
 **Safety fixes:** PDFBox wrapped large-font lines now retain their proper line height; unknown page properties are rejected rather than quietly rendered on A4. The older source-publication, license and binary-release approval gates remain closed.
 
+## Tur 38 — Explorer-style keyboard selection (2026-10-29)
+
+The single-grid workspace now supports arrow-key focus movement (left/right/up/down), Shift+Arrow contiguous selection, Ctrl+Arrow focus navigation without clearing selected cards, Ctrl+Space toggling a focused card, Ctrl+A selection of all cards, and Delete to remove selected cards. The selection algorithm is independently tested through `GridKeyboardSelectionTest` and does not require real UDF documents. No claims of native UYAP visual equivalence or fully tested accessibility are made. Mouse multi-selection, thumbnail cards, and drag reorder are retained.
+
 ## Tur 37 — ZIP-local synthetic PNG references and bounded UI import (2026-10-29)
 
 The independently authored Public-only application now accepts **exactly one more documented synthetic subset**, without claiming authentic UYAP archive compatibility:
