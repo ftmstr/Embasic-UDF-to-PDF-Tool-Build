@@ -4,6 +4,12 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
+import org.apache.pdfbox.Loader;
+import org.junit.jupiter.api.io.TempDir;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -97,6 +103,31 @@ final class StructuredUdfRegressionTest {
             }
         }
     }
+    @Test void zippedSyntheticMixedUdfProducesVerifiedPdf(@TempDir Path folder) throws Exception {
+        String contentXml=container(para(0,2)
+                + "<table widths='90'><row height='28'><cell>ZIP-TABLO</cell></row></table>"
+                + png()+para(3,3),"<properties pageSize='A4' margin='48'/>");
+        Path udf=folder.resolve("mixed.udf");
+        try(ZipOutputStream archive=new ZipOutputStream(Files.newOutputStream(udf))) {
+            archive.putNextEntry(new ZipEntry("content.xml"));
+            archive.write(contentXml.getBytes(StandardCharsets.UTF_8));
+            archive.closeEntry();
+        }
+        UdfReader.DocumentSpec input=UdfReader.read(udf);
+        assertEquals(4,input.blocks().size());
+        Path output=folder.resolve("mixed.pdf");
+        assertEquals(1,PdfExporter.save(List.of(input),output,false));
+        try(PDDocument pdf=Loader.loadPDF(output.toFile())) {
+            String extracted=new PDFTextStripper().getText(pdf);
+            assertTrue(extracted.contains("ZIP-TABLO"),extracted);
+            assertTrue(extracted.indexOf("SON")>extracted.indexOf("ZIP-TABLO"),extracted);
+        }
+        byte[] preserved=Files.readAllBytes(output);
+        assertThrows(IllegalArgumentException.class,()->
+                PdfExporter.save(List.of(input),output,false));
+        assertArrayEquals(preserved,Files.readAllBytes(output));
+    }
+
     @Test void unsupportedStructuresAndBadGeometryFailClosed() throws Exception {
         var noTableWidth="<table><row height='25'><cell>A</cell></row></table>";
         assertThrows(IllegalArgumentException.class,()->parse(container(noTableWidth,"")));
