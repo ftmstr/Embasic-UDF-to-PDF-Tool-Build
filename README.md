@@ -58,3 +58,25 @@ pwsh -NoProfile -File app/scripts/Show-EmbasicProgress.ps1 -Offline -AsJson
 The dashboard reports a manually weighted release-readiness estimate (**42.7% at the 2026-10-28 review**), milestone evidence and GitHub Actions status. The forecast is **conditional and low confidence**: an early Public beta in about 3–6 weeks; a broader final candidate in approximately 10–18 weeks *only if* owner-authorized test fixtures, redistribution rights and UYAP visual fidelity work are resolved. These dates are **not a promise** and all-UDF-version parity is not certified. The dashboard source and JSON schema run through the Windows CI job.
 
 **Safety fixes:** PDFBox wrapped large-font lines now retain their proper line height; unknown page properties are rejected rather than quietly rendered on A4. The older source-publication, license and binary-release approval gates remain closed.
+
+## Tur 37 — ZIP-local synthetic PNG references and bounded UI import (2026-10-29)
+
+The independently authored Public-only application now accepts **exactly one more documented synthetic subset**, without claiming authentic UYAP archive compatibility:
+
+```xml
+<template format_id="1.0">
+  <content>BEFORE AFTER</content>
+  <properties pageSize="A5" orientation="landscape" margin="32"/>
+  <elements>
+    <paragraph><content startOffset="0" length="6"/></paragraph>
+    <image ref="media/logo.png" mime="image/png" width="40" height="40"/>
+    <paragraph><content startOffset="7" length="5"/></paragraph>
+  </elements>
+</template>
+```
+
+The ZIP must include `content.xml` and a literal `media/logo.png` entry. This is a **test contract invented for the Public MVP**, not a proven native UYAP `<image>` schema. The reader refuses external URLs, `../` traversal, ambiguous case-folded duplicates, unsupported file types, missing references, mixed inline+reference payloads, oversized PNG resources and decompression dimensions above four million pixels. Nothing is unpacked to disk or uploaded to a server. Synthetic page sizes are A4, A5, Letter and Legal; unknown layout metadata fails closed.
+
+Desktop preview uses two bounded background workers, a card limit of `FileImportPolicy.MAX_CARDS`, native-aspect thumbnail scaling and cancellation checks when a file card is removed. This does **not** certify performance with authentic large UDFs or all file variations. Unit tests exercise 2,500 proposed paths, safe ZIP media resolution and ordered PDF text/image output; the Windows/Linux CI is authoritative for execution status.
+
+**Remaining blockers:** no real native UYAP visual-parity evidence, incomplete image/metadata schema support, no supervised Windows GUI acceptance test, and unresolved third-party license/NOTICE and release-gate approvals. No downloadable Windows binary or final release has been authorized.
