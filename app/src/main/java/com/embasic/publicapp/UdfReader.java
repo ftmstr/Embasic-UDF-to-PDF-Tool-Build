@@ -36,8 +36,18 @@ public final class UdfReader {
     public record Paragraph(List<Run> runs) {
         public Paragraph { runs = List.copyOf(runs); }
     }
-    public record DocumentSpec(String fileName, String formatId, List<Paragraph> paragraphs) {
-        public DocumentSpec { paragraphs = List.copyOf(paragraphs); }
+    public record DocumentSpec(String fileName, String formatId, List<Paragraph> paragraphs,
+                               List<DocumentElements.Block> blocks, DocumentElements.PageSpec page) {
+        public DocumentSpec {
+            paragraphs = List.copyOf(paragraphs);
+            blocks = List.copyOf(blocks);
+            if (page == null || blocks.isEmpty()) throw new IllegalArgumentException("Boş belge veya sayfa");
+        }
+        public DocumentSpec(String name, String format, List<Paragraph> oldParagraphs) {
+            this(name, format, oldParagraphs,
+                oldParagraphs.stream().<DocumentElements.Block>map(DocumentElements.ParagraphBlock::new).toList(),
+                DocumentElements.PageSpec.a4());
+        }
     }
     private static final Style DEFAULT = new Style(11, false, Color.BLACK);
     private UdfReader() {}
@@ -98,16 +108,15 @@ public final class UdfReader {
         if (!root.getTagName().equals("template")) throw new IllegalArgumentException("Desteklenmeyen UDF XML kökü");
         String version = root.getAttribute("format_id");
         if (version.isBlank()) throw new IllegalArgumentException("UDF format_id bulunamadı; sürüm doğrulanamadı");
-        Element content = null, body = null, styles = null;
+        Element content = null, body = null, styles = null, properties = null;
         for (Element e : children(root)) {
             switch (e.getTagName()) {
                 case "content" -> { if (content != null) throw new IllegalArgumentException("Çift content"); content = e; }
                 case "elements" -> { if (body != null) throw new IllegalArgumentException("Çift elements"); body = e; }
                 case "styles" -> { if (styles != null) throw new IllegalArgumentException("Çift styles"); styles = e; }
                 case "properties" -> {
-                    // Reject silently discarded page size/margin or layout metadata.
-                    if (e.hasAttributes() || !children(e).isEmpty() || !e.getTextContent().isBlank())
-                        throw new IllegalArgumentException("Bu MVP özel sayfa özelliklerini henüz desteklemiyor");
+                    if (properties != null) throw new IllegalArgumentException("Çift sayfa ayarı");
+                    properties = e;
                 }
                 default -> throw new IllegalArgumentException("Desteklenmeyen XML bileşeni: " + e.getTagName());
             }
@@ -124,7 +133,16 @@ public final class UdfReader {
             }
         }
         List<Paragraph> paragraphs = new ArrayList<>();
+        List<DocumentElements.Block> blocks = new ArrayList<>();
         for (Element p : children(body)) {
+            if ("table".equals(p.getTagName())) {
+                blocks.add(DocumentElements.table(p));
+                continue;
+            }
+            if ("image".equals(p.getTagName())) {
+                blocks.add(DocumentElements.image(p));
+                continue;
+            }
             if (!p.getTagName().equals("paragraph"))
                 throw new IllegalArgumentException("Bu MVP henüz " + p.getTagName() + " bileşenini desteklemiyor");
             List<Run> runs = new ArrayList<>();
@@ -143,10 +161,12 @@ public final class UdfReader {
                 runs.add(new Run(raw.substring(start, end), resolve(e, base)));
             }
             if (runs.isEmpty()) throw new IllegalArgumentException("Boş/desteklenmeyen paragraf");
-            paragraphs.add(new Paragraph(runs));
+            Paragraph paragraph = new Paragraph(runs);
+            paragraphs.add(paragraph);
+            blocks.add(new DocumentElements.ParagraphBlock(paragraph));
         }
-        if (paragraphs.isEmpty()) throw new IllegalArgumentException("Dönüştürülebilir paragraf bulunamadı");
-        return new DocumentSpec(name, version, paragraphs);
+        if (blocks.isEmpty()) throw new IllegalArgumentException("Dönüştürülebilir belge öğesi bulunamadı");
+        return new DocumentSpec(name, version, paragraphs, blocks, DocumentElements.page(properties));
     }
 
     private static int requiredInt(Element e, String key) {
