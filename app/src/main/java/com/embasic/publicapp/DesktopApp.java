@@ -67,6 +67,10 @@ public final class DesktopApp extends JFrame {
     private final JLabel zoomLabel = new JLabel();
     private final Timer zoomRefresh = new Timer(90, e -> rebuild());
     private final Timer previewRefresh = new Timer(110, e -> { rebuild(); updateFileStatus(); });
+    private final Timer viewportRefresh = new Timer(16, e -> refreshViewport(false));
+    private VirtualGridLayout virtualGrid;
+    private VirtualGridLayout.Visible drawnRange;
+    private int drawnZoom=-1, drawnColumns=-1, drawnCount=-1;
     private boolean dark = true, converting;
     private Item anchor;
     private Item focused;
@@ -117,7 +121,9 @@ public final class DesktopApp extends JFrame {
         top.add(actions, BorderLayout.EAST);
         add(top, BorderLayout.NORTH);
 
+        grid.setLayout(null); // Only visible card components exist; offscreen slots are geometry.
         grid.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
+        viewportRefresh.setRepeats(false);
         scroll.getVerticalScrollBar().setUnitIncrement(20);
         scroll.setBorder(BorderFactory.createEmptyBorder(0, 20, 0, 20));
         add(scroll, BorderLayout.CENTER);
@@ -129,11 +135,7 @@ public final class DesktopApp extends JFrame {
                 e.consume();
             }
         });
-        scroll.getViewport().addChangeListener(e -> {
-            int width = scroll.getViewport().getWidth();
-            int cols = ThumbnailSizing.columns(width, thumbnailZoom.getValue());
-            if (cols != lastColumns) { lastColumns = cols; rebuild(); }
-        });
+        scroll.getViewport().addChangeListener(e -> viewportRefresh.restart());
 
         JPanel bottom = new JPanel(new BorderLayout());
         bottom.setBorder(BorderFactory.createEmptyBorder(0, 22, 16, 22));
@@ -249,10 +251,10 @@ public final class DesktopApp extends JFrame {
         focused=next.focused();
         rebuild();
         int index=items.indexOf(focused);
-        if(index>=0 && index<grid.getComponentCount() &&
-                grid.getComponent(index) instanceof JComponent card) {
-            card.scrollRectToVisible(new java.awt.Rectangle(0,0,
-                    Math.max(1,card.getWidth()),Math.max(1,card.getHeight())));
+        if(index>=0 && virtualGrid!=null) {
+            // Offscreen cards have no Swing component; scrolling uses their logical bounds.
+            grid.scrollRectToVisible(virtualGrid.bounds(index));
+            viewportRefresh.restart();
         }
     }
 
@@ -449,20 +451,53 @@ public final class DesktopApp extends JFrame {
         label.addMouseListener(new MouseAdapter() { @Override public void mouseClicked(MouseEvent e) { chooseFiles(); } });
         return plus;
     }
+    private void refreshViewport(boolean force) {
+        if (!SwingUtilities.isEventDispatchThread()) {
+            SwingUtilities.invokeLater(() -> refreshViewport(force));
+            return;
+        }
+        int width=Math.max(1,scroll.getViewport().getWidth());
+        int zoom=thumbnailZoom.getValue();
+        VirtualGridLayout next=new VirtualGridLayout(items.size()+1,width,zoom);
+        VirtualGridLayout.Visible window=next.visible(scroll.getViewport().getViewRect());
+        // Refresh logical geometry even when the visible component window does not change.
+        virtualGrid=next;
+        lastColumns=next.columns();
+        Dimension preferred=next.preferredSize();
+        boolean resized=!preferred.equals(grid.getPreferredSize());
+        if(resized) grid.setPreferredSize(preferred);
+        if(!force && window.equals(drawnRange) && drawnZoom==zoom &&
+                drawnColumns==next.columns() && drawnCount==items.size()+1) {
+            if(resized) grid.revalidate();
+            return;
+        }
+        drawnRange=window;
+        drawnZoom=zoom;
+        drawnColumns=next.columns();
+        drawnCount=items.size()+1;
+        // At most visible rows plus a one-row buffer are instantiated.
+        grid.removeAll();
+        for(int index=window.startInclusive(); index<window.endExclusive(); index++) {
+            JPanel component=index==items.size() ? addCard() : card(items.get(index));
+            component.setBounds(next.bounds(index));
+            grid.add(component);
+        }
+        grid.revalidate();
+        grid.repaint();
+    }
+
     private void rebuild() {
-        if (!SwingUtilities.isEventDispatchThread()) { SwingUtilities.invokeLater(this::rebuild); return; }
-        if (focused != null && !items.contains(focused)) focused=null;
-        if (anchor != null && !items.contains(anchor)) anchor=null;
-        Color bg = background(), fg = foreground();
+        if (!SwingUtilities.isEventDispatchThread()) {
+            SwingUtilities.invokeLater(this::rebuild);
+            return;
+        }
+        if (focused!=null && !items.contains(focused)) focused=null;
+        if (anchor!=null && !items.contains(anchor)) anchor=null;
+        Color bg=background(), fg=foreground();
         getContentPane().setBackground(bg);
         grid.setBackground(bg);
-        grid.removeAll();
-        int cols = ThumbnailSizing.columns(scroll.getViewport().getWidth(), thumbnailZoom.getValue());
-        lastColumns = cols;
-        grid.setLayout(new java.awt.GridLayout(0, cols, ThumbnailSizing.GAP, ThumbnailSizing.GAP));
-        for (Item it : items) grid.add(card(it));
-        grid.add(addCard());
-        saveButton.setEnabled(!converting && !items.isEmpty() && items.stream().allMatch(x -> x.document != null));
+        saveButton.setEnabled(!converting && !items.isEmpty()
+                && items.stream().allMatch(item -> item.document!=null));
         status.setForeground(fg);
         for (Component cmp : getContentPane().getComponents())
             if (cmp instanceof JPanel panel) {
@@ -476,7 +511,7 @@ public final class DesktopApp extends JFrame {
                     }
                 }
             }
-        grid.revalidate(); grid.repaint();
+        refreshViewport(true);
     }
     private void shift(int direction) {
         if (selected.size() != 1) return;
