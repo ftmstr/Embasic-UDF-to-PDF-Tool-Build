@@ -105,9 +105,9 @@ public final class PdfExporter {
                     for (DocumentElements.Row row : table.rows())
                         for (DocumentElements.Cell cell : row.cells()) {
                             validateSupportedText(cell.text());
-                            if (cell.text().indexOf('\\t') >= 0
-                                    || cell.text().indexOf('\\r') >= 0
-                                    || cell.text().indexOf('\\n') >= 0)
+                            if (cell.text().indexOf('\t') >= 0
+                                    || cell.text().indexOf('\r') >= 0
+                                    || cell.text().indexOf('\n') >= 0)
                                 throw new IllegalArgumentException(
                                         "Desteklenmeyen tablo hücresi satır sonu veya sekme karakteri");
                         }
