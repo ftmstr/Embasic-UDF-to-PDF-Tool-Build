@@ -239,7 +239,13 @@ public final class PdfExporter {
             // large-font run can overlap the following text after newLine() resets it.
             if (x + length > right) newLine();
             lineHeight = Math.max(lineHeight, size * 1.4f);
-            if (y - size < bottom) newPage();
+            if (y - size < bottom) {
+                newPage();
+                // newPage() resets lineHeight to the default. A large run that
+                // starts on the next page still needs its own line advance;
+                // otherwise the following paragraph can overlap its glyphs.
+                lineHeight = Math.max(lineHeight, size * 1.4f);
+            }
             stream.beginText();
             stream.setFont(font, size);
             Color color = style.color();
