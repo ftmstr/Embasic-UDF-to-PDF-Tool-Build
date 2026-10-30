@@ -43,13 +43,17 @@ public final class VirtualGridLayout {
      * been instantiated for the destination. -1 indicates an outside drop.
      */
     public int indexAt(int x, int y) {
-        if (entries==0 || x<0 || y<0 || x>=width || y>=preferredSize().height)
-            return -1;
-        int row=Math.max(0,(y-PADDING)/rowStride);
-        if (row>=rows()) return -1;
-        int stride=card.cardWidth()+ThumbnailSizing.GAP;
-        int col=Math.max(0,Math.min(columns-1,(x-PADDING)/stride));
-        return (int)Math.min(entries-1L,(long)row*columns+col);
+        if (entries==0 || x<PADDING || y<PADDING || x>=width ||
+                y>=preferredSize().height) return -1;
+        int row=(y-PADDING)/rowStride;
+        int col=(x-PADDING)/(card.cardWidth()+ThumbnailSizing.GAP);
+        if (row>=rows() || col>=columns) return -1;
+        long index=(long)row*columns+col;
+        // A partial final row has no cards after the last real entry.
+        if (index>=entries) return -1;
+        // Empty margins and inter-card gaps are not reorder targets.
+        // Clamping them to a nearby card could silently move the wrong UDF.
+        return bounds((int)index).contains(x,y) ? (int)index : -1;
     }
 
     /** Horizontal midpoint used for before/after Explorer-style drops. */
