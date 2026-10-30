@@ -170,4 +170,28 @@ final class StructuredUdfRegressionTest {
         assertTrue(parse(valid).paragraphs().get(0).runs().get(0).style().bold());
     }
 
+
+    @Test void structuralTextCannotDisappearFromSyntheticPdf() throws Exception {
+        String valid = container(
+            "\n<table widths='100'>\n<row height='25'>\n<cell>A</cell>\n</row>\n</table>\n"
+                + para(0,2), "");
+        assertEquals(2, parse(valid).blocks().size(),
+            "Indentation whitespace between structural nodes remains supported");
+
+        for (String invalid : List.of(
+                container("<table widths='100'>HIDDEN<row height='25'><cell>A</cell></row></table>"
+                    + para(0,2), ""),
+                container("<table widths='100'><row height='25'>HIDDEN<cell>A</cell></row></table>"
+                    + para(0,2), ""),
+                container("<paragraph>HIDDEN<content startOffset='0' length='2'/></paragraph>", ""),
+                container(para(0,2), "").replace("<elements>", "<elements>HIDDEN"),
+                container(para(0,2), "").replace("<template format_id='1.0'>",
+                    "<template format_id='1.0'>HIDDEN"),
+                container(para(0,2), "").replace("<elements>",
+                    "<styles>HIDDEN<style name='s' size='11'/></styles><elements>")
+        )) {
+            assertThrows(IllegalArgumentException.class, () -> parse(invalid),
+                "Structural text must not silently disappear: " + invalid);
+        }
+    }
 }
