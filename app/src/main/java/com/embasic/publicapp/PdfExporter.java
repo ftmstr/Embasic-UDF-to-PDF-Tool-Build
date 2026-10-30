@@ -216,6 +216,8 @@ public final class PdfExporter {
         private final float left, right, top, bottom;
         private PDPageContentStream stream;
         private float x, y, lineHeight = 17f;
+        // A CRLF pair can be split across differently styled text runs.
+        private boolean previousWasCR;
         private Layout(PDDocument pdf, PDType0Font regular, PDType0Font bold,
                        DocumentElements.PageSpec page, boolean previewOnly) {
             this.pdf = pdf; this.regular = regular; this.bold = bold; this.page = page;
@@ -240,6 +242,7 @@ public final class PdfExporter {
             if (y < bottom) newPage();
         }
         void endParagraph() throws IOException {
+            previousWasCR = false;
             newLine();
             y -= 5f;
             if (y < bottom) newPage();
@@ -295,7 +298,21 @@ public final class PdfExporter {
             for (int i = 0; i < text.length();) {
                 int cp = text.codePointAt(i);
                 i += Character.charCount(cp);
-                if (cp == '\r') continue;
+                if (cp == '\r') {
+                    // A lone CR is a real line break, not a character to drop.
+                    // Remember it so a following LF (even in another run) does
+                    // not advance the cursor a second time.
+                    word(token.toString(), style);
+                    token.setLength(0);
+                    newLine();
+                    previousWasCR = true;
+                    continue;
+                }
+                if (cp == '\n' && previousWasCR) {
+                    previousWasCR = false;
+                    continue;
+                }
+                previousWasCR = false;
                 if (cp == '\n' || cp == '\t' || Character.isWhitespace(cp)) {
                     word(token.toString(), style);
                     token.setLength(0);
