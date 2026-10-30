@@ -61,6 +61,11 @@ public final class DesktopApp extends JFrame {
     private final JScrollPane scroll = new JScrollPane(grid);
     private final JLabel status = new JLabel("Dosyaları çalışma alanına bırakın veya + kartına basın");
     private final JButton saveButton = new JButton("PDF olarak kaydet");
+    private final JButton addButton = new JButton("+ UDF ekle");
+    private final JButton moveLeftButton = new JButton("← Taşı");
+    private final JButton moveRightButton = new JButton("Taşı →");
+    private final JButton removeButton = new JButton("Kaldır");
+    private final JButton clearButton = new JButton("Temizle");
     private final JButton themeButton = new JButton("Aydınlık tema");
     private final JSlider thumbnailZoom = new JSlider(ThumbnailSizing.MIN_WIDTH,
             ThumbnailSizing.MAX_WIDTH, ThumbnailSizing.DEFAULT_WIDTH);
@@ -99,7 +104,6 @@ public final class DesktopApp extends JFrame {
         title.setFont(title.getFont().deriveFont(Font.BOLD, 19f));
         top.add(title, BorderLayout.WEST);
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
-        JButton addButton = new JButton("+ UDF ekle");
         addButton.addActionListener(e -> chooseFiles());
         actions.add(addButton);
         themeButton.addActionListener(e -> { dark = !dark; themeButton.setText(dark ? "Aydınlık tema" : "Karanlık tema"); rebuild(); });
@@ -141,22 +145,24 @@ public final class DesktopApp extends JFrame {
         bottom.setBorder(BorderFactory.createEmptyBorder(0, 22, 16, 22));
         bottom.add(status, BorderLayout.WEST);
         JPanel ordered = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
-        JButton left = new JButton("← Taşı"), right = new JButton("Taşı →"), remove = new JButton("Kaldır"), clear = new JButton("Temizle");
-        left.addActionListener(e -> shift(-1)); right.addActionListener(e -> shift(1));
-        remove.addActionListener(e -> { for (Item it : selected) it.cancelled = true; items.removeAll(selected); selected.clear(); rebuild(); updateFileStatus(); });
-        clear.addActionListener(e -> {
-            if (items.isEmpty() || JOptionPane.showConfirmDialog(this, "Tüm dosyalar kaldırılsın mı?", "Temizle",
+        moveLeftButton.addActionListener(e -> shift(-1));
+        moveRightButton.addActionListener(e -> shift(1));
+        removeButton.addActionListener(e -> removeSelected());
+        clearButton.addActionListener(e -> {
+            if (converting || items.isEmpty() || JOptionPane.showConfirmDialog(this,
+                    "Tüm dosyalar kaldırılsın mı?", "Temizle",
                     JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) return;
             for (Item it : items) it.cancelled = true;
             items.clear(); selected.clear(); rebuild(); updateFileStatus();
         });
-        ordered.add(left); ordered.add(right); ordered.add(remove); ordered.add(clear);
+        ordered.add(moveLeftButton); ordered.add(moveRightButton);
+        ordered.add(removeButton); ordered.add(clearButton);
         bottom.add(ordered, BorderLayout.EAST);
         add(bottom, BorderLayout.SOUTH);
 
         TransferHandler fileDrop = new TransferHandler() {
             @Override public boolean canImport(TransferSupport support) {
-                return support.isDataFlavorSupported(DataFlavor.javaFileListFlavor);
+                return !converting && support.isDataFlavorSupported(DataFlavor.javaFileListFlavor);
             }
             @Override public boolean importData(TransferSupport support) {
                 try {
@@ -204,7 +210,7 @@ public final class DesktopApp extends JFrame {
         });
         input.put(KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, 0), "remove");
         action.put("remove", new javax.swing.AbstractAction() {
-            @Override public void actionPerformed(java.awt.event.ActionEvent e) { for (Item it : selected) it.cancelled = true; items.removeAll(selected); selected.clear(); rebuild(); updateFileStatus(); }
+            @Override public void actionPerformed(java.awt.event.ActionEvent e) { removeSelected(); }
         });
         rebuild();
     }
@@ -259,6 +265,7 @@ public final class DesktopApp extends JFrame {
     }
 
     private void chooseFiles() {
+        if (converting) return;
         JFileChooser chooser = new JFileChooser();
         chooser.setMultiSelectionEnabled(true);
         chooser.setFileFilter(new FileNameExtensionFilter("UYAP UDF (*.udf)", "udf"));
@@ -269,6 +276,7 @@ public final class DesktopApp extends JFrame {
     }
 
     private void addFiles(List<Path> paths) {
+        if (converting) return;
         FileImportPolicy.Selection plan = FileImportPolicy.plan(
                 items.stream().map(item -> item.path).toList(), paths);
         for (Path normalized : plan.accepted()) {
@@ -390,7 +398,7 @@ public final class DesktopApp extends JFrame {
                 Component hit = SwingUtilities.getDeepestComponentAt(grid, released.x, released.y);
                 while (hit != null && hit.getParent() != grid) hit = hit.getParent();
                 Object target = hit instanceof JComponent jc ? jc.getClientProperty("udf-item") : null;
-                if (dragged && hit instanceof JComponent dropCard) {
+                if (dragged && !converting && hit instanceof JComponent dropCard) {
                     List<Item> reordered = null;
                     if (target instanceof Item other && other != item) {
                         // A grid is ordered left-to-right: left half inserts before,
@@ -522,6 +530,24 @@ public final class DesktopApp extends JFrame {
             }
         refreshViewport(true);
     }
+    /** Keep the visible queue identical to the document snapshot while a PDF is saving. */
+    private void setQueueEditingEnabled(boolean enabled) {
+        addButton.setEnabled(enabled);
+        moveLeftButton.setEnabled(enabled);
+        moveRightButton.setEnabled(enabled);
+        removeButton.setEnabled(enabled);
+        clearButton.setEnabled(enabled);
+    }
+
+    private void removeSelected() {
+        if (converting || selected.isEmpty()) return;
+        for (Item item : selected) item.cancelled = true;
+        items.removeAll(selected);
+        selected.clear();
+        rebuild();
+        updateFileStatus();
+    }
+
     private void shift(int direction) {
         if (converting || selected.isEmpty()) return;
         // Toolbar arrows operate on the entire Explorer-style selection,
@@ -550,13 +576,18 @@ public final class DesktopApp extends JFrame {
                 "Dosya mevcut", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) return;
         final Path output = target;
         List<UdfReader.DocumentSpec> docs = items.stream().map(x -> x.document).toList();
-        converting = true; saveButton.setEnabled(false); status.setText("PDF oluşturuluyor...");
+        converting = true;
+        setQueueEditingEnabled(false);
+        saveButton.setEnabled(false);
+        status.setText("PDF oluşturuluyor...");
         new SwingWorker<Integer, Void>() {
             @Override protected Integer doInBackground() throws Exception {
                 return PdfExporter.save(docs, output, overwrite);
             }
             @Override protected void done() {
-                converting = false; rebuild();
+                converting = false;
+                setQueueEditingEnabled(true);
+                rebuild();
                 try {
                     int count = get();
                     status.setText(count + " sayfalık PDF kaydedildi: " + output.getFileName());
