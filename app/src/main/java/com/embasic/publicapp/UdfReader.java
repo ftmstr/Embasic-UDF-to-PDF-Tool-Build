@@ -165,7 +165,7 @@ public final class UdfReader {
             for (Element e : children(styles)) {
                 if (!e.getTagName().equals("style")) throw new IllegalArgumentException("Desteklenmeyen stil");
                 onlyAttributes(e, "name", "size", "bold", "foreground");
-                if (!children(e).isEmpty() || !e.getTextContent().isBlank())
+                if (!children(e).isEmpty() || !DocumentElements.isStructuralWhitespace(e.getTextContent()))
                     throw new IllegalArgumentException("Desteklenmeyen stil içeriği");
                 String key = e.getAttribute("name");
                 if (key.isBlank() || named.containsKey(key)) throw new IllegalArgumentException("Tekrarlanan stil");
@@ -194,7 +194,7 @@ public final class UdfReader {
             for (Element e : children(p)) {
                 if (!e.getTagName().equals("content")) throw new IllegalArgumentException("Desteklenmeyen paragraf elemanı");
                 onlyAttributes(e, "startOffset", "length", "resolver", "size", "bold", "foreground");
-                if (!children(e).isEmpty() || !e.getTextContent().isBlank())
+                if (!children(e).isEmpty() || !DocumentElements.isStructuralWhitespace(e.getTextContent()))
                     throw new IllegalArgumentException("Desteklenmeyen metin aralığı içeriği");
                 int start = requiredInt(e, "startOffset");
                 int length = requiredInt(e, "length");
@@ -204,7 +204,7 @@ public final class UdfReader {
                 if (start < coveredUntil)
                     throw new IllegalArgumentException("Sırasız veya çakışan UTF-16 metin aralığı");
                 String gap = raw.substring(coveredUntil, start);
-                if (!gap.isBlank())
+                if (!DocumentElements.isStructuralWhitespace(gap))
                     throw new IllegalArgumentException("Atlanan UTF-16 metin aralığı");
                 if (splitsSurrogate(raw, start) || splitsSurrogate(raw, end))
                     throw new IllegalArgumentException("Unicode çiftinin ortasından bölme");
@@ -226,7 +226,7 @@ public final class UdfReader {
             paragraphs.add(paragraph);
             blocks.add(new DocumentElements.ParagraphBlock(paragraph));
         }
-        if (!raw.substring(coveredUntil).isBlank())
+        if (!DocumentElements.isStructuralWhitespace(raw.substring(coveredUntil)))
             throw new IllegalArgumentException("UDF içeriğinde PDF\u0027ye aktarılmayan metin var");
         if (blocks.isEmpty()) throw new IllegalArgumentException("Dönüştürülebilir belge öğesi bulunamadı");
         return new DocumentSpec(name, version, paragraphs, blocks, DocumentElements.page(properties));
@@ -250,7 +250,7 @@ public final class UdfReader {
             Node node = nodes.item(i);
             if ((node.getNodeType() == Node.TEXT_NODE
                     || node.getNodeType() == Node.CDATA_SECTION_NODE)
-                    && !node.getNodeValue().isBlank())
+                    && !DocumentElements.isStructuralWhitespace(node.getNodeValue()))
                 throw new IllegalArgumentException("Desteklenmeyen " + element.getTagName()
                         + " doğrudan metni");
         }
