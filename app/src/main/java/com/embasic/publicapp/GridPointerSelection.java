@@ -33,17 +33,24 @@ public final class GridPointerSelection {
                 next.add(ordered.get(i));
             // Keep the original anchor so successive Shift-clicks resize the same range.
             // A disjoint Ctrl+Shift union must still follow the visual file order.
-            List<T> orderedSelection = new ArrayList<>();
-            for (T item : ordered) if (next.contains(item)) orderedSelection.add(item);
-            return new Press<>(orderedSelection, rangeAnchor, false);
+            return new Press<>(inVisualOrder(ordered, next), rangeAnchor, false);
         }
         if (ctrl) {
             if (!next.add(clicked)) next.remove(clicked);
-            return new Press<>(new ArrayList<>(next), clicked, false);
+            // Ctrl-click can insert a card between two earlier selections.
+            // Keep the selection in visual file order for subsequent actions.
+            return new Press<>(inVisualOrder(ordered, next), clicked, false);
         }
         if (next.size() > 1 && next.contains(clicked))
             return new Press<>(new ArrayList<>(next), anchor, true);
         return new Press<>(List.of(clicked), clicked, false);
+    }
+
+    /** Canonicalize selection order independently of Ctrl-click insertion order. */
+    static <T> List<T> inVisualOrder(List<T> ordered, Collection<T> selected) {
+        List<T> result = new ArrayList<>();
+        for (T item : ordered) if (selected.contains(item)) result.add(item);
+        return result;
     }
 
     public static <T> List<T> release(Collection<T> selected, T clicked,
