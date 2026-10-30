@@ -129,6 +129,25 @@ final class StructuredUdfRegressionTest {
         assertArrayEquals(preserved,Files.readAllBytes(output));
     }
 
+    @Test void tableCellsRejectInvisibleControlsBeforePdfRendering() {
+        // A table cell is one line in this synthetic contract. Controls and
+        // Unicode line separators must never disappear or change PDF geometry.
+        for (String value : List.of("A\\u2028B", "A\\u2029B", "A\\u0085B",
+                "A\\tB", "A\\rB", "A\\nB")) {
+            var table = new DocumentElements.TableBlock(
+                    List.of(100f),
+                    List.of(new DocumentElements.Row(
+                            List.of(new DocumentElements.Cell(value, 1, 1)), 30f)));
+            var document = new UdfReader.DocumentSpec(
+                    "synthetic.udf", "1.0", List.of(),
+                    List.of(table), DocumentElements.PageSpec.a4());
+            IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                    () -> { try (PDDocument ignored = PdfExporter.render(List.of(document))) {} },
+                    "Table cell must reject control: " + value);
+            assertTrue(error.getMessage().contains("Desteklenmeyen"), error.getMessage());
+        }
+    }
+
     @Test void unsupportedStructuresAndBadGeometryFailClosed() throws Exception {
         var noTableWidth="<table><row height='25'><cell>A</cell></row></table>";
         assertThrows(IllegalArgumentException.class,()->parse(container(noTableWidth,"")));
