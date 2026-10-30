@@ -48,6 +48,18 @@ public final class PdfExporter {
         throw new IllegalStateException("Unicode PDF fontu bulunamadı; Windows Arial/Segoe UI veya DejaVu Sans gerekli");
     }
 
+    /** Validate original runs before any trailing whitespace is trimmed or skipped. */
+    private static void validateSupportedText(String text) {
+        for (int i = 0; i < text.length();) {
+            int cp = text.codePointAt(i);
+            i += Character.charCount(cp);
+            if (cp != '\r' && cp != '\n' && cp != '\t'
+                    && (Character.isISOControl(cp) || cp == 0x2028 || cp == 0x2029))
+                throw new IllegalArgumentException("Desteklenmeyen metin kontrol veya ayırıcı karakteri: U+"
+                        + Integer.toHexString(cp).toUpperCase(Locale.ROOT));
+        }
+    }
+
     private static boolean usesBold(List<UdfReader.DocumentSpec> docs) {
         for (UdfReader.DocumentSpec document : docs)
             for (DocumentElements.Block block : document.blocks())
@@ -77,6 +89,14 @@ public final class PdfExporter {
     private static PDDocument renderInternal(List<UdfReader.DocumentSpec> docs,
                                              boolean previewOnly) throws Exception {
         if (docs == null || docs.isEmpty()) throw new IllegalArgumentException("PDF için en az bir UDF gerekli");
+        // A final run or paragraph may be omitted during layout to avoid blank
+        // pages. Validate the ORIGINAL text first: unsupported separators must
+        // never disappear through stripTrailing(), isBlank(), or run skipping.
+        for (UdfReader.DocumentSpec document : docs)
+            for (DocumentElements.Block block : document.blocks())
+                if (block instanceof DocumentElements.ParagraphBlock paragraph)
+                    for (UdfReader.Run run : paragraph.paragraph().runs())
+                        validateSupportedText(run.text());
         PDDocument pdf = new PDDocument();
         try {
             PDType0Font regular = PDType0Font.load(pdf, systemFont(false).toFile());
