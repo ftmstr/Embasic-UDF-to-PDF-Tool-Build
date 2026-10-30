@@ -298,6 +298,13 @@ public final class PdfExporter {
             for (int i = 0; i < text.length();) {
                 int cp = text.codePointAt(i);
                 i += Character.charCount(cp);
+                // These controls and Unicode separators have no defined layout
+                // semantics in the public synthetic subset. Treating them as
+                // ordinary spaces would silently change the PDF text geometry.
+                if (cp != '\r' && cp != '\n' && cp != '\t'
+                        && (Character.isISOControl(cp) || cp == 0x2028 || cp == 0x2029))
+                    throw new IllegalArgumentException("Desteklenmeyen metin kontrol veya ayırıcı karakteri: U+"
+                            + Integer.toHexString(cp).toUpperCase(Locale.ROOT));
                 if (cp == '\r') {
                     // A lone CR is a real line break, not a character to drop.
                     // Remember it so a following LF (even in another run) does
