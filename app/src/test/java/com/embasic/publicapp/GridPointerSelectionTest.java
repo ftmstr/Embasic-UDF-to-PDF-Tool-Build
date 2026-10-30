@@ -40,6 +40,17 @@ final class GridPointerSelectionTest {
         assertFalse(pressed.collapseOnClick());
     }
 
+    @Test void ctrlClickKeepsDisjointSelectionInVisualOrder() {
+        // The clicked middle card must not be appended after a later selected card.
+        var added = GridPointerSelection.press(FILES, List.of("A", "E"), "A", "C", false, true);
+        assertEquals(List.of("A", "C", "E"), added.selected());
+        assertEquals("C", added.anchor());
+        var removed = GridPointerSelection.press(FILES, added.selected(), "C", "A", false, true);
+        assertEquals(List.of("C", "E"), removed.selected());
+        assertEquals(List.of("A", "B", "C", "D", "E"),
+                GridPointerSelection.inVisualOrder(FILES, FILES));
+    }
+
     @Test void ctrlShiftClickAddsAnchorRangeWithoutDiscardingOtherCards() {
         var range = GridPointerSelection.press(FILES, List.of("A", "E"), "B", "D", true, true);
         assertEquals(List.of("A", "B", "C", "D", "E"), range.selected());
