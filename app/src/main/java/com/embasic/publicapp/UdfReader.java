@@ -201,14 +201,24 @@ public final class UdfReader {
                 if (start < 0 || length < 0 || (long) start + length > raw.length())
                     throw new IllegalArgumentException("Geçersiz UTF-16 metin aralığı");
                 int end = start + length;
-                if (start < coveredUntil || !raw.substring(coveredUntil, start).isBlank())
-                    throw new IllegalArgumentException("Sırasız, çakışan veya atlanan UTF-16 metin aralığı");
+                if (start < coveredUntil)
+                    throw new IllegalArgumentException("Sırasız veya çakışan UTF-16 metin aralığı");
+                String gap = raw.substring(coveredUntil, start);
+                if (!gap.isBlank())
+                    throw new IllegalArgumentException("Atlanan UTF-16 metin aralığı");
                 if (splitsSurrogate(raw, start) || splitsSurrogate(raw, end))
                     throw new IllegalArgumentException("Unicode çiftinin ortasından bölme");
                 String key = e.getAttribute("resolver");
                 Style base = key.isBlank() ? DEFAULT : named.get(key);
                 if (base == null) throw new IllegalArgumentException("Bulunamayan stil: " + key);
-                runs.add(new Run(raw.substring(start, end), resolve(e, base)));
+                // Disjoint ranges inside the SAME paragraph may skip whitespace.
+                // Preserve that source whitespace in the following styled run:
+                // silently omitting it merges words and changes PDF geometry.
+                // Gaps before the first run retain the documented structural
+                // whitespace behavior of the synthetic UTF-16 subset.
+                String text = raw.substring(start, end);
+                if (!runs.isEmpty()) text = gap + text;
+                runs.add(new Run(text, resolve(e, base)));
                 coveredUntil = end;
             }
             if (runs.isEmpty()) throw new IllegalArgumentException("Boş/desteklenmeyen paragraf");
