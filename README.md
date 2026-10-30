@@ -5,7 +5,7 @@
 ## What is working in source
 
 - `app/`: **new, independently authored Java 17 Swing / PDFBox 3.0.8 desktop MVP**. Opens a thumbnail workspace, adds multiple files from a dialog or Explorer drop, reorders selected file cards, supports basic light/dark colors, and saves a PDF in item order. File reading and previews happen off the Swing UI thread.
-- Safe `.udf` ZIP scanning and fail-closed `content.xml` parser: limited `template` / `format_id` / `content` / `elements` / `paragraph` XML subset with UTF-16 offsets and named basic styles. Controlled synthetic table, ZIP-local PNG reference, and page-layout subsets are implemented; unsupported elements, headers, signatures, exotic fonts, and unverified variants **fail with an explicit error**; no silent omission.
+- Safe `.udf` ZIP scanning and fail-closed `content.xml` parser: limited `template` / `format_id` / `content` / `elements` / `paragraph` XML subset with UTF-16 offsets and named basic styles. Only the documented synthetic `format_id="1.0"` contract is accepted (other version identifiers fail closed). Controlled synthetic table, ZIP-local PNG reference, and page-layout subsets are implemented; unsupported elements, headers, signatures, exotic fonts, and unverified variants **fail with an explicit error**; no silent omission.
 - PDFBox Unicode-font-backed A4 PDF output, same-directory temporary staging, PDF re-open validation, overwrite confirmation/guard, ordered multiple documents.
 - `.github/workflows/public-mvp-ci.yml`: compile/JUnit/CLI-smoke on Ubuntu and Windows. **No binary publishing**.
 
