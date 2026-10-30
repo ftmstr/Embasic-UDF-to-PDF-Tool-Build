@@ -197,6 +197,33 @@ final class PdfTrailingPageTest {
         }
     }
 
+    @Test void trailingUnsupportedControlsCannotBeTrimmedOrSkipped() {
+        // U+2028/U+2029 are Java whitespace. stripTrailing() and isBlank()
+        // could previously erase them in the last run or paragraph, bypassing
+        // the fail-closed validation inside Layout.add().
+        var style = new UdfReader.Style(11f, false, Color.BLACK);
+        for (int cp : new int[]{0x2028, 0x2029, 0x000B, 0x000C, 0x0085}) {
+            String unsupported = new String(Character.toChars(cp));
+            var visible = new UdfReader.Run("VISIBLE", style);
+            var cases = List.of(
+                    List.of(new UdfReader.Paragraph(List.of(
+                            new UdfReader.Run("VISIBLE" + unsupported, style)))),
+                    List.of(new UdfReader.Paragraph(List.of(
+                            visible, new UdfReader.Run(unsupported, style)))),
+                    List.of(new UdfReader.Paragraph(List.of(visible)),
+                            new UdfReader.Paragraph(List.of(
+                                    new UdfReader.Run(unsupported, style)))));
+            for (var paragraphs : cases) {
+                var document = new UdfReader.DocumentSpec("synthetic.udf", "1.0", paragraphs);
+                var failure = assertThrows(IllegalArgumentException.class,
+                        () -> PdfExporter.render(List.of(document)),
+                        "Trailing unsupported U+" + Integer.toHexString(cp) + " must fail closed");
+                assertTrue(failure.getMessage().contains("U+"),
+                        "The rejected character must be identified to the user");
+            }
+        }
+    }
+
     @Test void trailingEmptyEditorParagraphsDoNotCreateBlankPage() throws Exception {
         var style = new UdfReader.Style(11f, false, Color.BLACK);
         var empty = new DocumentElements.ParagraphBlock(new UdfReader.Paragraph(List.of(
