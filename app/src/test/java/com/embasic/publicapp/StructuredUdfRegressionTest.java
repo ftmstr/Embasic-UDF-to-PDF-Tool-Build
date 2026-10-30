@@ -147,6 +147,18 @@ final class StructuredUdfRegressionTest {
         String nested="<table widths='100'><row height='30'><cell><paragraph/></cell></row></table>";
         assertThrows(IllegalArgumentException.class,()->parse(container(nested,"")));
     }
+    @Test void unknownFormatVersionsCannotBeRenderedAsSyntheticOneZero() throws Exception {
+        String valid = "<template format_id='1.0'><content>ABC</content>"
+                + "<elements><paragraph><content startOffset='0' length='3'/>"
+                + "</paragraph></elements></template>";
+        assertEquals("1.0", parse(valid).formatId());
+        for (String version : List.of("1.1", "2.0", "1.0 ", "unknown", "")) {
+            String altered = valid.replace("format_id='1.0'", "format_id='" + version + "'");
+            assertThrows(IllegalArgumentException.class, () -> parse(altered),
+                    "Unverified schema version must fail closed: " + version);
+        }
+    }
+
     @Test void syntheticXmlMetadataAndMalformedBoldFailClosed() throws Exception {
         String plain = "<template format_id='1.0'><content>ABC</content>"
                 + "<elements><paragraph><content startOffset='0' length='3'/>"
