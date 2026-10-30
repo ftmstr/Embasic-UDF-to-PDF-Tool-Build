@@ -32,7 +32,10 @@ public final class GridPointerSelection {
             for (int i = Math.min(first, last); i <= Math.max(first, last); i++)
                 next.add(ordered.get(i));
             // Keep the original anchor so successive Shift-clicks resize the same range.
-            return new Press<>(new ArrayList<>(next), rangeAnchor, false);
+            // A disjoint Ctrl+Shift union must still follow the visual file order.
+            List<T> orderedSelection = new ArrayList<>();
+            for (T item : ordered) if (next.contains(item)) orderedSelection.add(item);
+            return new Press<>(orderedSelection, rangeAnchor, false);
         }
         if (ctrl) {
             if (!next.add(clicked)) next.remove(clicked);
