@@ -53,8 +53,13 @@ public final class PdfExporter {
         for (int i = 0; i < text.length();) {
             int cp = text.codePointAt(i);
             i += Character.charCount(cp);
+            // Zero-width and bidi format controls have no defined placement in
+            // the synthetic PDF subset. Reject them before font loading rather
+            // than silently dropping, reordering, or hiding visible text.
+            int category = Character.getType(cp);
             if (cp != '\r' && cp != '\n' && cp != '\t'
-                    && (Character.isISOControl(cp) || cp == 0x2028 || cp == 0x2029))
+                    && (Character.isISOControl(cp) || cp == 0x2028 || cp == 0x2029
+                        || category == Character.FORMAT || category == Character.SURROGATE))
                 throw new IllegalArgumentException("Desteklenmeyen metin kontrol veya ayırıcı karakteri: U+"
                         + Integer.toHexString(cp).toUpperCase(Locale.ROOT));
         }
