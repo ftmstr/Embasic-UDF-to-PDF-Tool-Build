@@ -142,4 +142,37 @@ final class PdfTrailingPageTest {
             else System.setProperty(property, previous);
         }
     }
+
+    @Test void trailingEmptyEditorParagraphsDoNotCreateBlankPage() throws Exception {
+        var style = new UdfReader.Style(11f, false, Color.BLACK);
+        var empty = new DocumentElements.ParagraphBlock(new UdfReader.Paragraph(List.of(
+                new UdfReader.Run("\\n \\t", style))));
+        List<DocumentElements.Block> blocks = new ArrayList<>(paragraphs(34).blocks());
+        blocks.add(empty);
+        blocks.add(new DocumentElements.ParagraphBlock(new UdfReader.Paragraph(List.of(
+                new UdfReader.Run("", style)))));
+        var document = new UdfReader.DocumentSpec("synthetic.udf", "1.0", List.of(),
+                blocks, DocumentElements.PageSpec.a4());
+        try (PDDocument pdf = PdfExporter.render(List.of(document))) {
+            assertEquals(1, pdf.getNumberOfPages(),
+                    "Trailing empty editor paragraphs must not allocate page two");
+            assertTrue(new PDFTextStripper().getText(pdf).contains("LINE33"));
+        }
+
+        // An empty paragraph in the middle is meaningful spacing and must remain.
+        List<DocumentElements.Block> interior = new ArrayList<>(paragraphs(33).blocks());
+        interior.add(empty);
+        interior.add(new DocumentElements.ParagraphBlock(new UdfReader.Paragraph(List.of(
+                new UdfReader.Run("LAST", style)))));
+        var withInteriorGap = new UdfReader.DocumentSpec("synthetic.udf", "1.0",
+                List.of(), interior, DocumentElements.PageSpec.a4());
+        try (PDDocument pdf = PdfExporter.render(List.of(withInteriorGap))) {
+            assertEquals(2, pdf.getNumberOfPages(),
+                    "Interior blank paragraph must still consume vertical space");
+            var secondPage = new PDFTextStripper();
+            secondPage.setStartPage(2);
+            secondPage.setEndPage(2);
+            assertTrue(secondPage.getText(pdf).contains("LAST"));
+        }
+    }
 }
