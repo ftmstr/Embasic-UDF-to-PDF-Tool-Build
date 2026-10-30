@@ -33,6 +33,29 @@ final class PdfTrailingPageTest {
         }
     }
 
+    @Test void terminalNewlinesAcrossRunsDoNotCreateBlankPages() throws Exception {
+        // 33 preceding paragraphs leave just enough room for LINE33. Two
+        // terminal newlines previously allocated an otherwise empty page two.
+        // Both a single run and a whitespace-only trailing run must behave.
+        var style = new UdfReader.Style(11f, false, Color.BLACK);
+        for (boolean splitRuns : new boolean[]{false, true}) {
+            List<UdfReader.Paragraph> content = new ArrayList<>(paragraphs(33).paragraphs());
+            List<UdfReader.Run> tail = splitRuns
+                    ? List.of(new UdfReader.Run("LINE33", style),
+                              new UdfReader.Run("\n\n \t", style))
+                    : List.of(new UdfReader.Run("LINE33\n\n \t", style));
+            content.add(new UdfReader.Paragraph(tail));
+            var document = new UdfReader.DocumentSpec("synthetic.udf", "1.0", content);
+            try (PDDocument pdf = PdfExporter.render(List.of(document))) {
+                assertEquals(1, pdf.getNumberOfPages(),
+                        "Terminal line breaks must not create an empty page");
+                String text = new PDFTextStripper().getText(pdf);
+                assertTrue(text.contains("LINE0"), text);
+                assertTrue(text.contains("LINE33"), text);
+            }
+        }
+    }
+
     @Test void followingParagraphStillFlowsToNextPage() throws Exception {
         try (PDDocument pdf = PdfExporter.render(List.of(paragraphs(35)))) {
             assertEquals(2, pdf.getNumberOfPages());
