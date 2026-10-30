@@ -43,6 +43,18 @@ public final class DocumentElements {
                 throw new IllegalArgumentException("Desteklenmeyen " + element.getTagName()
                         + " özelliği: " + attributes.item(i).getNodeName());
     }
+    /** Structural nodes may contain formatting whitespace, never hidden text. */
+    private static void rejectDirectText(Element element) {
+        NodeList nodes = element.getChildNodes();
+        for (int i = 0; i < nodes.getLength(); i++) {
+            var node = nodes.item(i);
+            if ((node.getNodeType() == org.w3c.dom.Node.TEXT_NODE
+                    || node.getNodeType() == org.w3c.dom.Node.CDATA_SECTION_NODE)
+                    && !node.getNodeValue().isBlank())
+                throw new IllegalArgumentException("Desteklenmeyen " + element.getTagName()
+                        + " doğrudan metni");
+        }
+    }
     private static List<Element> children(Element parent) {
         List<Element> list = new ArrayList<>();
         NodeList nodes = parent.getChildNodes();
@@ -95,6 +107,7 @@ public final class DocumentElements {
     }
     public static TableBlock table(Element table) {
         onlyAttributes(table, "widths");
+        rejectDirectText(table);
         String widthsValue = table.getAttribute("widths");
         if (widthsValue.isBlank()) throw new IllegalArgumentException("Tablo sütun genişlikleri eksik");
         String[] parts = widthsValue.split(",", -1);
@@ -105,6 +118,7 @@ public final class DocumentElements {
         for (Element row : children(table)) {
             if (!row.getTagName().equals("row")) throw new IllegalArgumentException("Desteklenmeyen tablo satırı");
             onlyAttributes(row, "height");
+            rejectDirectText(row);
             if (rows.size() >= 500) throw new IllegalArgumentException("Tablo çok fazla satır içeriyor");
             float height = positive(row.getAttribute("height"), "satır yüksekliği", 180);
             if (height < 18f) throw new IllegalArgumentException("Satır yüksekliği yetersiz");
