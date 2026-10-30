@@ -93,10 +93,26 @@ public final class PdfExporter {
         // pages. Validate the ORIGINAL text first: unsupported separators must
         // never disappear through stripTrailing(), isBlank(), or run skipping.
         for (UdfReader.DocumentSpec document : docs)
-            for (DocumentElements.Block block : document.blocks())
-                if (block instanceof DocumentElements.ParagraphBlock paragraph)
+            for (DocumentElements.Block block : document.blocks()) {
+                if (block instanceof DocumentElements.ParagraphBlock paragraph) {
                     for (UdfReader.Run run : paragraph.paragraph().runs())
                         validateSupportedText(run.text());
+                } else if (block instanceof DocumentElements.TableBlock table) {
+                    // Table cells are rendered as a single PDF text line. A tab,
+                    // newline, or unsupported separator must not be emitted as
+                    // an invisible glyph or silently alter the cell geometry.
+                    // Validate before font loading and before any PDF is written.
+                    for (DocumentElements.Row row : table.rows())
+                        for (DocumentElements.Cell cell : row.cells()) {
+                            validateSupportedText(cell.text());
+                            if (cell.text().indexOf('\\t') >= 0
+                                    || cell.text().indexOf('\\r') >= 0
+                                    || cell.text().indexOf('\\n') >= 0)
+                                throw new IllegalArgumentException(
+                                        "Desteklenmeyen tablo hücresi satır sonu veya sekme karakteri");
+                        }
+                }
+            }
         PDDocument pdf = new PDDocument();
         try {
             PDType0Font regular = PDType0Font.load(pdf, systemFont(false).toFile());
