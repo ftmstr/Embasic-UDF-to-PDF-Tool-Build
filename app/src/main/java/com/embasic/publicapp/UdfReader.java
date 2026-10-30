@@ -134,7 +134,10 @@ public final class UdfReader {
         onlyAttributes(root, "format_id");
         rejectDirectText(root);
         String version = root.getAttribute("format_id");
-        if (version.isBlank()) throw new IllegalArgumentException("UDF format_id bulunamadı; sürüm doğrulanamadı");
+        // Only the independently documented synthetic 1.0 fixture contract is implemented.
+        // Do not guess a future or authentic UYAP schema from an arbitrary format_id.
+        if (!"1.0".equals(version))
+            throw new IllegalArgumentException("Desteklenmeyen sentetik UDF format_id: " + version);
         Element content = null, body = null, styles = null, properties = null;
         for (Element e : children(root)) {
             switch (e.getTagName()) {
