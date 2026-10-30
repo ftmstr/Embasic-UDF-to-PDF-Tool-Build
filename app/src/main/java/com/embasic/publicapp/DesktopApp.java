@@ -199,6 +199,10 @@ public final class DesktopApp extends JFrame {
         bindArrow(KeyEvent.VK_RIGHT, 1);
         bindArrow(KeyEvent.VK_UP, -1, true);
         bindArrow(KeyEvent.VK_DOWN, 1, true);
+        // Explorer-style navigation across the full logical queue, including
+        // cards outside the viewport. Shift extends, Ctrl only moves focus.
+        bindArrow(KeyEvent.VK_HOME, -Integer.MAX_VALUE);
+        bindArrow(KeyEvent.VK_END, Integer.MAX_VALUE);
         input.put(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.CTRL_DOWN_MASK), "toggleFocused");
         action.put("toggleFocused", new javax.swing.AbstractAction() {
             @Override public void actionPerformed(java.awt.event.ActionEvent e) {
