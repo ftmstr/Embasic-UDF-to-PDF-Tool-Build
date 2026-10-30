@@ -58,6 +58,24 @@ public final class PdfExporter {
     }
 
     public static PDDocument render(List<UdfReader.DocumentSpec> docs) throws Exception {
+        return renderInternal(docs, false);
+    }
+
+    /**
+     * A thumbnail only needs the first page. Avoid laying out every later page
+     * of a large synthetic document just to render its first-page preview.
+     * The full export path is unchanged and still validates every page.
+     */
+    static PDDocument renderPreview(UdfReader.DocumentSpec doc) throws Exception {
+        return renderInternal(List.of(doc), true);
+    }
+
+    private static final class PreviewPageComplete extends RuntimeException {
+        PreviewPageComplete() { super(null, null, false, false); }
+    }
+
+    private static PDDocument renderInternal(List<UdfReader.DocumentSpec> docs,
+                                             boolean previewOnly) throws Exception {
         if (docs == null || docs.isEmpty()) throw new IllegalArgumentException("PDF için en az bir UDF gerekli");
         PDDocument pdf = new PDDocument();
         try {
@@ -67,8 +85,9 @@ public final class PdfExporter {
             // Tables and images use the regular font; paragraph runs alone need bold.
             PDType0Font bold = usesBold(docs)
                     ? PDType0Font.load(pdf, systemFont(true).toFile()) : regular;
-            for (UdfReader.DocumentSpec document : docs) {
-                try (Layout layout = new Layout(pdf, regular, bold, document.page())) {
+            try {
+                for (UdfReader.DocumentSpec document : docs) {
+                try (Layout layout = new Layout(pdf, regular, bold, document.page(), previewOnly)) {
                     layout.newPage();
                     List<DocumentElements.Block> blocks = document.blocks();
                     for (int index = 0; index < blocks.size(); index++) {
@@ -85,6 +104,10 @@ public final class PdfExporter {
                         } else throw new IllegalArgumentException("Desteklenmeyen belge bloğu");
                     }
                 }
+                }
+            } catch (PreviewPageComplete complete) {
+                if (!previewOnly) throw complete;
+                // The first page content stream was closed by Layout.close().
             }
             if (pdf.getNumberOfPages() == 0) throw new IllegalStateException("PDF sayfası oluşturulamadı");
             return pdf;
@@ -95,7 +118,7 @@ public final class PdfExporter {
     }
 
     public static BufferedImage firstPage(UdfReader.DocumentSpec doc) throws Exception {
-        try (PDDocument pdf = render(List.of(doc))) {
+        try (PDDocument pdf = renderPreview(doc)) {
             return new PDFRenderer(pdf).renderImageWithDPI(0, 40);
         }
     }
@@ -166,17 +189,22 @@ public final class PdfExporter {
     private static final class Layout implements AutoCloseable {
         private final PDDocument pdf;
         private final PDType0Font regular, bold;
+        private final boolean previewOnly;
         private final DocumentElements.PageSpec page;
         private final float left, right, top, bottom;
         private PDPageContentStream stream;
         private float x, y, lineHeight = 17f;
         private Layout(PDDocument pdf, PDType0Font regular, PDType0Font bold,
-                       DocumentElements.PageSpec page) {
+                       DocumentElements.PageSpec page, boolean previewOnly) {
             this.pdf = pdf; this.regular = regular; this.bold = bold; this.page = page;
+            this.previewOnly = previewOnly;
             left = page.margin(); right = page.width() - page.margin();
             top = page.height() - page.margin(); bottom = page.margin();
         }
         void newPage() throws IOException {
+            // Stop before allocating page two. The try-with-resources caller
+            // closes the first page stream even when this short-circuit fires.
+            if (previewOnly && stream != null) throw new PreviewPageComplete();
             if (stream != null) stream.close();
             PDPage newPage = new PDPage(new PDRectangle(page.width(), page.height()));
             pdf.addPage(newPage);
