@@ -50,4 +50,32 @@ final class VirtualGridLayoutTest {
         var nonempty=new VirtualGridLayout(7,1000,188);
         assertTrue(nonempty.visible(new Rectangle(0,0,0,0)).count()<=nonempty.columns()*2);
     }
+    @Test void targetResolutionAcrossScrollResizeAndZoomNeedsNoCardComponents() {
+        for (int width : new int[]{680,1000,1430}) {
+            for (int zoom : new int[]{132,188,272}) {
+                var grid=new VirtualGridLayout(161,width,zoom);
+                for (int index=0;index<161;index++) {
+                    Rectangle bounds=grid.bounds(index);
+                    int pointX=bounds.x+bounds.width/4;
+                    int pointY=bounds.y+bounds.height/2;
+                    assertEquals(index,grid.indexAt(pointX,pointY),
+                            "logical target "+index+" width "+width+" zoom "+zoom);
+                    assertFalse(grid.insertAfter(index,pointX));
+                    assertTrue(grid.insertAfter(index,bounds.x+bounds.width*3/4));
+                }
+                assertEquals(-1,grid.indexAt(-1,20));
+                assertEquals(-1,grid.indexAt(20,-1));
+                assertEquals(-1,grid.indexAt(width+1,20));
+            }
+        }
+    }
+
+    @Test void edgeScrollIsBoundedAndStopsAwayFromViewportEdges() {
+        assertTrue(VirtualGridLayout.edgeScrollDelta(5,650)<0);
+        assertTrue(VirtualGridLayout.edgeScrollDelta(640,650)>0);
+        assertEquals(0,VirtualGridLayout.edgeScrollDelta(325,650));
+        for (int pointer=-20;pointer<800;pointer++)
+            assertTrue(Math.abs(VirtualGridLayout.edgeScrollDelta(pointer,650))<=36);
+        assertEquals(0,VirtualGridLayout.edgeScrollDelta(0,0));
+    }
 }
