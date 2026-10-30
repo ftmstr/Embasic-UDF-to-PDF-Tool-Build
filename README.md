@@ -101,3 +101,10 @@ The Public Swing workspace now uses `VirtualGridLayout` to compute stable card b
 
 `VirtualGridLayoutTest` checks boundary/clipping math, mixed zoom widths, all visible cards across a **2,500-card synthetic geometry**, and the 160+add-card use case. `GridReorder` extracts stable multi-card reorder independent of rendered components, and `GridReorderTest` covers moving selected cards with offscreen members and invalid targets. These are deterministic synthetic tests, **not a supervised Windows GUI benchmark**. Real UYAP document parity, redistribution rights, and the existing Windows release approval gates remain unresolved.
 
+
+## Tur 41 — Safe virtual-grid drag capture and scroll/resize stress (2026-10-30)
+
+The Public-only Swing editor now retains the pressed thumbnail JPanel while its virtual grid scrolls, preventing a gesture from losing its mouse-release handler when offscreen cards are recycled. During a drag, an EDT-based edge-scroll timer moves the viewport toward the pointer; targets are resolved by `VirtualGridLayout.indexAt(x,y)`, not by whether a destination JPanel exists. Left/right midpoint semantics use `insertAfter`; the `+` tile continues to move selected cards to the end. Existing Ctrl/Shift multi-selection, zoom, keyboard arrows, PDF export order and release gates are preserved.
+
+`VirtualGridLayoutTest` exercises 160+1 logical drop targets across three zoom values and three viewport widths, outside-grid rejection and bounded edge-scroll deltas. `VirtualGridSwingLoadTest` simulates scroll/zoom/resizing on the real Swing EDT, mounts lightweight Swing panels and prints viewport samples, maximum mounted components, mean update milliseconds and observed heap delta. **It is a synthetic Swing load smoke, not an attended Windows GUI benchmark or a verified FPS/peak-memory acceptance test of authentic UDF documents.** No unsupported native UYAP parity, source publication permission or downloadable binary is implied.
+
