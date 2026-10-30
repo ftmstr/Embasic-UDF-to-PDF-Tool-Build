@@ -177,6 +177,26 @@ final class PdfTrailingPageTest {
         }
     }
 
+    @Test void unsupportedUnicodeSeparatorsAndControlsFailClosed() {
+        // XML 1.0 can carry U+2028/U+2029. Rendering them as a single
+        // ordinary space silently changes line/paragraph geometry.
+        // Unspecified controls must also fail closed, not disappear.
+        var style = new UdfReader.Style(11f, false, Color.BLACK);
+        for (String invalid : List.of("A\\u2028B", "A\\u2029B",
+                "A\\u000BB", "A\\u000CB", "A\\u0085B")) {
+            // Convert the literal escape to the intended code point so the
+            // fixture source stays readable and contains no control bytes.
+            int cp = Integer.parseInt(invalid.substring(3, 7), 16);
+            String text = "A" + new String(Character.toChars(cp)) + "B";
+            var document = new UdfReader.DocumentSpec("synthetic.udf", "1.0",
+                    List.of(new UdfReader.Paragraph(List.of(new UdfReader.Run(text, style)))));
+            var failure = assertThrows(IllegalArgumentException.class,
+                    () -> PdfExporter.render(List.of(document)), "U+" + Integer.toHexString(cp));
+            assertTrue(failure.getMessage().contains("U+"),
+                    "Unsupported separator must produce a visible diagnostic");
+        }
+    }
+
     @Test void trailingEmptyEditorParagraphsDoNotCreateBlankPage() throws Exception {
         var style = new UdfReader.Style(11f, false, Color.BLACK);
         var empty = new DocumentElements.ParagraphBlock(new UdfReader.Paragraph(List.of(
