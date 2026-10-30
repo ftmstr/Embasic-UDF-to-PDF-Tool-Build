@@ -40,4 +40,27 @@ final class PdfTrailingPageTest {
             assertTrue(stripper.getText(pdf).contains("LINE34"));
         }
     }
+
+    @Test void regularOnlyPreviewDoesNotLoadUnusedBoldFont() throws Exception {
+        // A missing bold font must not block a document that never requests bold.
+        // A genuinely bold run must still fail closed rather than lose styling.
+        String property = "embasic.font.bold";
+        String previous = System.getProperty(property);
+        System.setProperty(property, "__embasic_missing_bold_font_test__.ttf");
+        try {
+            try (PDDocument pdf = PdfExporter.render(List.of(paragraphs(1)))) {
+                assertEquals(1, pdf.getNumberOfPages());
+                assertTrue(new PDFTextStripper().getText(pdf).contains("LINE0"));
+            }
+            var bold = new UdfReader.DocumentSpec("bold.udf", "1.0", List.of(
+                    new UdfReader.Paragraph(List.of(
+                            new UdfReader.Run("BOLD", new UdfReader.Style(11f, true, Color.BLACK))))));
+            assertThrows(IllegalArgumentException.class,
+                    () -> PdfExporter.render(List.of(bold)),
+                    "Bold text must not silently fall back to a regular font");
+        } finally {
+            if (previous == null) System.clearProperty(property);
+            else System.setProperty(property, previous);
+        }
+    }
 }
