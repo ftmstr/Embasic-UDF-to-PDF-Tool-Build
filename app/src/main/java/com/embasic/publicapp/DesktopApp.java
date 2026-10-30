@@ -550,8 +550,7 @@ public final class DesktopApp extends JFrame {
         } else grid.removeAll();
         for(int index=window.startInclusive(); index<window.endExclusive(); index++) {
             JPanel component;
-            if (retainSource && items.get(Math.min(index,items.size()-1))==capturedItem &&
-                    index<items.size()) {
+            if (retainSource && index<items.size() && items.get(index)==capturedItem) {
                 component=capturedCard;
             } else {
                 component=index==items.size() ? addCard() : card(items.get(index));
