@@ -256,4 +256,30 @@ final class PdfTrailingPageTest {
             assertTrue(secondPage.getText(pdf).contains("LAST"));
         }
     }
+
+    @Test void invisibleFormatControlsAndUnpairedSurrogatesFailClosedBeforePdfOutput() {
+        // Bidi overrides/isolates and zero-width format controls must never
+        // disappear or reorder visible content in the controlled synthetic subset.
+        // An unpaired UTF-16 surrogate is not a valid Unicode scalar value.
+        var style = new UdfReader.Style(11f, false, Color.BLACK);
+        for (int cp : new int[]{0x00AD, 0x200B, 0x200D, 0x202E, 0x2066, 0xFEFF, 0xD800}) {
+            String unsupported = String.valueOf((char) cp);
+            String text = "A" + unsupported + "B";
+            var paragraph = new UdfReader.DocumentSpec("synthetic.udf", "1.0",
+                    List.of(new UdfReader.Paragraph(List.of(new UdfReader.Run(text, style)))));
+            var table = new DocumentElements.TableBlock(List.of(120f),
+                    List.of(new DocumentElements.Row(List.of(
+                            new DocumentElements.Cell(text, 1, 1)), 24f)));
+            var tableDocument = new UdfReader.DocumentSpec("synthetic.udf", "1.0",
+                    List.of(), List.of(table), DocumentElements.PageSpec.a4());
+            for (var document : List.of(paragraph, tableDocument)) {
+                var failure = assertThrows(IllegalArgumentException.class,
+                        () -> PdfExporter.render(List.of(document)),
+                        "Unsupported U+" + Integer.toHexString(cp) + " must fail closed");
+                assertTrue(failure.getMessage().contains("U+"
+                                + Integer.toHexString(cp).toUpperCase(java.util.Locale.ROOT)),
+                        "Diagnostic must identify the rejected code point");
+            }
+        }
+    }
 }
