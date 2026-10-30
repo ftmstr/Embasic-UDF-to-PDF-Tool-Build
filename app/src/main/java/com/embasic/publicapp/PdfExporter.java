@@ -48,12 +48,25 @@ public final class PdfExporter {
         throw new IllegalStateException("Unicode PDF fontu bulunamadı; Windows Arial/Segoe UI veya DejaVu Sans gerekli");
     }
 
+    private static boolean usesBold(List<UdfReader.DocumentSpec> docs) {
+        for (UdfReader.DocumentSpec document : docs)
+            for (DocumentElements.Block block : document.blocks())
+                if (block instanceof DocumentElements.ParagraphBlock paragraph)
+                    for (UdfReader.Run run : paragraph.paragraph().runs())
+                        if (run.style().bold()) return true;
+        return false;
+    }
+
     public static PDDocument render(List<UdfReader.DocumentSpec> docs) throws Exception {
         if (docs == null || docs.isEmpty()) throw new IllegalArgumentException("PDF için en az bir UDF gerekli");
         PDDocument pdf = new PDDocument();
         try {
             PDType0Font regular = PDType0Font.load(pdf, systemFont(false).toFile());
-            PDType0Font bold = PDType0Font.load(pdf, systemFont(true).toFile());
+            // Preview and export documents containing only regular text must not
+            // load and parse an unused (potentially large) Windows bold font.
+            // Tables and images use the regular font; paragraph runs alone need bold.
+            PDType0Font bold = usesBold(docs)
+                    ? PDType0Font.load(pdf, systemFont(true).toFile()) : regular;
             for (UdfReader.DocumentSpec document : docs) {
                 try (Layout layout = new Layout(pdf, regular, bold, document.page())) {
                     layout.newPage();
