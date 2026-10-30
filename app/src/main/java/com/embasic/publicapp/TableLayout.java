@@ -45,12 +45,19 @@ public final class TableLayout {
     public static List<int[]> pageGroups(Geometry geometry) {
         List<int[]> groups=new ArrayList<>();
         int r=0,count=geometry.rowHeights().size();
+        // Index rowspan endpoints once. Scanning every cell for each row makes
+        // a large (up to 500-row) synthetic table needlessly quadratic.
+        int[] furthestEnd=new int[count];
+        for(CellPosition cell:geometry.cells()) {
+            long end=(long)cell.row()+cell.rowspan();
+            if(cell.row()<0 || cell.row()>=count || cell.rowspan()<1 || end>count)
+                throw new IllegalArgumentException("Rowspan sınır dışı");
+            furthestEnd[cell.row()]=Math.max(furthestEnd[cell.row()],(int)end);
+        }
         while(r<count) {
             int end=r+1;
             for(int cursor=r;cursor<end;cursor++)
-                for(CellPosition cell:geometry.cells())
-                    if(cell.row()==cursor)end=Math.max(end,cursor+cell.rowspan());
-            if(end>count)throw new IllegalArgumentException("Rowspan sınır dışı");
+                end=Math.max(end,furthestEnd[cursor]);
             groups.add(new int[]{r,end});
             r=end;
         }
