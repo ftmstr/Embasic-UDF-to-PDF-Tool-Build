@@ -28,6 +28,27 @@ final class GridKeyboardSelectionTest {
         assertEquals("E",result.focused());
         assertEquals("B",result.anchor());
     }
+    @Test void ctrlShiftRangeKeepsDisjointSelectionInVisualOrder() {
+        // Previously [A,I] plus the B-D range returned [A,I,B,C,D],
+        // which does not match the left-to-right card order.
+        var forward = GridKeyboardSelection.move(FILES,List.of("A","I"),"B","B",
+                2,true,true);
+        assertEquals(List.of("A","B","C","D","I"),forward.selected());
+        assertEquals("B",forward.anchor());
+        assertEquals("D",forward.focused());
+
+        var reverse = GridKeyboardSelection.move(FILES,List.of("A","I"),"H","H",
+                -2,true,true);
+        assertEquals(List.of("A","F","G","H","I"),reverse.selected());
+        assertEquals("H",reverse.anchor());
+        assertEquals("F",reverse.focused());
+
+        var toEnd = GridKeyboardSelection.move(FILES,List.of("A","I"),"B","B",
+                Integer.MAX_VALUE,true,true);
+        assertEquals(FILES,toEnd.selected());
+        assertEquals("B",toEnd.anchor());
+    }
+
     @Test void clampsEdgesAndIgnoresRemovedAnchor() {
         var first=GridKeyboardSelection.move(FILES,List.of("I"),"I","I",1000,false,false);
         assertEquals("I",first.focused());
