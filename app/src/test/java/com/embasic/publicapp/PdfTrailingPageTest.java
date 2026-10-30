@@ -41,6 +41,27 @@ final class PdfTrailingPageTest {
         }
     }
 
+    @Test void thumbnailLaysOutOnlyFirstPageWhileFullExportKeepsAllPages() throws Exception {
+        // A thumbnail must not render the other pages of a long document.
+        // The export path must still produce all pages in the original order.
+        var document = paragraphs(100);
+        try (PDDocument preview = PdfExporter.renderPreview(document);
+             PDDocument exported = PdfExporter.render(List.of(document))) {
+            assertEquals(1, preview.getNumberOfPages());
+            assertTrue(exported.getNumberOfPages() > 1);
+            var firstPageText = new PDFTextStripper();
+            firstPageText.setStartPage(1);
+            firstPageText.setEndPage(1);
+            String expected = firstPageText.getText(exported);
+            String actual = new PDFTextStripper().getText(preview);
+            assertEquals(expected, actual, "Preview must preserve first-page text and order");
+            assertTrue(actual.contains("LINE0"));
+            assertFalse(actual.contains("LINE99"), "Later pages must not enter the thumbnail");
+            var allPages = new PDFTextStripper().getText(exported);
+            assertTrue(allPages.contains("LINE99"), "Full export must retain the final paragraph");
+        }
+    }
+
     @Test void regularOnlyPreviewDoesNotLoadUnusedBoldFont() throws Exception {
         // A missing bold font must not block a document that never requests bold.
         // A genuinely bold run must still fail closed rather than lose styling.
