@@ -199,7 +199,12 @@ public final class DesktopApp extends JFrame {
             }
         });
         action.put("selectAll", new javax.swing.AbstractAction() {
-            @Override public void actionPerformed(java.awt.event.ActionEvent e) { selected.addAll(items); rebuild(); }
+            @Override public void actionPerformed(java.awt.event.ActionEvent e) {
+                // Ctrl+A must replace any earlier disjoint insertion order.
+                selected.clear();
+                selected.addAll(items);
+                rebuild();
+            }
         });
         bindArrow(KeyEvent.VK_LEFT, -1);
         bindArrow(KeyEvent.VK_RIGHT, 1);
@@ -214,6 +219,10 @@ public final class DesktopApp extends JFrame {
             @Override public void actionPerformed(java.awt.event.ActionEvent e) {
                 if (focused == null || !items.contains(focused)) return;
                 if (!selected.add(focused)) selected.remove(focused);
+                // Ctrl+Space may add a card between two selected cards.
+                List<Item> orderedSelection = GridPointerSelection.inVisualOrder(items, selected);
+                selected.clear();
+                selected.addAll(orderedSelection);
                 anchor = focused;
                 rebuild();
             }
