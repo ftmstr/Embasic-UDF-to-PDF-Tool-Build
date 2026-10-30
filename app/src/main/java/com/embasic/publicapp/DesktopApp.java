@@ -523,11 +523,18 @@ public final class DesktopApp extends JFrame {
         refreshViewport(true);
     }
     private void shift(int direction) {
-        if (selected.size() != 1) return;
-        Item item = selected.iterator().next();
-        int from = items.indexOf(item), to = from + direction;
-        if (to < 0 || to >= items.size()) return;
-        items.remove(from); items.add(to, item); rebuild();
+        if (converting || selected.isEmpty()) return;
+        // Toolbar arrows operate on the entire Explorer-style selection,
+        // including offscreen cards. Keep their relative file/PDF order.
+        List<Item> reordered = GridReorder.step(items, selected, direction);
+        if (reordered.equals(items)) return;
+        items.clear();
+        items.addAll(reordered);
+        rebuild();
+        if (focused != null && virtualGrid != null) {
+            int index = items.indexOf(focused);
+            if (index >= 0) grid.scrollRectToVisible(virtualGrid.bounds(index));
+        }
     }
     private void save() {
         if (converting || items.isEmpty() || items.stream().anyMatch(x -> x.document == null)) return;
