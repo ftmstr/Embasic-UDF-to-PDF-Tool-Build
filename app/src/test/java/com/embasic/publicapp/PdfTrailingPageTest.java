@@ -146,7 +146,7 @@ final class PdfTrailingPageTest {
     @Test void trailingEmptyEditorParagraphsDoNotCreateBlankPage() throws Exception {
         var style = new UdfReader.Style(11f, false, Color.BLACK);
         var empty = new DocumentElements.ParagraphBlock(new UdfReader.Paragraph(List.of(
-                new UdfReader.Run("\\n \\t", style))));
+                new UdfReader.Run("\n \t", style))));
         List<DocumentElements.Block> blocks = new ArrayList<>(paragraphs(34).blocks());
         blocks.add(empty);
         blocks.add(new DocumentElements.ParagraphBlock(new UdfReader.Paragraph(List.of(
