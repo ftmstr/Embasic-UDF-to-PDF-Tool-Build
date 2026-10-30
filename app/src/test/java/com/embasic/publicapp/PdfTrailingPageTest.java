@@ -143,6 +143,40 @@ final class PdfTrailingPageTest {
         }
     }
 
+
+    @Test void standaloneCrAndSplitRunCrLfPreservePdfLinePositions() throws Exception {
+        // A lone CR is a line break; CRLF must advance only once, even when
+        // its two code points belong to differently styled runs.
+        var style = new UdfReader.Style(11f, false, Color.BLACK);
+        var paragraphs = List.of(
+                new UdfReader.Paragraph(List.of(new UdfReader.Run("A\rB", style))),
+                new UdfReader.Paragraph(List.of(
+                        new UdfReader.Run("C\r", style),
+                        new UdfReader.Run("\nD", style))),
+                new UdfReader.Paragraph(List.of(new UdfReader.Run("E\r\nF", style))));
+        var document = new UdfReader.DocumentSpec("synthetic.udf", "1.0", paragraphs);
+        try (PDDocument pdf = PdfExporter.render(List.of(document))) {
+            assertEquals(1, pdf.getNumberOfPages());
+            var baselines = new java.util.HashMap<String, Float>();
+            var extractor = new PDFTextStripper() {
+                @Override protected void processTextPosition(TextPosition glyph) {
+                    baselines.put(glyph.getUnicode(), glyph.getYDirAdj());
+                    super.processTextPosition(glyph);
+                }
+            };
+            String extracted = extractor.getText(pdf);
+            for (String letter : List.of("A", "B", "C", "D", "E", "F"))
+                assertTrue(baselines.containsKey(letter), "Missing PDF glyph " + letter + ": " + extracted);
+            assertEquals(6, baselines.size(), "Every synthetic glyph must remain visible");
+            assertEquals(17f, baselines.get("B") - baselines.get("A"), 1f,
+                    "Standalone CR must move the second glyph to the next line");
+            assertEquals(17f, baselines.get("D") - baselines.get("C"), 1f,
+                    "Split-run CRLF must advance exactly one line");
+            assertEquals(17f, baselines.get("F") - baselines.get("E"), 1f,
+                    "Same-run CRLF must continue to advance exactly one line");
+        }
+    }
+
     @Test void trailingEmptyEditorParagraphsDoNotCreateBlankPage() throws Exception {
         var style = new UdfReader.Style(11f, false, Color.BLACK);
         var empty = new DocumentElements.ParagraphBlock(new UdfReader.Paragraph(List.of(
