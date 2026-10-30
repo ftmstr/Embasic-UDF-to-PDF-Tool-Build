@@ -45,6 +45,11 @@ public final class GridKeyboardSelection {
             nextSelection.add(nextFile);
             nextAnchor = nextFile;
         }
-        return new Result<>(new ArrayList<>(nextSelection), nextAnchor, nextFile);
+        // Ctrl+Shift may add a range to an earlier disjoint selection. Keep the
+        // resulting cards in visual grid order, not insertion order, so keyboard
+        // selection matches pointer selection and subsequent PDF reordering.
+        List<T> orderedSelection = new ArrayList<>();
+        for (T item : files) if (nextSelection.contains(item)) orderedSelection.add(item);
+        return new Result<>(orderedSelection, nextAnchor, nextFile);
     }
 }
