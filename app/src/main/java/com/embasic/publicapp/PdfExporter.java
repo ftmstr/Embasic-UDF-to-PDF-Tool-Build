@@ -90,12 +90,18 @@ public final class PdfExporter {
                 try (Layout layout = new Layout(pdf, regular, bold, document.page(), previewOnly)) {
                     layout.newPage();
                     List<DocumentElements.Block> blocks = document.blocks();
-                    for (int index = 0; index < blocks.size(); index++) {
+                    // Trailing empty editor paragraphs must not allocate an otherwise blank page.
+                    // Preserve interior empty paragraphs and at least one block for an empty document.
+                    int lastBlock = blocks.size() - 1;
+                    while (lastBlock > 0 && blocks.get(lastBlock) instanceof DocumentElements.ParagraphBlock p
+                            && p.paragraph().runs().stream().allMatch(run -> run.text().isBlank()))
+                        lastBlock--;
+                    for (int index = 0; index <= lastBlock; index++) {
                         DocumentElements.Block block = blocks.get(index);
                         if (block instanceof DocumentElements.ParagraphBlock p) {
                             List<UdfReader.Run> runs = p.paragraph().runs();
                             int lastRun = runs.size() - 1;
-                            if (index + 1 == blocks.size()) {
+                            if (index == lastBlock) {
                                 // Trailing whitespace has no visible glyphs. In particular,
                                 // terminal newlines must not allocate blank PDF pages.
                                 // Preserve whitespace between runs and before later blocks.
@@ -103,7 +109,7 @@ public final class PdfExporter {
                             }
                             for (int runIndex = 0; runIndex <= lastRun; runIndex++) {
                                 UdfReader.Run run = runs.get(runIndex);
-                                if (index + 1 == blocks.size() && runIndex == lastRun) {
+                                if (index == lastBlock && runIndex == lastRun) {
                                     String trimmed = run.text().stripTrailing();
                                     if (!trimmed.equals(run.text()))
                                         run = new UdfReader.Run(trimmed, run.style());
@@ -112,7 +118,7 @@ public final class PdfExporter {
                             }
                             // Only add paragraph spacing when another block follows.
                             // A trailing gap at the bottom must not emit an empty PDF page.
-                            if (index + 1 < blocks.size()) layout.endParagraph();
+                            if (index < lastBlock) layout.endParagraph();
                         } else if (block instanceof DocumentElements.TableBlock table) {
                             layout.table(table);
                         } else if (block instanceof DocumentElements.ImageBlock image) {
