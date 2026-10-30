@@ -174,6 +174,9 @@ public final class UdfReader {
         }
         List<Paragraph> paragraphs = new ArrayList<>();
         List<DocumentElements.Block> blocks = new ArrayList<>();
+        // Synthetic UTF-16 ranges must be ordered, non-overlapping and cover
+        // every visible character; otherwise conversion could silently lose text.
+        int coveredUntil = 0;
         for (Element p : children(body)) {
             if ("table".equals(p.getTagName())) {
                 blocks.add(DocumentElements.table(p));
@@ -198,18 +201,23 @@ public final class UdfReader {
                 if (start < 0 || length < 0 || (long) start + length > raw.length())
                     throw new IllegalArgumentException("Geçersiz UTF-16 metin aralığı");
                 int end = start + length;
+                if (start < coveredUntil || !raw.substring(coveredUntil, start).isBlank())
+                    throw new IllegalArgumentException("Sırasız, çakışan veya atlanan UTF-16 metin aralığı");
                 if (splitsSurrogate(raw, start) || splitsSurrogate(raw, end))
                     throw new IllegalArgumentException("Unicode çiftinin ortasından bölme");
                 String key = e.getAttribute("resolver");
                 Style base = key.isBlank() ? DEFAULT : named.get(key);
                 if (base == null) throw new IllegalArgumentException("Bulunamayan stil: " + key);
                 runs.add(new Run(raw.substring(start, end), resolve(e, base)));
+                coveredUntil = end;
             }
             if (runs.isEmpty()) throw new IllegalArgumentException("Boş/desteklenmeyen paragraf");
             Paragraph paragraph = new Paragraph(runs);
             paragraphs.add(paragraph);
             blocks.add(new DocumentElements.ParagraphBlock(paragraph));
         }
+        if (!raw.substring(coveredUntil).isBlank())
+            throw new IllegalArgumentException("UDF içeriğinde PDF\u0027ye aktarılmayan metin var");
         if (blocks.isEmpty()) throw new IllegalArgumentException("Dönüştürülebilir belge öğesi bulunamadı");
         return new DocumentSpec(name, version, paragraphs, blocks, DocumentElements.page(properties));
     }
