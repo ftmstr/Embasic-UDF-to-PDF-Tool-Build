@@ -83,7 +83,8 @@ final class StructuredUdfRegressionTest {
             }
         }
         var doc=parse(container("<table widths='80,100'>"+rows+"</table>",
-                "<properties pageSize='A4' orientation='portrait' margin='48'/>"));
+                "<properties pageSize='A4' orientation='portrait' margin='48'/>")
+                .replace("<content>ÖN SON</content>", "<content/>"));
         var table=(DocumentElements.TableBlock)doc.blocks().get(0);
         var groups=TableLayout.pageGroups(TableLayout.calculate(table));
         assertTrue(groups.stream().anyMatch(g->g[0]==23&&g[1]==25));
@@ -134,7 +135,8 @@ final class StructuredUdfRegressionTest {
         var badSpan="<table widths='80,100'><row height='25'><cell colspan='3'>X</cell></row></table>";
         assertThrows(IllegalArgumentException.class,()->parse(container(badSpan,"")));
         var missingCell="<table widths='80,100'><row height='25'><cell>X</cell></row></table>";
-        var partial=parse(container(missingCell,""));
+        var partial=parse(container(missingCell,"")
+                .replace("<content>ÖN SON</content>", "<content/>"));
         assertThrows(IllegalArgumentException.class,()->PdfExporter.render(List.of(partial)));
         assertThrows(IllegalArgumentException.class,()->parse(container(para(0,2),
             "<properties pageSize='A3'/>")));
@@ -183,10 +185,46 @@ final class StructuredUdfRegressionTest {
     }
 
 
+    @Test void utf16RangesCannotSkipDuplicateOrReorderVisibleContent() throws Exception {
+        String prefix = "<template format_id='1.0'><content>";
+        String middle = "</content><elements><paragraph>";
+        String suffix = "</paragraph></elements></template>";
+        String emoji = prefix + "A😀B" + middle
+                + para(0,1).replace("<paragraph>", "").replace("</paragraph>", "")
+                + para(1,2).replace("<paragraph>", "").replace("</paragraph>", "")
+                + para(3,1).replace("<paragraph>", "").replace("</paragraph>", "") + suffix;
+        var parsed = parse(emoji);
+        assertEquals("A😀B", parsed.paragraphs().get(0).runs().stream()
+                .map(UdfReader.Run::text).reduce("", String::concat));
+
+        // Whitespace between disjoint runs may be layout-only in this limited contract.
+        String spaced = prefix + "A B" + middle
+                + "<content startOffset='0' length='1'/>"
+                + "<content startOffset='2' length='1'/>" + suffix;
+        assertEquals(2, parse(spaced).paragraphs().get(0).runs().size());
+
+        for (String ranges : List.of(
+                "<content startOffset='0' length='1'/><content startOffset='2' length='1'/>",
+                "<content startOffset='0' length='2'/><content startOffset='1' length='2'/>",
+                "<content startOffset='2' length='1'/><content startOffset='0' length='2'/>",
+                "<content startOffset='0' length='2'/>",
+                "<content startOffset='1' length='2'/>"
+        )) {
+            assertThrows(IllegalArgumentException.class,
+                    () -> parse(prefix + "ABC" + middle + ranges + suffix),
+                    "Unrendered, repeated or reordered visible text must fail closed: " + ranges);
+        }
+        assertThrows(IllegalArgumentException.class, () -> parse(
+                prefix + "ABC" + "</content><elements>"
+                        + "<table widths='100'><row height='25'><cell>X</cell></row></table>"
+                        + "</elements></template>"),
+                "Raw text cannot disappear when the document only contains a table");
+    }
+
     @Test void structuralTextCannotDisappearFromSyntheticPdf() throws Exception {
         String valid = container(
             "\n<table widths='100'>\n<row height='25'>\n<cell>A</cell>\n</row>\n</table>\n"
-                + para(0,2), "");
+                + para(0,6), "");
         assertEquals(2, parse(valid).blocks().size(),
             "Indentation whitespace between structural nodes remains supported");
 
