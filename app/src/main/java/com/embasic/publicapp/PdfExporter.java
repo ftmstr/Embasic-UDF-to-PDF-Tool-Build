@@ -57,8 +57,12 @@ public final class PdfExporter {
             // the synthetic PDF subset. Reject them before font loading rather
             // than silently dropping, reordering, or hiding visible text.
             int category = Character.getType(cp);
-            if (cp != '\r' && cp != '\n' && cp != '\t'
-                    && (Character.isISOControl(cp) || cp == 0x2028 || cp == 0x2029
+            // Layout.add() maps Character.isWhitespace to a single ASCII space.
+            // Reject non-ASCII whitespace instead of silently shrinking em/en
+            // and ideographic spaces (including at the end of a document).
+            if (cp != ' ' && cp != '\r' && cp != '\n' && cp != '\t'
+                    && (Character.isISOControl(cp) || Character.isWhitespace(cp)
+                        || cp == 0x2028 || cp == 0x2029
                         || category == Character.FORMAT || category == Character.SURROGATE))
                 throw new IllegalArgumentException("Desteklenmeyen metin kontrol veya ayırıcı karakteri: U+"
                         + Integer.toHexString(cp).toUpperCase(Locale.ROOT));
