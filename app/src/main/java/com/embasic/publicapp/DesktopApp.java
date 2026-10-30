@@ -73,6 +73,12 @@ public final class DesktopApp extends JFrame {
     private final Timer zoomRefresh = new Timer(90, e -> rebuild());
     private final Timer previewRefresh = new Timer(110, e -> { rebuild(); updateFileStatus(); });
     private final Timer viewportRefresh = new Timer(16, e -> refreshViewport(false));
+    private final Timer dragScroll = new Timer(45, e -> scrollWhileDragging());
+    private JPanel capturedCard;
+    private Item capturedItem;
+    private boolean pointerHeld;
+    private boolean pointerDragging;
+    private Point pointerViewport;
     private VirtualGridLayout virtualGrid;
     private VirtualGridLayout.Visible drawnRange;
     private int drawnZoom=-1, drawnColumns=-1, drawnCount=-1;
@@ -217,6 +223,24 @@ public final class DesktopApp extends JFrame {
             @Override public void actionPerformed(java.awt.event.ActionEvent e) { removeSelected(); }
         });
         rebuild();
+    }
+
+    /**
+     * While the pressed card is retained in the virtual grid, keep scrolling
+     * toward the pointer at the viewport edge without blocking the Swing EDT.
+     */
+    private void scrollWhileDragging() {
+        if (!pointerHeld || !pointerDragging || pointerViewport == null || converting) {
+            dragScroll.stop();
+            return;
+        }
+        int delta = VirtualGridLayout.edgeScrollDelta(
+                pointerViewport.y,scroll.getViewport().getHeight());
+        if (delta == 0) return;
+        var bar=scroll.getVerticalScrollBar();
+        int max=Math.max(0,bar.getMaximum()-bar.getVisibleAmount());
+        int updated=Math.max(0,Math.min(max,bar.getValue()+delta));
+        if (updated != bar.getValue()) bar.setValue(updated);
     }
 
     private void updateZoomLabel() {
@@ -385,6 +409,12 @@ public final class DesktopApp extends JFrame {
             private boolean collapseOnClick;
             @Override public void mousePressed(MouseEvent e) {
                 pressed = SwingUtilities.convertPoint((Component) e.getSource(), e.getPoint(), grid);
+                capturedCard=card;
+                capturedItem=item;
+                pointerHeld=true;
+                pointerDragging=false;
+                pointerViewport=SwingUtilities.convertPoint(
+                        (Component)e.getSource(),e.getPoint(),scroll.getViewport());
                 var next = GridPointerSelection.press(items, selected, anchor, item,
                         (e.getModifiersEx() & InputEvent.SHIFT_DOWN_MASK) != 0,
                         (e.getModifiersEx() & InputEvent.CTRL_DOWN_MASK) != 0);
@@ -396,35 +426,47 @@ public final class DesktopApp extends JFrame {
                 // Avoid replacing components while mouse drag is in progress.
                 card.setBorder(BorderFactory.createLineBorder(accent(), 2, true));
             }
+            @Override public void mouseDragged(MouseEvent e) {
+                if (!pointerHeld || converting || pressed == null) return;
+                Point position=SwingUtilities.convertPoint((Component)e.getSource(),e.getPoint(),grid);
+                if (pressed.distance(position) > 12) pointerDragging=true;
+                pointerViewport=SwingUtilities.convertPoint(
+                        (Component)e.getSource(),e.getPoint(),scroll.getViewport());
+                if (pointerDragging && !dragScroll.isRunning()) dragScroll.start();
+            }
             @Override public void mouseReleased(MouseEvent e) {
-                Point released = SwingUtilities.convertPoint((Component) e.getSource(), e.getPoint(), grid);
-                boolean dragged = pressed != null && pressed.distance(released) > 12;
-                Component hit = SwingUtilities.getDeepestComponentAt(grid, released.x, released.y);
-                while (hit != null && hit.getParent() != grid) hit = hit.getParent();
-                Object target = hit instanceof JComponent jc ? jc.getClientProperty("udf-item") : null;
-                if (dragged && !converting && hit instanceof JComponent dropCard) {
-                    List<Item> reordered = null;
-                    if (target instanceof Item other && other != item) {
-                        // A grid is ordered left-to-right: left half inserts before,
-                        // right half inserts after. Both preserve multi-card order.
-                        boolean after = released.x >= dropCard.getX() + dropCard.getWidth() / 2;
-                        reordered = after ? GridReorder.after(items, selected, other)
-                                : GridReorder.before(items, selected, other);
-                    } else if (Boolean.TRUE.equals(dropCard.getClientProperty("udf-add-card"))) {
-                        // The trailing + tile is also an intuitive end-of-list drop zone.
-                        reordered = GridReorder.toEnd(items, selected);
+                Point released=SwingUtilities.convertPoint((Component)e.getSource(),e.getPoint(),grid);
+                boolean dragged=pointerDragging || pressed != null && pressed.distance(released)>12;
+                dragScroll.stop();
+                // Resolve the destination from the logical grid, not the rendered
+                // components: an offscreen destination has no JPanel to hit-test.
+                int destination=virtualGrid==null ? -1 :
+                        virtualGrid.indexAt(released.x,released.y);
+                if (dragged && !converting && destination>=0) {
+                    List<Item> reordered;
+                    if (destination>=items.size()) {
+                        reordered=GridReorder.toEnd(items,selected);
+                    } else {
+                        Item other=items.get(destination);
+                        boolean insertAfter=virtualGrid.insertAfter(destination,released.x);
+                        reordered=insertAfter ? GridReorder.after(items,selected,other)
+                                : GridReorder.before(items,selected,other);
                     }
-                    if (reordered != null) {
-                        items.clear();
-                        items.addAll(reordered);
-                    }
+                    items.clear();
+                    items.addAll(reordered);
                 }
-                List<Item> releasedSelection = GridPointerSelection.release(selected, item, collapseOnClick, dragged);
+                List<Item> releasedSelection=GridPointerSelection.release(
+                        selected,item,collapseOnClick,dragged);
                 selected.clear();
                 selected.addAll(releasedSelection);
-                if (collapseOnClick && !dragged) anchor = item;
-                collapseOnClick = false;
-                pressed = null;
+                if (collapseOnClick && !dragged) anchor=item;
+                collapseOnClick=false;
+                pressed=null;
+                pointerHeld=false;
+                pointerDragging=false;
+                pointerViewport=null;
+                capturedItem=null;
+                capturedCard=null;
                 rebuild();
             }
         };
@@ -434,6 +476,7 @@ public final class DesktopApp extends JFrame {
     }
     private void attachMouse(Component component, MouseAdapter mouse) {
         component.addMouseListener(mouse);
+        component.addMouseMotionListener(mouse);
         if (component instanceof java.awt.Container container)
             for (Component child : container.getComponents()) attachMouse(child, mouse);
     }
@@ -497,11 +540,24 @@ public final class DesktopApp extends JFrame {
         drawnColumns=next.columns();
         drawnCount=items.size()+1;
         // At most visible rows plus a one-row buffer are instantiated.
-        grid.removeAll();
+        // A pressed source must stay parented to the grid. Removing it during
+        // scroll/zoom would lose the mouseReleased event and strand selection.
+        boolean retainSource=pointerHeld && capturedCard!=null &&
+                capturedCard.getParent()==grid && items.contains(capturedItem);
+        if (retainSource) {
+            for (Component old:grid.getComponents())
+                if(old!=capturedCard)grid.remove(old);
+        } else grid.removeAll();
         for(int index=window.startInclusive(); index<window.endExclusive(); index++) {
-            JPanel component=index==items.size() ? addCard() : card(items.get(index));
+            JPanel component;
+            if (retainSource && items.get(Math.min(index,items.size()-1))==capturedItem &&
+                    index<items.size()) {
+                component=capturedCard;
+            } else {
+                component=index==items.size() ? addCard() : card(items.get(index));
+            }
             component.setBounds(next.bounds(index));
-            grid.add(component);
+            if(component.getParent()!=grid)grid.add(component);
         }
         grid.revalidate();
         grid.repaint();
