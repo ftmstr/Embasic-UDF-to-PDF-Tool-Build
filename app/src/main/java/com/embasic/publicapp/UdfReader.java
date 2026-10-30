@@ -132,6 +132,7 @@ public final class UdfReader {
         Element root = factory.newDocumentBuilder().parse(new ByteArrayInputStream(xml)).getDocumentElement();
         if (!root.getTagName().equals("template")) throw new IllegalArgumentException("Desteklenmeyen UDF XML kökü");
         onlyAttributes(root, "format_id");
+        rejectDirectText(root);
         String version = root.getAttribute("format_id");
         if (version.isBlank()) throw new IllegalArgumentException("UDF format_id bulunamadı; sürüm doğrulanamadı");
         Element content = null, body = null, styles = null, properties = null;
@@ -150,12 +151,14 @@ public final class UdfReader {
         if (content == null || body == null) throw new IllegalArgumentException("Eksik content/elements");
         onlyAttributes(content);
         onlyAttributes(body);
+        rejectDirectText(body);
         if (!children(content).isEmpty())
             throw new IllegalArgumentException("İç içe metin elemanı desteklenmiyor");
         String raw = content.getTextContent();
         Map<String, Style> named = new HashMap<>();
         if (styles != null) {
             onlyAttributes(styles);
+            rejectDirectText(styles);
             for (Element e : children(styles)) {
                 if (!e.getTagName().equals("style")) throw new IllegalArgumentException("Desteklenmeyen stil");
                 onlyAttributes(e, "name", "size", "bold", "foreground");
@@ -180,8 +183,7 @@ public final class UdfReader {
             if (!p.getTagName().equals("paragraph"))
                 throw new IllegalArgumentException("Bu MVP henüz " + p.getTagName() + " bileşenini desteklemiyor");
             onlyAttributes(p);
-            if (!p.getTextContent().isBlank() && children(p).isEmpty())
-                throw new IllegalArgumentException("Desteklenmeyen paragraf metni");
+            rejectDirectText(p);
             List<Run> runs = new ArrayList<>();
             for (Element e : children(p)) {
                 if (!e.getTagName().equals("content")) throw new IllegalArgumentException("Desteklenmeyen paragraf elemanı");
@@ -217,6 +219,19 @@ public final class UdfReader {
             if (!names.contains(name))
                 throw new IllegalArgumentException("Desteklenmeyen " + element.getTagName()
                         + " özelliği: " + name);
+        }
+    }
+
+    /** Never silently discard non-whitespace text outside supported content ranges. */
+    private static void rejectDirectText(Element element) {
+        NodeList nodes = element.getChildNodes();
+        for (int i = 0; i < nodes.getLength(); i++) {
+            Node node = nodes.item(i);
+            if ((node.getNodeType() == Node.TEXT_NODE
+                    || node.getNodeType() == Node.CDATA_SECTION_NODE)
+                    && !node.getNodeValue().isBlank())
+                throw new IllegalArgumentException("Desteklenmeyen " + element.getTagName()
+                        + " doğrudan metni");
         }
     }
 
