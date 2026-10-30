@@ -40,6 +40,19 @@ final class GridPointerSelectionTest {
         assertFalse(pressed.collapseOnClick());
     }
 
+    @Test void ctrlShiftClickAddsAnchorRangeWithoutDiscardingOtherCards() {
+        var range = GridPointerSelection.press(FILES, List.of("A", "E"), "B", "D", true, true);
+        assertEquals(List.of("A", "B", "C", "D", "E"), range.selected());
+        assertEquals("B", range.anchor());
+        assertFalse(range.collapseOnClick());
+        // Reversing the additive range must not remove previously selected cards.
+        var shorter = GridPointerSelection.press(FILES, List.of("A", "E"), "D", "C", true, true);
+        assertEquals(List.of("A", "C", "D", "E"), shorter.selected());
+        assertEquals("D", shorter.anchor());
+        var ctrlOnly = GridPointerSelection.press(FILES, List.of("A", "E"), "B", "E", false, true);
+        assertEquals(List.of("A"), ctrlOnly.selected());
+    }
+
     @Test void removedAnchorAndUnknownClickedCardAreHandledSafely() {
         var pressed = GridPointerSelection.press(FILES, List.of("B"), "removed", "D", true, false);
         assertEquals(List.of("D"), pressed.selected());
