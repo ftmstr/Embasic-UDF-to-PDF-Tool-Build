@@ -23,18 +23,20 @@ public final class GridPointerSelection {
             throw new IllegalArgumentException("Geçersiz kart seçimi");
         LinkedHashSet<T> next = new LinkedHashSet<>();
         for (T item : ordered) if (selected.contains(item)) next.add(item);
-        if (ctrl) {
-            if (!next.add(clicked)) next.remove(clicked);
-            return new Press<>(new ArrayList<>(next), clicked, false);
-        }
         if (shift) {
             T rangeAnchor = ordered.contains(anchor) ? anchor : clicked;
-            next.clear();
+            // Ctrl+Shift extends the anchor range without dropping existing
+            // disjoint selections, like Explorer's additive range selection.
+            if (!ctrl) next.clear();
             int first = ordered.indexOf(rangeAnchor), last = ordered.indexOf(clicked);
             for (int i = Math.min(first, last); i <= Math.max(first, last); i++)
                 next.add(ordered.get(i));
             // Keep the original anchor so successive Shift-clicks resize the same range.
             return new Press<>(new ArrayList<>(next), rangeAnchor, false);
+        }
+        if (ctrl) {
+            if (!next.add(clicked)) next.remove(clicked);
+            return new Press<>(new ArrayList<>(next), clicked, false);
         }
         if (next.size() > 1 && next.contains(clicked))
             return new Press<>(new ArrayList<>(next), anchor, true);
