@@ -149,6 +149,27 @@ final class PublicDesktopSmokeTest {
         }
     }
 
+    @Test void leadingParagraphSpacesPreservePdfIndentation() throws Exception {
+        var style = new UdfReader.Style(11f, false, Color.BLACK);
+        var plain = new UdfReader.Paragraph(List.of(new UdfReader.Run("INDENT", style)));
+        var indented = new UdfReader.Paragraph(List.of(new UdfReader.Run("   INDENT", style)));
+        var spec = new UdfReader.DocumentSpec("synthetic.udf", "1.0", List.of(plain, indented));
+        try (PDDocument pdf = PdfExporter.render(List.of(spec))) {
+            List<Float> firstLetterX = new ArrayList<>();
+            var extractor = new PDFTextStripper() {
+                @Override protected void processTextPosition(TextPosition glyph) {
+                    if ("I".equals(glyph.getUnicode())) firstLetterX.add(glyph.getXDirAdj());
+                    super.processTextPosition(glyph);
+                }
+            };
+            assertTrue(extractor.getText(pdf).contains("INDENT"));
+            assertEquals(2, firstLetterX.size(), "Both paragraph starts must be extractable");
+            assertTrue(firstLetterX.get(1) > firstLetterX.get(0) + 5f,
+                    "Leading spaces must shift the second paragraph, not be silently dropped: "
+                    + firstLetterX);
+        }
+    }
+
     @Test void invalidOutputIsRejectedWithoutOverwritingSource() throws Exception {
         Path source = udf("original.udf", "A");
         byte[] before = Files.readAllBytes(source);
