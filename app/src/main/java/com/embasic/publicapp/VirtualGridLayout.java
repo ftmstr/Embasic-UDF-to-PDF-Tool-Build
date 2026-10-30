@@ -38,6 +38,39 @@ public final class VirtualGridLayout {
         return new Rectangle((int)x,(int)Math.min(Integer.MAX_VALUE,y),
                 card.cardWidth(),card.cardHeight());
     }
+    /**
+     * Resolve a drop target by logical geometry, even when no Swing card has
+     * been instantiated for the destination. -1 indicates an outside drop.
+     */
+    public int indexAt(int x, int y) {
+        if (entries==0 || x<0 || y<0 || x>=width || y>=preferredSize().height)
+            return -1;
+        int row=Math.max(0,(y-PADDING)/rowStride);
+        if (row>=rows()) return -1;
+        int stride=card.cardWidth()+ThumbnailSizing.GAP;
+        int col=Math.max(0,Math.min(columns-1,(x-PADDING)/stride));
+        return (int)Math.min(entries-1L,(long)row*columns+col);
+    }
+
+    /** Horizontal midpoint used for before/after Explorer-style drops. */
+    public boolean insertAfter(int index, int x) {
+        Rectangle rectangle=bounds(index);
+        return x>=rectangle.x+rectangle.width/2;
+    }
+
+    /**
+     * Nonblocking scroll request in pixels; the Swing layer owns the timer.
+     * The pointer position is viewport-local, not document-local.
+     */
+    public static int edgeScrollDelta(int pointerY, int viewportHeight) {
+        if (viewportHeight<=0) return 0;
+        int edge=Math.min(48,Math.max(12,viewportHeight/4));
+        if (pointerY<edge) return -Math.min(36,Math.max(12,edge-pointerY));
+        if (pointerY>=viewportHeight-edge)
+            return Math.min(36,Math.max(12,pointerY-(viewportHeight-edge)));
+        return 0;
+    }
+
     public record Visible(int startInclusive, int endExclusive) {
         public Visible {
             if (startInclusive < 0 || endExclusive < startInclusive)
