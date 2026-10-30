@@ -36,6 +36,30 @@ final class GridKeyboardSelectionTest {
         assertEquals("A",second.anchor());
         assertEquals("A",second.focused());
     }
+    @Test void homeEndNavigationWorksAcrossUnrenderedCardsAndModifiers() {
+        // The Swing grid renders only visible cards; logical navigation must
+        // reach both ends without relying on instantiated components.
+        var end = GridKeyboardSelection.move(FILES,List.of("C"),"C","C",
+                Integer.MAX_VALUE,false,false);
+        assertEquals("I",end.focused());
+        assertEquals(List.of("I"),end.selected());
+
+        var range = GridKeyboardSelection.move(FILES,List.of("C"),"C","C",
+                Integer.MAX_VALUE,true,false);
+        assertEquals(List.of("C","D","E","F","G","H","I"),range.selected());
+        assertEquals("C",range.anchor());
+
+        var focusOnly = GridKeyboardSelection.move(FILES,List.of("C","F"),"C","F",
+                -Integer.MAX_VALUE,false,true);
+        assertEquals("A",focusOnly.focused());
+        assertEquals(List.of("C","F"),focusOnly.selected());
+
+        var reverseRange = GridKeyboardSelection.move(FILES,List.of("F"),"F","F",
+                -Integer.MAX_VALUE,true,false);
+        assertEquals(List.of("A","B","C","D","E","F"),reverseRange.selected());
+        assertEquals("F",reverseRange.anchor());
+    }
+
     @Test void emptyFilesReturnEmptySelection() {
         var result=GridKeyboardSelection.move(List.<String>of(),List.<String>of(),
                 "A","A",1,true,false);
