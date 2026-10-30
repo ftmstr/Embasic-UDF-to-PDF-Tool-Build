@@ -132,8 +132,8 @@ final class StructuredUdfRegressionTest {
     @Test void tableCellsRejectInvisibleControlsBeforePdfRendering() {
         // A table cell is one line in this synthetic contract. Controls and
         // Unicode line separators must never disappear or change PDF geometry.
-        for (String value : List.of("A\\u2028B", "A\\u2029B", "A\\u0085B",
-                "A\\tB", "A\\rB", "A\\nB")) {
+        for (String value : List.of("A\u2028B", "A\u2029B", "A\u0085B",
+                "A\tB", "A\rB", "A\nB")) {
             var table = new DocumentElements.TableBlock(
                     List.of(100f),
                     List.of(new DocumentElements.Row(
