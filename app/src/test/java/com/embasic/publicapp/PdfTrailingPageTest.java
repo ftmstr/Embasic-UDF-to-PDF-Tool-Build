@@ -2,10 +2,12 @@ package com.embasic.publicapp;
 
 import static org.junit.jupiter.api.Assertions.*;
 import java.awt.Color;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
+import org.apache.pdfbox.text.TextPosition;
 import org.junit.jupiter.api.Test;
 
 /** Regression: a trailing paragraph must not create an empty PDF page. */
@@ -59,6 +61,39 @@ final class PdfTrailingPageTest {
             assertFalse(actual.contains("LINE99"), "Later pages must not enter the thumbnail");
             var allPages = new PDFTextStripper().getText(exported);
             assertTrue(allPages.contains("LINE99"), "Full export must retain the final paragraph");
+        }
+    }
+
+    @Test void largeFontMovedToNewPagePreservesNextParagraphSpacing() throws Exception {
+        // 33 regular paragraphs leave the first page almost full. A 48pt run
+        // moves to page two; its line advance must remain >= 48*1.4pt even
+        // though newPage() initializes the default 17pt line height.
+        List<DocumentElements.Block> blocks = new ArrayList<>(paragraphs(33).blocks());
+        blocks.add(new DocumentElements.ParagraphBlock(new UdfReader.Paragraph(List.of(
+                new UdfReader.Run("X", new UdfReader.Style(48f, false, Color.BLACK))))));
+        blocks.add(new DocumentElements.ParagraphBlock(new UdfReader.Paragraph(List.of(
+                new UdfReader.Run("Y", new UdfReader.Style(11f, false, Color.BLACK))))));
+        var document = new UdfReader.DocumentSpec("synthetic.udf", "1.0", List.of(),
+                blocks, DocumentElements.PageSpec.a4());
+        try (PDDocument pdf = PdfExporter.render(List.of(document))) {
+            assertEquals(2, pdf.getNumberOfPages());
+            class Baselines extends PDFTextStripper {
+                Float large, following;
+                Baselines() throws IOException { super(); }
+                @Override protected void processTextPosition(TextPosition position) {
+                    if ("X".equals(position.getUnicode())) large = position.getYDirAdj();
+                    if ("Y".equals(position.getUnicode())) following = position.getYDirAdj();
+                    super.processTextPosition(position);
+                }
+            }
+            Baselines positions = new Baselines();
+            positions.setStartPage(2);
+            positions.setEndPage(2);
+            positions.getText(pdf);
+            assertNotNull(positions.large, "Large run must appear on page two");
+            assertNotNull(positions.following, "Following paragraph must appear on page two");
+            assertTrue(positions.following - positions.large > 55f,
+                    "Following baseline must clear the 48pt line, not use a 17pt advance");
         }
     }
 
