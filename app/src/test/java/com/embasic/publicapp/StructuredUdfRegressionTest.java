@@ -274,6 +274,40 @@ final class StructuredUdfRegressionTest {
             assertThrows(IllegalArgumentException.class, () -> parse(invalid),
                 "Structural text must not silently disappear: " + invalid);
         }
+
+        // Unicode separators can satisfy String.isBlank() while remaining
+        // unsupported by the PDF renderer. Neither unreferenced raw content
+        // nor indentation between XML nodes may silently discard them.
+        for (int codePoint : new int[]{0x2028, 0x2029, 0x2003, 0x3000}) {
+            String hidden = new String(Character.toChars(codePoint));
+            String start = "<template format_id='1.0'><content>";
+            String middle = "</content><elements>";
+            String end = "</elements></template>";
+            String split = "<paragraph><content startOffset='0' length='1'/>"
+                    + "<content startOffset='2' length='1'/></paragraph>";
+            assertThrows(IllegalArgumentException.class,
+                    () -> parse(start + "A" + hidden + "B" + middle + split + end),
+                    "Unsupported whitespace between UTF-16 runs must fail closed");
+            assertThrows(IllegalArgumentException.class,
+                    () -> parse(start + "A" + hidden + middle + para(0, 1) + end),
+                    "Unsupported trailing raw whitespace must not disappear");
+            assertThrows(IllegalArgumentException.class,
+                    () -> parse(start + hidden + "A" + middle + para(1, 1) + end),
+                    "Unsupported leading raw whitespace must not disappear");
+            assertThrows(IllegalArgumentException.class,
+                    () -> parse(container(para(0, 6), "")
+                            .replace("<elements>", "<elements>" + hidden)),
+                    "Unsupported structural XML whitespace must not disappear");
+            assertThrows(IllegalArgumentException.class,
+                    () -> parse(container(para(0, 6),
+                            "<properties>" + hidden + "</properties>")),
+                    "Unsupported page metadata whitespace must not disappear");
+            assertThrows(IllegalArgumentException.class,
+                    () -> parse(container("<table widths='100'>" + hidden
+                            + "<row height='25'><cell>A</cell></row></table>"
+                            + para(0, 6), "")),
+                    "Unsupported table structural whitespace must not disappear");
+        }
     }
 
     @Test void maximumSyntheticTableRowsKeepEveryRowspanGroupInOrder() {
