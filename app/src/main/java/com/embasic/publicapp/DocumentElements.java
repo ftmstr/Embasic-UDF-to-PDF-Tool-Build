@@ -43,6 +43,19 @@ public final class DocumentElements {
                 throw new IllegalArgumentException("Desteklenmeyen " + element.getTagName()
                         + " özelliği: " + attributes.item(i).getNodeName());
     }
+    /**
+     * Only the synthetic subset's ASCII layout whitespace may be ignored
+     * between XML elements. String.isBlank() also accepts Unicode separators
+     * that PDF layout rejects; dropping those would silently lose content.
+     */
+    static boolean isStructuralWhitespace(String value) {
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c != ' ' && c != '\t' && c != '\r' && c != '\n') return false;
+        }
+        return true;
+    }
+
     /** Structural nodes may contain formatting whitespace, never hidden text. */
     private static void rejectDirectText(Element element) {
         NodeList nodes = element.getChildNodes();
@@ -50,7 +63,7 @@ public final class DocumentElements {
             var node = nodes.item(i);
             if ((node.getNodeType() == org.w3c.dom.Node.TEXT_NODE
                     || node.getNodeType() == org.w3c.dom.Node.CDATA_SECTION_NODE)
-                    && !node.getNodeValue().isBlank())
+                    && !isStructuralWhitespace(node.getNodeValue()))
                 throw new IllegalArgumentException("Desteklenmeyen " + element.getTagName()
                         + " doğrudan metni");
         }
@@ -85,7 +98,7 @@ public final class DocumentElements {
     public static PageSpec page(Element properties) {
         if (properties == null) return PageSpec.a4();
         onlyAttributes(properties, "pageSize", "orientation", "margin");
-        if (!children(properties).isEmpty() || !properties.getTextContent().isBlank())
+        if (!children(properties).isEmpty() || !isStructuralWhitespace(properties.getTextContent()))
             throw new IllegalArgumentException("Bilinmeyen UDF sayfa ayarı");
         String size = properties.hasAttribute("pageSize") ? properties.getAttribute("pageSize") : "A4";
         float w, h;
@@ -162,7 +175,7 @@ public final class DocumentElements {
         if (!image.hasAttribute("ref")) return image(image);
         onlyAttributes(image,"ref","mime","width","height");
         if (!"image/png".equals(image.getAttribute("mime"))
-                || !children(image).isEmpty() || !image.getTextContent().isBlank())
+                || !children(image).isEmpty() || !isStructuralWhitespace(image.getTextContent()))
             throw new IllegalArgumentException("PNG referansı içerik ve encoding ile karıştırılamaz");
         String ref=mediaPath(image.getAttribute("ref"));
         byte[] data=media.get(ref);
