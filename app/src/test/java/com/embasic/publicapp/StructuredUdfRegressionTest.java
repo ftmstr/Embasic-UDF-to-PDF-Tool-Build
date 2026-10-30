@@ -216,11 +216,23 @@ final class StructuredUdfRegressionTest {
         assertEquals("A😀B", parsed.paragraphs().get(0).runs().stream()
                 .map(UdfReader.Run::text).reduce("", String::concat));
 
-        // Whitespace between disjoint runs may be layout-only in this limited contract.
+        // A disjoint range may skip whitespace, but the PDF must not silently
+        // join the two words. Preserve skipped whitespace in the next run.
         String spaced = prefix + "A B" + middle
                 + "<content startOffset='0' length='1'/>"
                 + "<content startOffset='2' length='1'/>" + suffix;
-        assertEquals(2, parse(spaced).paragraphs().get(0).runs().size());
+        var spacedDoc = parse(spaced);
+        assertEquals(2, spacedDoc.paragraphs().get(0).runs().size());
+        assertEquals(" B", spacedDoc.paragraphs().get(0).runs().get(1).text());
+        try (PDDocument pdf = PdfExporter.render(List.of(spacedDoc))) {
+            assertTrue(new PDFTextStripper().getText(pdf).contains("A B"),
+                    "A skipped source space must remain visible in the PDF");
+        }
+        String doubleSpaced = prefix + "A  B" + middle
+                + "<content startOffset='0' length='1'/>"
+                + "<content startOffset='3' length='1'/>" + suffix;
+        assertEquals("  B", parse(doubleSpaced).paragraphs().get(0).runs().get(1).text(),
+                "Multiple skipped spaces must preserve their source width");
 
         for (String ranges : List.of(
                 "<content startOffset='0' length='1'/><content startOffset='2' length='1'/>",
