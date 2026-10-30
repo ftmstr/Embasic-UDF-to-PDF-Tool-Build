@@ -70,6 +70,34 @@ final class VirtualGridLayoutTest {
         }
     }
 
+    @Test void whitespaceAndPartialLastRowNeverBecomeAccidentalDropTargets() {
+        for (int width : new int[]{680,1000,1430}) {
+            for (int zoom : new int[]{132,188,272}) {
+                var grid = new VirtualGridLayout(161,width,zoom);
+                Rectangle first = grid.bounds(0);
+                int centerY = first.y+first.height/2;
+                assertEquals(0,grid.indexAt(first.x+first.width/2,centerY));
+                assertEquals(-1,grid.indexAt(first.x-1,centerY),
+                        "Left margin must not snap to the first file");
+                assertEquals(-1,grid.indexAt(first.x+first.width+ThumbnailSizing.GAP/2,centerY),
+                        "Horizontal card gap must not trigger a reorder");
+                assertEquals(-1,grid.indexAt(first.x+first.width/2,
+                        first.y+first.height+ThumbnailSizing.GAP/2),
+                        "Vertical card gap must not trigger a reorder");
+                assertEquals(-1,grid.indexAt(width-1,centerY),
+                        "Unused right-hand grid space must not snap to a card");
+
+                Rectangle last = grid.bounds(160);
+                int lastY = last.y+last.height/2;
+                assertEquals(160,grid.indexAt(last.x+last.width/2,lastY));
+                int afterLast = last.x+last.width+ThumbnailSizing.GAP+1;
+                if (afterLast<width)
+                    assertEquals(-1,grid.indexAt(afterLast,lastY),
+                            "Unoccupied final-row cells must not target the last UDF");
+            }
+        }
+    }
+
     @Test void edgeScrollIsBoundedAndStopsAwayFromViewportEdges() {
         assertTrue(VirtualGridLayout.edgeScrollDelta(5,650)<0);
         assertTrue(VirtualGridLayout.edgeScrollDelta(640,650)>0);
