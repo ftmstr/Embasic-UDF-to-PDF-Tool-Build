@@ -248,16 +248,21 @@ public final class PdfExporter {
                     throw new IllegalArgumentException("Tablo hücresi taşıyor: "+cell.text());
             }
             List<int[]> groups=TableLayout.pageGroups(geometry);
+            // Cells are in row order. A row-height prefix and forward-only cell
+            // cursor avoid rescanning the entire table for every page group.
+            float[] rowTop=new float[geometry.rowHeights().size()+1];
+            for(int i=0;i<geometry.rowHeights().size();i++)
+                rowTop[i+1]=rowTop[i]+geometry.rowHeights().get(i);
+            List<TableLayout.CellPosition> cells=geometry.cells();
+            int cellCursor=0;
             if(x>left) newLine();
             for(int[] group:groups) {
-                float height=0;
-                for(int i=group[0];i<group[1];i++)height+=geometry.rowHeights().get(i);
+                float height=rowTop[group[1]]-rowTop[group[0]];
                 if(height>top-bottom)throw new IllegalArgumentException("Rowspan grubu tek sayfaya sığmıyor");
                 if(y-height<bottom)newPage();
-                for(TableLayout.CellPosition cell:geometry.cells()) {
-                    if(cell.row()<group[0] || cell.row()>=group[1])continue;
-                    float rowOffset=0;
-                    for(int i=group[0];i<cell.row();i++)rowOffset+=geometry.rowHeights().get(i);
+                while(cellCursor<cells.size() && cells.get(cellCursor).row()<group[1]) {
+                    TableLayout.CellPosition cell=cells.get(cellCursor++);
+                    float rowOffset=rowTop[cell.row()]-rowTop[group[0]];
                     float cellTop=y-rowOffset;
                     stream.setStrokingColor(Color.BLACK);
                     stream.setLineWidth(.7f);
