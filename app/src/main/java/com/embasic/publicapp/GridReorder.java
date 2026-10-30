@@ -32,6 +32,35 @@ public final class GridReorder {
         return List.copyOf(kept);
     }
 
+    /**
+     * Move each selected card by one adjacent slot, as Explorer-style arrow
+     * controls do. Iterate in the direction opposite to the move so adjacent
+     * selected cards remain in their original order and travel as a group.
+     * The source list and selection are never mutated.
+     */
+    public static <T> List<T> step(List<T> ordered, Collection<T> selected, int direction) {
+        if (ordered == null || selected == null || (direction != -1 && direction != 1))
+            throw new IllegalArgumentException("Geçersiz kart taşıma yönü");
+        List<T> result = new ArrayList<>(ordered);
+        HashSet<T> selectedSet = new HashSet<>(selected);
+        if (direction < 0) {
+            for (int i = 1; i < result.size(); i++)
+                if (selectedSet.contains(result.get(i)) && !selectedSet.contains(result.get(i - 1))) {
+                    T card = result.get(i);
+                    result.set(i, result.get(i - 1));
+                    result.set(i - 1, card);
+                }
+        } else {
+            for (int i = result.size() - 2; i >= 0; i--)
+                if (selectedSet.contains(result.get(i)) && !selectedSet.contains(result.get(i + 1))) {
+                    T card = result.get(i);
+                    result.set(i, result.get(i + 1));
+                    result.set(i + 1, card);
+                }
+        }
+        return List.copyOf(result);
+    }
+
     private static <T> List<T> move(List<T> ordered, Collection<T> selected,
                                     T target, boolean after) {
         if (ordered == null || selected == null || target == null || !ordered.contains(target))
