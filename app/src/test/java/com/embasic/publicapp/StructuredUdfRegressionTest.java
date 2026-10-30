@@ -244,4 +244,26 @@ final class StructuredUdfRegressionTest {
                 "Structural text must not silently disappear: " + invalid);
         }
     }
+
+    @Test void maximumSyntheticTableRowsKeepEveryRowspanGroupInOrder() {
+        // A 500-row alternating rowspan fixture exercises the largest supported
+        // table without relying on a flaky wall-clock performance assertion.
+        List<DocumentElements.Row> rows = new ArrayList<>();
+        for (int i = 0; i < 500; i++) {
+            if (i % 2 == 0)
+                rows.add(new DocumentElements.Row(List.of(
+                        new DocumentElements.Cell("SPAN" + i, 1, 2),
+                        new DocumentElements.Cell("R" + i, 1, 1)), 18f));
+            else
+                rows.add(new DocumentElements.Row(List.of(
+                        new DocumentElements.Cell("R" + i, 1, 1)), 18f));
+        }
+        var table = new DocumentElements.TableBlock(List.of(90f, 90f), rows);
+        var geometry = TableLayout.calculate(table);
+        assertEquals(750, geometry.cells().size());
+        var groups = TableLayout.pageGroups(geometry);
+        assertEquals(250, groups.size());
+        for (int i = 0; i < groups.size(); i++)
+            assertArrayEquals(new int[]{2 * i, 2 * i + 2}, groups.get(i));
+    }
 }
