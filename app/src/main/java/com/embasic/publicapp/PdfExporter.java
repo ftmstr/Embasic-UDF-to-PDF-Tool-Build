@@ -273,8 +273,14 @@ public final class PdfExporter {
         }
         private void spaces(int count, UdfReader.Style style) throws IOException {
             float length = width(" ", style.bold() ? bold : regular, style.size()) * count;
-            if (x + length > right) newLine();
-            if (x > left) x += length;
+            // Preserve explicit leading spaces (including paragraph indentation).
+            // Only discard a separator when it itself causes a soft line wrap;
+            // otherwise the next word would silently lose its left offset.
+            if (x + length > right) {
+                newLine();
+                return;
+            }
+            x += length;
         }
         void add(UdfReader.Run run) throws IOException {
             UdfReader.Style style = run.style();
