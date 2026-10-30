@@ -177,6 +177,32 @@ final class PdfTrailingPageTest {
         }
     }
 
+    @Test void unicodeWhitespaceCannotSilentlyCollapseToAsciiSpace() {
+        // The renderer advances one ordinary-space width for Character.isWhitespace.
+        // Wide Unicode spaces would otherwise be silently narrowed in paragraphs;
+        // reject them before trimming, previewing, or writing any PDF output.
+        var style = new UdfReader.Style(11f, false, Color.BLACK);
+        for (int cp : new int[]{0x1680, 0x2002, 0x2003, 0x3000}) {
+            String wideSpace = new String(Character.toChars(cp));
+            String codePoint = "U+" + Integer.toHexString(cp).toUpperCase(java.util.Locale.ROOT);
+            for (String value : List.of("A" + wideSpace + "B", "A" + wideSpace)) {
+                var paragraph = new UdfReader.DocumentSpec("synthetic.udf", "1.0",
+                        List.of(new UdfReader.Paragraph(List.of(new UdfReader.Run(value, style)))));
+                var error = assertThrows(IllegalArgumentException.class,
+                        () -> { try (PDDocument ignored = PdfExporter.render(List.of(paragraph))) {} });
+                assertTrue(error.getMessage().contains(codePoint), error.getMessage());
+            }
+            var table = new DocumentElements.TableBlock(
+                    List.of(150f), List.of(new DocumentElements.Row(
+                            List.of(new DocumentElements.Cell("A" + wideSpace + "B", 1, 1)), 30f)));
+            var document = new UdfReader.DocumentSpec("synthetic.udf", "1.0",
+                    List.of(), List.of(table), DocumentElements.PageSpec.a4());
+            var error = assertThrows(IllegalArgumentException.class,
+                    () -> { try (PDDocument ignored = PdfExporter.render(List.of(document))) {} });
+            assertTrue(error.getMessage().contains(codePoint), error.getMessage());
+        }
+    }
+
     @Test void unsupportedUnicodeSeparatorsAndControlsFailClosed() {
         // XML 1.0 can carry U+2028/U+2029. Rendering them as a single
         // ordinary space silently changes line/paragraph geometry.
