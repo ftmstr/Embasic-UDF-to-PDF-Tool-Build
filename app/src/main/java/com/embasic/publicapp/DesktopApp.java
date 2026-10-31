@@ -59,7 +59,22 @@ public final class DesktopApp extends JFrame {
         Thread thread = new Thread(job, "embasic-preview");
         thread.setDaemon(true); return thread;
     });
-    private final JPanel grid = new JPanel();
+    // Paint the drop target above the rendered cards, without installing a
+    // Swing child that could swallow mouse releases or external file drops.
+    private final JPanel grid = new JPanel() {
+        @Override protected void paintChildren(java.awt.Graphics graphics) {
+            super.paintChildren(graphics);
+            Rectangle indicator = GridDropIndicator.bounds(virtualGrid,
+                    pointerDragging ? dropTargetIndex : -1, dropAfter);
+            if (indicator == null) return;
+            Graphics2D draw=(Graphics2D)graphics.create();
+            try {
+                draw.setColor(accent());
+                draw.fillRoundRect(indicator.x,indicator.y,indicator.width,
+                        indicator.height,3,3);
+            } finally { draw.dispose(); }
+        }
+    };
     private TransferHandler fileDrop;
     private final JScrollPane scroll = new JScrollPane(grid);
     private final JLabel status = new JLabel("Dosyaları çalışma alanına bırakın veya + kartına basın");
@@ -82,6 +97,8 @@ public final class DesktopApp extends JFrame {
     private boolean pointerHeld;
     private boolean pointerDragging;
     private Point pointerViewport;
+    private int dropTargetIndex=-1;
+    private boolean dropAfter;
     private VirtualGridLayout virtualGrid;
     private VirtualGridLayout.Visible drawnRange;
     private int drawnZoom=-1, drawnColumns=-1, drawnCount=-1;
@@ -257,6 +274,33 @@ public final class DesktopApp extends JFrame {
         int max=Math.max(0,bar.getMaximum()-bar.getVisibleAmount());
         int updated=Math.max(0,Math.min(max,bar.getValue()+delta));
         if (updated != bar.getValue()) bar.setValue(updated);
+        // The pointer stays at the viewport edge while document coordinates
+        // change under it; recalculate the visible insertion marker.
+        updateDropIndicatorFromViewport();
+    }
+
+    private void updateDropIndicatorFromViewport() {
+        if (!pointerHeld || !pointerDragging || pointerViewport == null ||
+                converting || virtualGrid == null) {
+            setDropIndicator(-1,false);
+            return;
+        }
+        Point documentPoint=SwingUtilities.convertPoint(
+                scroll.getViewport(),pointerViewport,grid);
+        int index=GridDropIndicator.targetAt(
+                virtualGrid,documentPoint.x,documentPoint.y);
+        boolean after=index>=0 && virtualGrid.insertAfter(index,documentPoint.x);
+        setDropIndicator(index,after);
+    }
+
+    private void setDropIndicator(int index,boolean after) {
+        if (index==dropTargetIndex && after==dropAfter) return;
+        Rectangle old=GridDropIndicator.bounds(virtualGrid,dropTargetIndex,dropAfter);
+        dropTargetIndex=index;
+        dropAfter=after;
+        Rectangle next=GridDropIndicator.bounds(virtualGrid,dropTargetIndex,dropAfter);
+        if (old!=null) grid.repaint(old.x-2,old.y-2,old.width+4,old.height+4);
+        if (next!=null) grid.repaint(next.x-2,next.y-2,next.width+4,next.height+4);
     }
 
     private void updateZoomLabel() {
@@ -439,6 +483,7 @@ public final class DesktopApp extends JFrame {
                 capturedItem=item;
                 pointerHeld=true;
                 pointerDragging=false;
+                setDropIndicator(-1,false);
                 pointerViewport=SwingUtilities.convertPoint(
                         (Component)e.getSource(),e.getPoint(),scroll.getViewport());
                 var next = GridPointerSelection.press(items, selected, anchor, item,
@@ -458,12 +503,16 @@ public final class DesktopApp extends JFrame {
                 if (pressed.distance(position) > 12) pointerDragging=true;
                 pointerViewport=SwingUtilities.convertPoint(
                         (Component)e.getSource(),e.getPoint(),scroll.getViewport());
-                if (pointerDragging && !dragScroll.isRunning()) dragScroll.start();
+                if (pointerDragging) {
+                    updateDropIndicatorFromViewport();
+                    if (!dragScroll.isRunning()) dragScroll.start();
+                }
             }
             @Override public void mouseReleased(MouseEvent e) {
                 Point released=SwingUtilities.convertPoint((Component)e.getSource(),e.getPoint(),grid);
                 boolean dragged=pointerDragging || pressed != null && pressed.distance(released)>12;
                 dragScroll.stop();
+                setDropIndicator(-1,false);
                 // Resolve the destination from the logical grid, not the rendered
                 // components: an offscreen destination has no JPanel to hit-test.
                 int destination=virtualGrid==null ? -1 :
@@ -612,6 +661,9 @@ public final class DesktopApp extends JFrame {
             if(component.getParent()!=grid)grid.add(component);
         }
         grid.revalidate();
+        // Recalculate after resizing or virtual row replacement. The marker is
+        // geometry-derived and remains outside the Swing component hierarchy.
+        if(pointerDragging) updateDropIndicatorFromViewport();
         grid.repaint();
     }
 
