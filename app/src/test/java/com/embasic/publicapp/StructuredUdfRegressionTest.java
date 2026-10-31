@@ -45,6 +45,36 @@ final class StructuredUdfRegressionTest {
         return "<image mime='image/png' encoding='base64' width='52' height='52'>"+
             Base64.getEncoder().encodeToString(pngBytes())+"</image>";
     }
+    @Test void imageOnlyPdfRendersAndSavesWithoutAnySystemFont(@TempDir Path folder) throws Exception {
+        // An image-only document must not pay the Windows system-font startup
+        // cost or fail because a text font is missing. Keep the check scoped
+        // to the independently documented synthetic image element.
+        var doc = parse("<template format_id='1.0'><content></content><elements>"
+                + png() + "</elements></template>");
+        String previousRegular = System.getProperty("embasic.font.regular");
+        String previousBold = System.getProperty("embasic.font.bold");
+        try {
+            Path absent = folder.resolve("missing-system-font.ttf");
+            System.setProperty("embasic.font.regular", absent.toString());
+            System.setProperty("embasic.font.bold", absent.toString());
+            try (PDDocument pdf = PdfExporter.render(List.of(doc))) {
+                assertEquals(1, pdf.getNumberOfPages());
+                assertFalse(pdf.getPage(0).getResources().getFontNames().iterator().hasNext());
+            }
+            assertNotNull(PdfExporter.firstPage(doc));
+            Path output = folder.resolve("image-only.pdf");
+            assertEquals(1, PdfExporter.save(List.of(doc), output, false));
+            try (PDDocument saved = Loader.loadPDF(output.toFile())) {
+                assertEquals(1, saved.getNumberOfPages());
+            }
+        } finally {
+            if (previousRegular == null) System.clearProperty("embasic.font.regular");
+            else System.setProperty("embasic.font.regular", previousRegular);
+            if (previousBold == null) System.clearProperty("embasic.font.bold");
+            else System.setProperty("embasic.font.bold", previousBold);
+        }
+    }
+
     @Test void mixedOrderedParagraphMergedTablePngAndLetterLandscape() throws Exception {
         String table="<table widths='80,110'><row height='28'><cell colspan='2'>BAŞLIK</cell></row>"+
             "<row height='27'><cell rowspan='2'>A</cell><cell>B</cell></row>"+
