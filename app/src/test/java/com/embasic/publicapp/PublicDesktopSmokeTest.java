@@ -194,6 +194,47 @@ final class PublicDesktopSmokeTest {
             () -> PdfExporter.save(List.of(spec), source, true));
         assertArrayEquals(before, Files.readAllBytes(source));
     }
+    @Test void parsingCanFinishWhilePdfThumbnailWorkerIsBlocked() throws Exception {
+        ThreadPoolExecutor parser = new ThreadPoolExecutor(1, 1, 0L,
+                TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(4));
+        ThreadPoolExecutor preview = new ThreadPoolExecutor(1, 1, 0L,
+                TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(4));
+        CountDownLatch previewStarted = new CountDownLatch(1);
+        CountDownLatch releasePreview = new CountDownLatch(1);
+        CountDownLatch parsedReady = new CountDownLatch(1);
+        CountDownLatch nextPreviewDone = new CountDownLatch(1);
+        AtomicBoolean failed = new AtomicBoolean();
+        try {
+            preview.submit(() -> {
+                previewStarted.countDown();
+                try { releasePreview.await(5, TimeUnit.SECONDS); }
+                catch (InterruptedException ex) { Thread.currentThread().interrupt(); }
+            });
+            assertTrue(previewStarted.await(5, TimeUnit.SECONDS));
+            Future<?> parsing = DesktopApp.parseWithoutBlockingPreview(parser,
+                    () -> "synthetic parsed document",
+                    result -> {
+                        if ("synthetic parsed document".equals(result)) parsedReady.countDown();
+                        preview.submit(nextPreviewDone::countDown);
+                    },
+                    ex -> failed.set(true));
+            parsing.get(5, TimeUnit.SECONDS);
+            assertTrue(parsedReady.await(5, TimeUnit.SECONDS),
+                    "Parsing must publish export readiness without waiting for PDFBox thumbnails");
+            assertFalse(failed.get());
+            assertEquals(1, preview.getQueue().size(),
+                    "Thumbnail may remain queued after the document is export-ready");
+            releasePreview.countDown();
+            assertTrue(nextPreviewDone.await(5, TimeUnit.SECONDS));
+        } finally {
+            releasePreview.countDown();
+            parser.shutdownNow();
+            preview.shutdownNow();
+            assertTrue(parser.awaitTermination(5, TimeUnit.SECONDS));
+            assertTrue(preview.awaitTermination(5, TimeUnit.SECONDS));
+        }
+    }
+
     @Test void clearingThumbnailsPurgesObsoletePreviewBacklog() throws Exception {
         ThreadPoolExecutor queue = new ThreadPoolExecutor(1, 1, 0L,
                 TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(2));
