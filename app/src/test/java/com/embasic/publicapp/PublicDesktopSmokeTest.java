@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.nio.charset.StandardCharsets;
 import java.awt.Color;
 import javax.swing.JPanel;
+import javax.swing.JScrollPane;
 import javax.swing.JLabel;
 import javax.swing.TransferHandler;
 import java.util.ArrayList;
@@ -233,6 +234,13 @@ final class PublicDesktopSmokeTest {
         assertSame(drop, preview.getTransferHandler());
         assertSame(drop, caption.getTransferHandler());
         assertSame(drop, filename.getTransferHandler());
+        // A short grid leaves blank space inside the scroll viewport.
+        // The viewport must accept native file drops there, not only on cards.
+        JScrollPane workspace = new JScrollPane(card);
+        DesktopApp.installWorkspaceFileDrop(workspace, card, drop);
+        assertSame(drop, workspace.getTransferHandler());
+        assertSame(drop, workspace.getViewport().getTransferHandler());
+        assertSame(drop, card.getTransferHandler());
     }
 
 }
