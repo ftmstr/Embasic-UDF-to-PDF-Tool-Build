@@ -785,6 +785,17 @@ public final class DesktopApp extends JFrame {
         int zoom=thumbnailZoom.getValue();
         VirtualGridLayout next=new VirtualGridLayout(items.size()+1,width,zoom);
         VirtualGridLayout.Visible window=next.visible(scroll.getViewport().getViewRect());
+        // A fast scroll can leave many previously visible thumbnails queued.
+        // Drop only NOT-YET-RUNNING offscreen work; keep active PDFBox renders
+        // untouched. If the user scrolls back, that card can be queued again.
+        for (int index = 0; index < items.size(); index++) {
+            if (index >= window.startInclusive() && index < window.endExclusive()) continue;
+            Item item = items.get(index);
+            if (item.previewTask != null && cancelQueuedPreview(previewQueue, item.previewTask)) {
+                item.previewTask = null;
+                item.info = DEFERRED_PREVIEW;
+            }
+        }
         // On-demand rasterization: offscreen UDFs remain export-ready without
         // consuming PDFBox font/CPU time or retaining 160 full thumbnails.
         scheduleVisiblePreviews(items, window,
@@ -927,6 +938,17 @@ public final class DesktopApp extends JFrame {
             Runnable task = candidates.get(i);
             if (queue.remove(task)) queue.addFirst(task);
         }
+    }
+
+    /**
+     * Cancel a thumbnail only if it is still physically queued. Removing it
+     * before cancel(false) guarantees that an already running PDFBox render
+     * is never interrupted or mistaken for a reschedulable preview.
+     */
+    static boolean cancelQueuedPreview(LinkedBlockingDeque<Runnable> queue, Future<?> task) {
+        if (!(task instanceof Runnable runnable) || !queue.remove(runnable)) return false;
+        task.cancel(false);
+        return true;
     }
 
     /** Package-visible for a headless queue cancellation regression. */
