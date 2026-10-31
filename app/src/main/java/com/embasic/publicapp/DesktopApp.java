@@ -29,6 +29,8 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.Future;
+import java.util.concurrent.Callable;
+import java.util.function.Consumer;
 import javax.swing.BorderFactory;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
@@ -54,6 +56,13 @@ public final class DesktopApp extends JFrame {
     private static final int PREVIEW_WIDTH = 244, PREVIEW_HEIGHT = 322;
     private final List<Item> items = new ArrayList<>();
     private final LinkedHashSet<Item> selected = new LinkedHashSet<>();
+    // UDF parsing must not queue behind slow PDFBox font discovery/rasterization.
+    private final LinkedBlockingDeque<Runnable> parseQueue = new LinkedBlockingDeque<>(192);
+    private final ThreadPoolExecutor parsers = new ThreadPoolExecutor(2, 2, 0L,
+            TimeUnit.MILLISECONDS, parseQueue, job -> {
+        Thread thread = new Thread(job, "embasic-parse");
+        thread.setDaemon(true); return thread;
+    });
     private final LinkedBlockingDeque<Runnable> previewQueue = new LinkedBlockingDeque<>(192);
     private final ThreadPoolExecutor previews = new ThreadPoolExecutor(2, 2, 0L,
             TimeUnit.MILLISECONDS, previewQueue, job -> {
@@ -114,6 +123,7 @@ public final class DesktopApp extends JFrame {
         volatile ImageIcon thumbnail;
         volatile String info = "Okunuyor...";
         volatile boolean cancelled;
+        volatile Future<?> parseTask;
         volatile Future<?> previewTask;
         Item(Path path) { this.path = path; }
     }
@@ -373,56 +383,28 @@ public final class DesktopApp extends JFrame {
             Item item = new Item(normalized);
             items.add(item);
             try {
-                item.previewTask = previews.submit(() -> {
-                    if (item.cancelled) return;
-                    try {
-                        UdfReader.DocumentSpec parsed = UdfReader.read(item.path);
-                        if (item.cancelled) return;
-                        // Parsing establishes export eligibility. PDFBox thumbnail
-                        // rasterization (including first-use font discovery) may take
-                        // much longer; do not block PDF saving on a decorative preview.
-                        SwingUtilities.invokeLater(() -> {
-                            if (item.cancelled || !items.contains(item)) return;
+                item.parseTask = parseWithoutBlockingPreview(parsers,
+                        () -> item.cancelled ? null : UdfReader.read(item.path),
+                        parsed -> {
+                            if (parsed == null || item.cancelled || !items.contains(item)) return;
+                            // Export eligibility depends on parsing, never on PDFBox
+                            // thumbnail rendering or first-use system font discovery.
                             item.document = parsed;
                             item.info = "Önizleme hazırlanıyor...";
+                            try {
+                                item.previewTask = previews.submit(() -> renderThumbnail(item, parsed));
+                            } catch (RejectedExecutionException queueFull) {
+                                item.info = "Önizleme kuyruğu dolu — PDF kaydedilebilir";
+                            }
                             previewRefresh.restart();
-                        });
-                        BufferedImage image = PdfExporter.firstPage(parsed);
-                        if (item.cancelled) return;
-                        BufferedImage thumb = new BufferedImage(PREVIEW_WIDTH, PREVIEW_HEIGHT, BufferedImage.TYPE_INT_RGB);
-                        Graphics2D g = thumb.createGraphics();
-                        try {
-                            g.setColor(Color.WHITE); g.fillRect(0,0,PREVIEW_WIDTH,PREVIEW_HEIGHT);
-                            g.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
-                                    RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-                            double ratio=Math.min((double)PREVIEW_WIDTH/image.getWidth(),
-                                    (double)PREVIEW_HEIGHT/image.getHeight());
-                            int width=Math.max(1,(int)Math.round(image.getWidth()*ratio));
-                            int height=Math.max(1,(int)Math.round(image.getHeight()*ratio));
-                            g.drawImage(image,(PREVIEW_WIDTH-width)/2,
-                                    (PREVIEW_HEIGHT-height)/2,width,height,null);
-                        } finally { g.dispose(); }
-                        SwingUtilities.invokeLater(() -> {
+                        },
+                        ex -> {
                             if (item.cancelled || !items.contains(item)) return;
-                            item.document = parsed;
-                            item.thumbnail = new ImageIcon(thumb);
-                            item.info = "Hazır";
+                            item.info = "Desteklenmiyor: " + friendly(ex);
                             previewRefresh.restart();
                         });
-                    } catch (Exception ex) {
-                        SwingUtilities.invokeLater(() -> {
-                            if (item.cancelled || !items.contains(item)) return;
-                            // A failed thumbnail is not proof that a successfully
-                            // parsed document is unsupported. Full export independently
-                            // validates every page and reports its own errors.
-                            item.info = (item.document == null ? "Desteklenmiyor: " : "Önizleme yok: ")
-                                    + friendly(ex);
-                            previewRefresh.restart();
-                        });
-                    }
-                });
             } catch (RejectedExecutionException queueFull) {
-                item.info = "Önizleme kuyruğu dolu — kaldırıp yeniden ekleyin";
+                item.info = "UDF okuma kuyruğu dolu — kaldırıp yeniden ekleyin";
             }
         }
         rebuild();
@@ -441,6 +423,56 @@ public final class DesktopApp extends JFrame {
             JOptionPane.showMessageDialog(this,
                     String.join("\n", warnings) + "\nAtlanan dosyalar PDF'ye eklenmedi.",
                     "İçe aktarma uyarısı", JOptionPane.WARNING_MESSAGE);
+    }
+
+    /**
+     * Publish parsing on the EDT, independently of the thumbnail executor.
+     * A blocked PDFBox renderer must not hold later UDFs hostage before export.
+     */
+    static <T> Future<?> parseWithoutBlockingPreview(ThreadPoolExecutor executor,
+            Callable<T> parse, Consumer<T> onParsed, Consumer<Exception> onError) {
+        return executor.submit(() -> {
+            try {
+                T result = parse.call();
+                SwingUtilities.invokeLater(() -> onParsed.accept(result));
+            } catch (Exception ex) {
+                SwingUtilities.invokeLater(() -> onError.accept(ex));
+            }
+        });
+    }
+
+    private void renderThumbnail(Item item, UdfReader.DocumentSpec parsed) {
+        if (item.cancelled) return;
+        try {
+            BufferedImage image = PdfExporter.firstPage(parsed);
+            if (item.cancelled) return;
+            BufferedImage thumb = new BufferedImage(PREVIEW_WIDTH, PREVIEW_HEIGHT, BufferedImage.TYPE_INT_RGB);
+            Graphics2D g = thumb.createGraphics();
+            try {
+                g.setColor(Color.WHITE); g.fillRect(0, 0, PREVIEW_WIDTH, PREVIEW_HEIGHT);
+                g.setRenderingHint(RenderingHints.KEY_INTERPOLATION,
+                        RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+                double ratio = Math.min((double) PREVIEW_WIDTH / image.getWidth(),
+                        (double) PREVIEW_HEIGHT / image.getHeight());
+                int width = Math.max(1, (int) Math.round(image.getWidth() * ratio));
+                int height = Math.max(1, (int) Math.round(image.getHeight() * ratio));
+                g.drawImage(image, (PREVIEW_WIDTH - width) / 2,
+                        (PREVIEW_HEIGHT - height) / 2, width, height, null);
+            } finally { g.dispose(); }
+            SwingUtilities.invokeLater(() -> {
+                if (item.cancelled || !items.contains(item)) return;
+                item.thumbnail = new ImageIcon(thumb);
+                item.info = "Hazır";
+                previewRefresh.restart();
+            });
+        } catch (Exception ex) {
+            SwingUtilities.invokeLater(() -> {
+                if (item.cancelled || !items.contains(item)) return;
+                // A failed thumbnail must not invalidate a parsed document.
+                item.info = "Önizleme yok: " + friendly(ex);
+                previewRefresh.restart();
+            });
+        }
     }
 
     private void updateFileStatus() {
@@ -724,12 +756,15 @@ public final class DesktopApp extends JFrame {
      * is not interrupted; its cancelled flag prevents publishing stale UI.
      */
     private void cancelPreviewTasks(Iterable<Item> removed) {
-        List<Future<?>> tasks = new ArrayList<>();
+        List<Future<?>> parseTasks = new ArrayList<>();
+        List<Future<?>> previewTasks = new ArrayList<>();
         for (Item item : removed) {
             item.cancelled = true;
-            if (item.previewTask != null) tasks.add(item.previewTask);
+            if (item.parseTask != null) parseTasks.add(item.parseTask);
+            if (item.previewTask != null) previewTasks.add(item.previewTask);
         }
-        cancelQueuedPreviews(previews, tasks);
+        cancelQueuedPreviews(parsers, parseTasks);
+        cancelQueuedPreviews(previews, previewTasks);
     }
 
     /**
