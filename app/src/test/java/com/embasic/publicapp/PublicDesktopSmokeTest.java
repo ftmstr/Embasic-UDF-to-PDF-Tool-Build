@@ -67,6 +67,38 @@ final class PublicDesktopSmokeTest {
         assertTrue(requested.contains(159), "Scrolling must request the previously deferred PDF");
     }
 
+    @Test void thumbnailCacheRemainsBoundedAfterScrollingAcross160Cards() {
+        List<Integer> cards = new ArrayList<>();
+        java.util.LinkedHashSet<Integer> cached = new java.util.LinkedHashSet<>();
+        for (int i = 0; i < 160; i++) {
+            cards.add(i);
+            cached.add(i); // Simulate visiting every card before the cache cap.
+        }
+        VirtualGridLayout layout = new VirtualGridLayout(161, 900, ThumbnailSizing.DEFAULT_WIDTH);
+        var lastWindow = layout.visible(new java.awt.Rectangle(
+                0, layout.bounds(159).y, 900, 600));
+        int removed = DesktopApp.evictOffscreenThumbnails(cards, lastWindow, 48,
+                cached::contains, cached::remove);
+        assertEquals(112, removed, "Only the 48 nearest thumbnails should remain");
+        assertEquals(48, cached.size());
+        for (int i = lastWindow.startInclusive();
+                i < Math.min(lastWindow.endExclusive(), cards.size()); i++)
+            assertTrue(cached.contains(i), "Visible thumbnails must never be evicted");
+        assertEquals(0, DesktopApp.evictOffscreenThumbnails(cards, lastWindow, 48,
+                cached::contains, cached::remove), "A stable viewport must not churn the cache");
+
+        // Returning to an old viewport must permit rendering its evicted cards.
+        var firstWindow = layout.visible(new java.awt.Rectangle(0, 0, 900, 600));
+        DesktopApp.scheduleVisiblePreviews(cards, firstWindow,
+                index -> !cached.contains(index), cached::add);
+        DesktopApp.evictOffscreenThumbnails(cards, firstWindow, 48,
+                cached::contains, cached::remove);
+        assertEquals(48, cached.size(), "Cache must remain bounded after revisiting cards");
+        for (int i = firstWindow.startInclusive();
+                i < Math.min(firstWindow.endExclusive(), cards.size()); i++)
+            assertTrue(cached.contains(i), "Revisited visible cards must be renderable");
+    }
+
     @Test void untrustedFilenameAndParserErrorNeverBecomeSwingHtml() throws Exception {
         // Swing's BasicHTML renderer treats a filename beginning with <html>
         // as markup unless explicitly disabled. The tooltip needs the same
