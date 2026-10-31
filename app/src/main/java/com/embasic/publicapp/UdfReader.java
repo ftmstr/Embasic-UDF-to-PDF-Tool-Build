@@ -174,6 +174,9 @@ public final class UdfReader {
         }
         List<Paragraph> paragraphs = new ArrayList<>();
         List<DocumentElements.Block> blocks = new ArrayList<>();
+        // A ZIP-local PNG without an XML reference would disappear from the PDF.
+        // Track only references that passed the strict synthetic image validation.
+        Set<String> referencedMedia = new HashSet<>();
         // Synthetic UTF-16 ranges must be ordered, non-overlapping and cover
         // every visible character; otherwise conversion could silently lose text.
         int coveredUntil = 0;
@@ -183,7 +186,10 @@ public final class UdfReader {
                 continue;
             }
             if ("image".equals(p.getTagName())) {
-                blocks.add(DocumentElements.image(p, media));
+                DocumentElements.ImageBlock image = DocumentElements.image(p, media);
+                if (p.hasAttribute("ref"))
+                    referencedMedia.add(DocumentElements.mediaPath(p.getAttribute("ref")));
+                blocks.add(image);
                 continue;
             }
             if (!p.getTagName().equals("paragraph"))
@@ -226,6 +232,9 @@ public final class UdfReader {
             paragraphs.add(paragraph);
             blocks.add(new DocumentElements.ParagraphBlock(paragraph));
         }
+        for (String path : media.keySet())
+            if (!referencedMedia.contains(path))
+                throw new IllegalArgumentException("PDF\u0027ye aktarılmayan UDF PNG kaynağı: " + path);
         if (!DocumentElements.isStructuralWhitespace(raw.substring(coveredUntil)))
             throw new IllegalArgumentException("UDF içeriğinde PDF\u0027ye aktarılmayan metin var");
         if (blocks.isEmpty()) throw new IllegalArgumentException("Dönüştürülebilir belge öğesi bulunamadı");
