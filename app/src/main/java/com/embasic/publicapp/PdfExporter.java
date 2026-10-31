@@ -413,6 +413,13 @@ public final class PdfExporter {
                     stream.addRect(left+cell.x(),cellTop-cell.height(),cell.width(),cell.height());
                     stream.stroke();
                     if(!cell.text().isEmpty()) {
+                        // The synthetic table subset has no wrapping or clipping.
+                        // Reject text that would spill into an adjacent cell instead
+                        // of producing a visually corrupt but apparently valid PDF.
+                        float textWidth = regular.getStringWidth(cell.text()) * 10f / 1000f;
+                        if (textWidth > cell.width() - 8f + 0.01f)
+                            throw new IllegalArgumentException(
+                                    "Tablo hücresi metni sütun genişliğine sığmıyor");
                         stream.beginText();
                         stream.setNonStrokingColor(Color.BLACK);
                         stream.setFont(regular,10);
