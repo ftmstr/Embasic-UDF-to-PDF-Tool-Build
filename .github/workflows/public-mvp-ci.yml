@@ -79,6 +79,9 @@ jobs:
           if ((($dashboard.Milestones | Measure-Object -Property Weight -Sum).Sum) -ne 100) {
             throw "Dashboard weights invalid"
           }
+          if ($dashboard.GuiAcceptance.Status -ne "NOT_RUN" -or $dashboard.GuiAcceptance.VerifiedPhysicalWindows) {
+            throw "Unverified GUI Robot acceptance must not be reported as PASS"
+          }
           if ([DateTime]$dashboard.Forecast.FinalEarliest -ge [DateTime]$dashboard.Forecast.FinalLatest) {
             throw "Invalid final release forecast window"
           }
