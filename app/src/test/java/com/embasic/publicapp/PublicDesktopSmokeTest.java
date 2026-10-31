@@ -93,7 +93,8 @@ final class PublicDesktopSmokeTest {
         // Only the public synthetic subset is supported: content.xml and ZIP-local PNGs.
         // Unknown members may carry layout or document content and must not disappear.
         int index = 0;
-        for (String extra : List.of("metadata.xml", "notes.txt", "assets/hidden.png")) {
+        for (String extra : List.of("metadata.xml", "notes.txt", "assets/hidden.png",
+                "media/orphan.png")) {
             Path input = root.resolve("unknown-member-" + index++ + ".udf");
             try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(input))) {
                 zip.putNextEntry(new ZipEntry("content.xml"));
@@ -103,7 +104,11 @@ final class PublicDesktopSmokeTest {
                 zip.write("UNSUPPORTED".getBytes(StandardCharsets.UTF_8));
                 zip.closeEntry();
             }
-            assertThrows(IllegalArgumentException.class, () -> UdfReader.read(input), extra);
+            IllegalArgumentException rejected = assertThrows(IllegalArgumentException.class,
+                    () -> UdfReader.read(input), extra);
+            if (extra.equals("media/orphan.png"))
+                assertTrue(rejected.getMessage().contains("aktarılmayan"),
+                        "An unreferenced ZIP-local PNG must not disappear silently: " + rejected.getMessage());
         }
     }
 
