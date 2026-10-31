@@ -115,6 +115,24 @@ final class ReferencedMediaRegressionTest {
             "backslash.udf",items(page(ref("media/logo.png"),"A4"),"media\\\\logo.png",png()))));
         assertThrows(IllegalArgumentException.class,()->UdfReader.read(archive(
             "dot-segment.udf",items(page(ref("media/logo.png"),"A4"),"./media/logo.png",png()))));
+        // A directory entry is not a place to hide discarded document data.
+        // Keep canonical empty media/ markers valid (covered above), but
+        // reject unknown directory namespaces and nonempty directory records.
+        Map<String,byte[]> unknownDirectory=items(page(ref("media/logo.png"),"A4"),
+                "media/logo.png",png());
+        unknownDirectory.put("unrecognized/",new byte[0]);
+        assertThrows(IllegalArgumentException.class,()->UdfReader.read(
+            archive("unknown-directory.udf",unknownDirectory)));
+        Map<String,byte[]> dataDirectory=items(page(ref("media/logo.png"),"A4"),
+                "media/logo.png",png());
+        dataDirectory.put("media/",new byte[]{42});
+        assertThrows(IllegalArgumentException.class,()->UdfReader.read(
+            archive("directory-payload.udf",dataDirectory)));
+        Map<String,byte[]> invalidNestedDirectory=items(page(ref("media/logo.png"),"A4"),
+                "media/logo.png",png());
+        invalidNestedDirectory.put("media/unexpected%path/",new byte[0]);
+        assertThrows(IllegalArgumentException.class,()->UdfReader.read(
+            archive("invalid-directory-path.udf",invalidNestedDirectory)));
         Map<String,byte[]> excessive=items(page(ref("media/0.png"),"A4"),null,null);
         for(int i=0;i<65;i++) excessive.put("media/"+i+".png",png());
         assertThrows(IllegalArgumentException.class,()->UdfReader.read(archive("many.udf",excessive)));
