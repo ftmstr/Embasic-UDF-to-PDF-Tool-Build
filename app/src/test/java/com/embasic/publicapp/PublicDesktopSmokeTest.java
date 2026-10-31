@@ -65,6 +65,44 @@ final class PublicDesktopSmokeTest {
         assertEquals(2, activations.get(), "Both keys must invoke the same add-file action");
     }
 
+    @Test void addTileKeepsIdentityAndKeyboardBindingsAcrossVirtualRefresh() throws Exception {
+        javax.swing.SwingUtilities.invokeAndWait(() -> {
+            JPanel grid = new JPanel(null);
+            JPanel addTile = new JPanel();
+            addTile.putClientProperty("udf-add-card", Boolean.TRUE);
+            java.util.concurrent.atomic.AtomicInteger activations =
+                    new java.util.concurrent.atomic.AtomicInteger();
+            DesktopApp.installAddCardKeyboard(addTile, activations::incrementAndGet);
+            JPanel captured = new JPanel();
+            JPanel obsolete = new JPanel();
+            grid.add(captured);
+            grid.add(addTile);
+            grid.add(obsolete);
+
+            assertSame(addTile, DesktopApp.existingAddTile(grid));
+            // A preview/zoom/theme rebuild must not remove and recreate the
+            // keyboard-focused + tile, or Enter/Space will stop reaching it.
+            DesktopApp.clearVirtualCards(grid, captured, addTile);
+            assertEquals(2, grid.getComponentCount());
+            assertSame(grid, addTile.getParent());
+            assertSame(grid, captured.getParent());
+            assertNull(obsolete.getParent());
+            Object key = addTile.getInputMap(javax.swing.JComponent.WHEN_FOCUSED)
+                    .get(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ENTER, 0));
+            assertNotNull(key);
+            addTile.getActionMap().get(key).actionPerformed(
+                    new java.awt.event.ActionEvent(addTile,
+                            java.awt.event.ActionEvent.ACTION_PERFORMED, "add"));
+            assertEquals(1, activations.get());
+
+            // When the add tile scrolls out of the virtual viewport it must
+            // be removable, not kept as a hidden focus trap.
+            DesktopApp.clearVirtualCards(grid, null, null);
+            assertEquals(0, grid.getComponentCount());
+            assertNull(DesktopApp.existingAddTile(grid));
+        });
+    }
+
     @Test void singleAndOrderedMerge() throws Exception {
         var first = UdfReader.read(udf("first.udf", "SMOKE-A İzmir ğüş"));
         var second = UdfReader.read(udf("second.udf", "SMOKE-B"));
