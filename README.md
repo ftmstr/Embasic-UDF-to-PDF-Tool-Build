@@ -108,3 +108,10 @@ The Public-only Swing editor now retains the pressed thumbnail JPanel while its 
 
 `VirtualGridLayoutTest` exercises 160+1 logical drop targets across three zoom values and three viewport widths, outside-grid rejection and bounded edge-scroll deltas. `VirtualGridSwingLoadTest` simulates scroll/zoom/resizing on the real Swing EDT, mounts lightweight Swing panels and prints viewport samples, maximum mounted components, mean update milliseconds and observed heap delta. **It is a synthetic Swing load smoke, not an attended Windows GUI benchmark or a verified FPS/peak-memory acceptance test of authentic UDF documents.** No unsupported native UYAP parity, source publication permission or downloadable binary is implied.
 
+
+## Tur 42 — Drag insertion indicator and viewport autoscroll feedback (2026-10-31)
+
+The Public-only Swing grid now paints a blue, **noninteractive insertion marker** over file cards during drag operations. It indicates the position before/after the target card; dropping onto the trailing `+` tile moves the selection to the end. `GridDropIndicator` resolves marker rectangles from virtual document coordinates without requiring an onscreen card or a new event-catching Swing child. The indicator updates while autoscrolling or resizing and disappears on mouse release.
+
+`GridDropIndicatorTest` adds three headless regression cases for target coordinates across 132/188/272-pixel zoom and 680/1000/1430-pixel viewport widths, marker painting and invalid/empty targets. Existing `VirtualGridLayoutTest`, `VirtualGridSwingLoadTest`, full Maven/JUnit, Windows packaged launcher and PDF engine/audit gates remain in the Public CI. The synthetic Swing load metrics **do not establish real Windows GUI FPS or native UYAP PDF fidelity**. The Windows release authorization gate remains closed; no downloadable executable was published.
+
