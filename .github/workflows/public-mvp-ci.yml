@@ -1,0 +1,108 @@
+name: Public-only Desktop MVP Proof
+
+on:
+  push:
+    branches: [main, "ci/**"]
+    paths:
+      - "app/**"
+      - ".github/workflows/public-mvp-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "app/**"
+      - ".github/workflows/public-mvp-ci.yml"
+  workflow_dispatch:
+    inputs:
+      run_gui_robot:
+        description: "Opt-in real Windows desktop Robot smoke (requires interactive runner)"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  java-mvp:
+    name: Build and smoke public MVP (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+          cache-dependency-path: app/pom.xml
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install system font for Linux smoke
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y fonts-dejavu-core
+      - name: Compile + JUnit test + shaded JAR build (no binary publication)
+        run: mvn -B -ntp -f app/pom.xml clean verify
+      - name: CLI synthetic UDF to PDF smoke
+        run: python app/scripts/smoke_cli.py app/target/embasic-public-desktop-0.1.0-SNAPSHOT-all.jar
+
+      # Robot is never part of the default/scheduled CI gate: hosted runners
+      # may not expose a real interactive desktop. Opt-in runs fail when
+      # there is no desktop rather than falsely reporting GUI acceptance.
+      - name: Opt-in interactive Windows Robot acceptance (no release)
+        if: runner.os == 'Windows' && github.event_name == 'workflow_dispatch' && inputs.run_gui_robot
+        shell: pwsh
+        run: |
+          & mvn -B -ntp -f app/pom.xml "-Dtest=GuiRobotSmokeTest" "-Dembasic.gui.robot=true" test
+          if ($LASTEXITCODE -ne 0) { throw "Physical Windows GUI acceptance failed or no interactive desktop" }
+
+
+      - name: Validate colorful PowerShell dashboard, JSON score and forecast
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $raw = & pwsh -NoProfile -File app/scripts/Show-EmbasicProgress.ps1 -Offline -AsJson
+          if ($LASTEXITCODE -ne 0) { throw "PowerShell dashboard failed" }
+          $dashboard = $raw | ConvertFrom-Json
+          if ($dashboard.SchemaVersion -ne 1 -or $dashboard.ProgressPercent -lt 0 -or $dashboard.ProgressPercent -gt 100) {
+            throw "Dashboard score invalid"
+          }
+          if ((($dashboard.Milestones | Measure-Object -Property Weight -Sum).Sum) -ne 100) {
+            throw "Dashboard weights invalid"
+          }
+          if ($dashboard.GuiAcceptance.Status -ne "NOT_RUN" -or $dashboard.GuiAcceptance.VerifiedPhysicalWindows) {
+            throw "Unverified GUI Robot acceptance must not be reported as PASS"
+          }
+          if ([DateTime]$dashboard.Forecast.FinalEarliest -ge [DateTime]$dashboard.Forecast.FinalLatest) {
+            throw "Invalid final release forecast window"
+          }
+          & pwsh -NoProfile -File app/scripts/Show-EmbasicProgress.ps1 -Offline
+          if ($LASTEXITCODE -ne 0) { throw "Color dashboard display failed" }
+
+      - name: Build portable Windows app-image (CI validation only)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $packageInput = Join-Path $env:RUNNER_TEMP "embasic-mvp-input"
+          $packageOutput = Join-Path $env:RUNNER_TEMP "embasic-mvp-output"
+          New-Item -ItemType Directory -Force -Path $packageInput | Out-Null
+          New-Item -ItemType Directory -Force -Path $packageOutput | Out-Null
+          Copy-Item -LiteralPath "app/target/embasic-public-desktop-0.1.0-SNAPSHOT-all.jar" -Destination $packageInput
+          & jpackage --type app-image --name EmbasicUdfToPdfPublicMVP --app-version 0.1.0 --input $packageInput --main-jar embasic-public-desktop-0.1.0-SNAPSHOT-all.jar --main-class com.embasic.publicapp.DesktopApp --dest $packageOutput
+          if ($LASTEXITCODE -ne 0) { throw "Windows app-image packaging failed" }
+          $launcher = Join-Path $packageOutput "EmbasicUdfToPdfPublicMVP/EmbasicUdfToPdfPublicMVP.exe"
+          if (-not (Test-Path -LiteralPath $launcher)) { throw "Packaged launcher not found" }
+          & python app/scripts/smoke_packaged.py $launcher
+          if ($LASTEXITCODE -ne 0) { throw "Packaged launcher conversion failed" }
+
+# Does not publish executable artifacts or bypass source/license/rights release gates.

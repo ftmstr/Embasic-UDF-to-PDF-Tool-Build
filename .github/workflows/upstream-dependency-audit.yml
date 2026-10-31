@@ -1,0 +1,60 @@
+name: Independent Upstream PDF Dependency Audit
+
+on:
+  push:
+    branches: [main, "ci/**"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pdf-upstream-audit-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  inspect-legacy-pdf-dependencies:
+    name: Audit upstream iText and Bouncy Castle Maven artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+          cache-dependency-path: audit/pom.xml
+      - name: Run synthetic dependency inspector tests
+        run: python3 scripts/test-audit-cached-maven.py
+      - name: Resolve effective upstream dependency tree (no application source)
+        run: |
+          mvn -B -ntp -f audit/pom.xml org.apache.maven.plugins:maven-dependency-plugin:3.8.1:resolve
+          mvn -B -ntp -f audit/pom.xml org.apache.maven.plugins:maven-dependency-plugin:3.8.1:tree
+      - name: Inventory exact cached upstream POM and JAR bytes
+        run: python3 scripts/audit-cached-maven.py --maven-cache "$HOME/.m2/repository"
+      - name: Verify isolated Shade verifier with synthetic regression cases
+        run: python3 scripts/test-audit-isolated-shade.py
+      - name: Build isolated Java 17 shaded artifact (NO Embasic application source)
+        run: mvn -B -ntp -f audit/pom.xml clean package
+      - name: Compare six source JAR class bytes to isolated shaded artifact
+        run: |
+          python3 scripts/audit-isolated-shade.py \
+            --maven-cache "$HOME/.m2/repository" \
+            --shaded-jar audit/target/upstream-pdf-library-inspection-only-0.0.0-audit-all.jar
+      - name: Test Windows portable ZIP legal notice integrity guard (synthetic only)
+        run: python3 scripts/test-check-portable-notices.py
+      - name: Test all-class duplicate and byte-integrity controls
+        run: python3 scripts/test-audit-shaded-classes.py
+      - name: Verify every actual shaded dependency class and duplicate conflict
+        run: |
+          python3 scripts/audit-shaded-classes.py \
+            --maven-cache "$HOME/.m2/repository" \
+            --shaded-jar audit/target/upstream-pdf-library-inspection-only-0.0.0-audit-all.jar
+
+# This workflow never uploads artifacts, publishes releases or uses credentials.
+# An inspection PASS is NOT a legal redistribution or software quality approval.
