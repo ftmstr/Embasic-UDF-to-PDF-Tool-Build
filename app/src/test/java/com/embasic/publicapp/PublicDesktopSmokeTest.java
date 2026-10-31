@@ -7,6 +7,12 @@ import javax.swing.JPanel;
 import javax.swing.JLabel;
 import javax.swing.TransferHandler;
 import java.util.ArrayList;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Future;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.apache.pdfbox.text.TextPosition;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -181,6 +187,36 @@ final class PublicDesktopSmokeTest {
             () -> PdfExporter.save(List.of(spec), source, true));
         assertArrayEquals(before, Files.readAllBytes(source));
     }
+    @Test void clearingThumbnailsPurgesObsoletePreviewBacklog() throws Exception {
+        ThreadPoolExecutor queue = new ThreadPoolExecutor(1, 1, 0L,
+                TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(2));
+        CountDownLatch running = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicBoolean staleExecuted = new AtomicBoolean();
+        try {
+            Future<?> active = queue.submit(() -> {
+                running.countDown();
+                try { release.await(); }
+                catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+            });
+            assertTrue(running.await(5, TimeUnit.SECONDS));
+            Future<?> stale = queue.submit(() -> staleExecuted.set(true));
+            assertEquals(1, queue.getQueue().size());
+            DesktopApp.cancelQueuedPreviews(queue, List.of(stale));
+            assertTrue(stale.isCancelled());
+            assertTrue(queue.getQueue().isEmpty(), "Removed cards must free queue slots immediately");
+            Future<Boolean> fresh = queue.submit(() -> true);
+            release.countDown();
+            active.get(5, TimeUnit.SECONDS);
+            assertTrue(fresh.get(5, TimeUnit.SECONDS), "A newly imported UDF must not wait behind cancelled previews");
+            assertFalse(staleExecuted.get(), "Removed thumbnail must never render");
+        } finally {
+            release.countDown();
+            queue.shutdownNow();
+            assertTrue(queue.awaitTermination(5, TimeUnit.SECONDS));
+        }
+    }
+
     @Test void nativeFileDropTargetCoversThumbnailAndNestedLabels() {
         // Headless Swing component contract: OS drag/drop must not depend on
         // hitting the tiny exposed background of a thumbnail card.
