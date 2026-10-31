@@ -88,6 +88,18 @@ final class PublicDesktopSmokeTest {
                 assertNull(tooltip.getClientProperty(
                         javax.swing.plaf.basic.BasicHTML.propertyKey),
                         "Tooltip must not create an HTML renderer");
+                // A long failure message must remain available in the tooltip
+                // and screen-reader description even when its grid label clips.
+                JLabel cardStatus = DesktopApp.statusLabel(text + " — ayrıntılı UDF hatası");
+                assertEquals(cardStatus.getText(), cardStatus.getToolTipText());
+                assertEquals(cardStatus.getText(),
+                        cardStatus.getAccessibleContext().getAccessibleDescription());
+                assertNull(cardStatus.getClientProperty(
+                        javax.swing.plaf.basic.BasicHTML.propertyKey));
+                javax.swing.JToolTip statusTip = cardStatus.createToolTip();
+                statusTip.setTipText(cardStatus.getToolTipText());
+                assertNull(statusTip.getClientProperty(
+                        javax.swing.plaf.basic.BasicHTML.propertyKey));
             }
         });
     }
