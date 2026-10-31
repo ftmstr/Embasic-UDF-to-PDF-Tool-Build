@@ -62,8 +62,12 @@ final class ReferencedMediaRegressionTest {
 
     @Test void zippedImageReferenceAndPageFormatsRoundTrip() throws Exception {
         for(String size:List.of("A5","LEGAL")) {
-            var spec=UdfReader.read(archive("fixture-"+size+".udf",
-                items(page(ref("media/logo.png"),size),"media/logo.png",png())));
+            Map<String,byte[]> canonical=items(page(ref("media/logo.png"),size),
+                    "media/logo.png",png());
+            // A normal ZIP directory marker remains valid; only ambiguous
+            // member aliases and path separators are rejected.
+            canonical.put("media/",new byte[0]);
+            var spec=UdfReader.read(archive("fixture-"+size+".udf",canonical));
             assertEquals(3,spec.blocks().size());
             assertTrue(spec.blocks().get(1) instanceof DocumentElements.ImageBlock);
             assertEquals(size.equals("A5")?595.28f:1008f,spec.page().width(),0.1);
@@ -105,6 +109,12 @@ final class ReferencedMediaRegressionTest {
         Map<String,byte[]> entries=items(page(ref("media/logo.png"),"A4"),"media/logo.png",png());
         entries.put("media/LOGO.png",png());
         assertThrows(IllegalArgumentException.class,()->UdfReader.read(archive("duplicate.udf",entries)));
+        // Previously these names were rewritten into media/logo.png and
+        // could silently change the ZIP's intended resource identity.
+        assertThrows(IllegalArgumentException.class,()->UdfReader.read(archive(
+            "backslash.udf",items(page(ref("media/logo.png"),"A4"),"media\\\\logo.png",png()))));
+        assertThrows(IllegalArgumentException.class,()->UdfReader.read(archive(
+            "dot-segment.udf",items(page(ref("media/logo.png"),"A4"),"./media/logo.png",png()))));
         Map<String,byte[]> excessive=items(page(ref("media/0.png"),"A4"),null,null);
         for(int i=0;i<65;i++) excessive.put("media/"+i+".png",png());
         assertThrows(IllegalArgumentException.class,()->UdfReader.read(archive("many.udf",excessive)));
