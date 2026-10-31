@@ -11,7 +11,8 @@ import java.util.Set;
 public final class FileImportPolicy {
     public static final int MAX_CARDS = 160;
     private FileImportPolicy() {}
-    public record Selection(List<Path> accepted, boolean limitReached) {
+    public record Selection(List<Path> accepted, boolean limitReached,
+                            int unsupportedCount, int duplicateCount) {
         public Selection { accepted = List.copyOf(accepted); }
     }
     public static Selection plan(List<Path> current, List<Path> candidates) {
@@ -20,17 +21,20 @@ public final class FileImportPolicy {
         for (Path p : current) if (p != null) known.add(p.toAbsolutePath().normalize());
         List<Path> accepted = new ArrayList<>();
         boolean full = false;
+        int unsupported = 0, duplicates = 0;
         for (Path p : candidates) {
-            if (p == null) continue;
+            if (p == null) { unsupported++; continue; }
             Path normalized = p.toAbsolutePath().normalize();
             Path name = normalized.getFileName();
-            if (name == null || !name.toString().toLowerCase(Locale.ROOT).endsWith(".udf"))
+            if (name == null || !name.toString().toLowerCase(Locale.ROOT).endsWith(".udf")) {
+                unsupported++;
                 continue;
-            if (known.contains(normalized)) continue;
+            }
+            if (known.contains(normalized)) { duplicates++; continue; }
             if (known.size() >= MAX_CARDS) { full = true; continue; }
             known.add(normalized);
             accepted.add(normalized);
         }
-        return new Selection(accepted, full);
+        return new Selection(accepted, full, unsupported, duplicates);
     }
 }

@@ -312,6 +312,7 @@ public final class DesktopApp extends JFrame {
         if (converting) return;
         JFileChooser chooser = new JFileChooser();
         chooser.setMultiSelectionEnabled(true);
+        chooser.setAcceptAllFileFilterUsed(false);
         chooser.setFileFilter(new FileNameExtensionFilter("UYAP UDF (*.udf)", "udf"));
         if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
         List<Path> paths = new ArrayList<>();
@@ -368,11 +369,20 @@ public final class DesktopApp extends JFrame {
         }
         rebuild();
         updateFileStatus();
+        // Skipped files must not disappear silently from the merged PDF.
+        // Summarize all rejection reasons once per import batch.
+        List<String> warnings = new ArrayList<>();
         if (plan.limitReached())
+            warnings.add("En fazla " + FileImportPolicy.MAX_CARDS
+                    + " UDF kartı yüklenebilir; fazla dosyalar atlandı.");
+        if (plan.unsupportedCount() > 0)
+            warnings.add(plan.unsupportedCount() + " dosya .udf uzantılı olmadığı için atlandı.");
+        if (plan.duplicateCount() > 0)
+            warnings.add(plan.duplicateCount() + " yinelenen UDF dosyası atlandı.");
+        if (!warnings.isEmpty())
             JOptionPane.showMessageDialog(this,
-                    "En fazla " + FileImportPolicy.MAX_CARDS + " UDF kartı yüklenebilir. "
-                    + "Diğer dosyaları eklemek için önce bazı kartları kaldırın.",
-                    "Dosya sayısı sınırı", JOptionPane.WARNING_MESSAGE);
+                    String.join("\n", warnings) + "\nAtlanan dosyalar PDF'ye eklenmedi.",
+                    "İçe aktarma uyarısı", JOptionPane.WARNING_MESSAGE);
     }
 
     private void updateFileStatus() {
