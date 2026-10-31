@@ -57,6 +57,8 @@ import javax.swing.filechooser.FileNameExtensionFilter;
 /** Public-only Swing preview MVP. Native UYAP output parity and all UDF versions are NOT claimed. */
 public final class DesktopApp extends JFrame {
     private static final int PREVIEW_WIDTH = 244, PREVIEW_HEIGHT = 322;
+    // A 160-file scroll must not retain every decoded thumbnail indefinitely.
+    private static final int MAX_CACHED_THUMBNAILS = 48;
     private static final Color ACCENT = new Color(70, 139, 239);
     private static final String DEFERRED_PREVIEW = "Önizleme görünür olunca hazırlanacak";
     private final List<Item> items = new ArrayList<>();
@@ -804,6 +806,36 @@ public final class DesktopApp extends JFrame {
         }
     }
 
+    /**
+     * Retain visible previews and the nearest offscreen cache entries. A decoded
+     * 244x322 RGB thumbnail occupies about 0.3 MB, so caching all 160 cards
+     * needlessly retains roughly 50 MB after scrolling through the queue.
+     * This is an EDT-only cache policy; PDF export uses parsed documents.
+     */
+    static <T> int evictOffscreenThumbnails(List<T> cards, VirtualGridLayout.Visible window,
+                                            int limit, Predicate<T> cached, Consumer<T> evict) {
+        int count = 0;
+        List<Integer> offscreen = new ArrayList<>();
+        for (int i = 0; i < cards.size(); i++) {
+            if (!cached.test(cards.get(i))) continue;
+            count++;
+            if (i < window.startInclusive() || i >= window.endExclusive())
+                offscreen.add(i);
+        }
+        int center = (window.startInclusive() + window.endExclusive()) / 2;
+        offscreen.sort((a, b) -> Integer.compare(Math.abs(b - center), Math.abs(a - center)));
+        int removed = 0;
+        for (int index : offscreen) {
+            if (count <= limit) break;
+            evict.accept(cards.get(index));
+            count--;
+            removed++;
+        }
+        // If an unusually large viewport shows more than limit cards, never
+        // evict a visible preview just to meet the nominal memory budget.
+        return removed;
+    }
+
     private void refreshViewport(boolean force) {
         if (!SwingUtilities.isEventDispatchThread()) {
             SwingUtilities.invokeLater(() -> refreshViewport(force));
@@ -824,6 +856,15 @@ public final class DesktopApp extends JFrame {
                 item.info = DEFERRED_PREVIEW;
             }
         }
+        // Completed thumbnails are reusable, but scrolling across 160 files
+        // must not permanently retain all decoded images in heap memory.
+        evictOffscreenThumbnails(items, window, MAX_CACHED_THUMBNAILS,
+                item -> item.thumbnail != null,
+                item -> {
+                    item.thumbnail = null;
+                    item.previewTask = null;
+                    item.info = DEFERRED_PREVIEW;
+                });
         // On-demand rasterization: offscreen UDFs remain export-ready without
         // consuming PDFBox font/CPU time or retaining 160 full thumbnails.
         scheduleVisiblePreviews(items, window,
