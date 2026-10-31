@@ -115,12 +115,17 @@ public final class PdfExporter {
         // A final run or paragraph may be omitted during layout to avoid blank
         // pages. Validate the ORIGINAL text first: unsupported separators must
         // never disappear through stripTrailing(), isBlank(), or run skipping.
-        for (UdfReader.DocumentSpec document : docs)
+        for (UdfReader.DocumentSpec document : docs) {
+            boolean hasVisibleContent = false;
             for (DocumentElements.Block block : document.blocks()) {
                 if (block instanceof DocumentElements.ParagraphBlock paragraph) {
-                    for (UdfReader.Run run : paragraph.paragraph().runs())
+                    for (UdfReader.Run run : paragraph.paragraph().runs()) {
                         validateSupportedText(run.text());
+                        if (!run.text().isBlank()) hasVisibleContent = true;
+                    }
                 } else if (block instanceof DocumentElements.TableBlock table) {
+                    // Even a table with empty cells draws a visible grid.
+                    hasVisibleContent = true;
                     // Table cells are rendered as a single PDF text line. A tab,
                     // newline, or unsupported separator must not be emitted as
                     // an invisible glyph or silently alter the cell geometry.
@@ -134,8 +139,17 @@ public final class PdfExporter {
                                 throw new IllegalArgumentException(
                                         "Desteklenmeyen tablo hücresi satır sonu veya sekme karakteri");
                         }
+                } else if (block instanceof DocumentElements.ImageBlock) {
+                    hasVisibleContent = true;
                 }
             }
+            // A whitespace-only synthetic UDF otherwise saves as a successful
+            // but visually empty PDF after trailing editor runs are trimmed.
+            // Reject the entire merge rather than silently including blank files.
+            if (!hasVisibleContent)
+                throw new IllegalArgumentException(
+                        "PDF'ye aktarılacak görünür UDF içeriği bulunamadı: " + document.fileName());
+        }
         PDDocument pdf = new PDDocument();
         try {
             // An image-only PDF never uses a text font. Avoid probing system
