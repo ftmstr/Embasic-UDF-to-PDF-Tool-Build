@@ -12,6 +12,12 @@ on:
       - "app/**"
       - ".github/workflows/public-mvp-ci.yml"
   workflow_dispatch:
+    inputs:
+      run_gui_robot:
+        description: "Opt-in real Windows desktop Robot smoke (requires interactive runner)"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -47,6 +53,16 @@ jobs:
         run: mvn -B -ntp -f app/pom.xml clean verify
       - name: CLI synthetic UDF to PDF smoke
         run: python app/scripts/smoke_cli.py app/target/embasic-public-desktop-0.1.0-SNAPSHOT-all.jar
+
+      # Robot is never part of the default/scheduled CI gate: hosted runners
+      # may not expose a real interactive desktop. Opt-in runs fail when
+      # there is no desktop rather than falsely reporting GUI acceptance.
+      - name: Opt-in interactive Windows Robot acceptance (no release)
+        if: runner.os == 'Windows' && github.event_name == 'workflow_dispatch' && inputs.run_gui_robot
+        shell: pwsh
+        run: |
+          & mvn -B -ntp -f app/pom.xml "-Dtest=GuiRobotSmokeTest" "-Dembasic.gui.robot=true" test
+          if ($LASTEXITCODE -ne 0) { throw "Physical Windows GUI acceptance failed or no interactive desktop" }
 
 
       - name: Validate colorful PowerShell dashboard, JSON score and forecast
