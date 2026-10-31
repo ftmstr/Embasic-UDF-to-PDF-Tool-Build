@@ -45,6 +45,24 @@ final class StructuredUdfRegressionTest {
         return "<image mime='image/png' encoding='base64' width='52' height='52'>"+
             Base64.getEncoder().encodeToString(pngBytes())+"</image>";
     }
+    @Test void unsupportedXmlMetadataMustNotSilentlyDisappear() throws Exception {
+        String valid = "<template format_id='1.0'><content>HELLO</content><elements>"
+                + "<paragraph><content startOffset='0' length='5'/></paragraph>"
+                + "</elements></template>";
+        assertEquals(1, parse(valid).blocks().size());
+        assertEquals(1, parse(valid.replace("HELLO", "<![CDATA[HELLO]]>")).blocks().size(),
+                "Supported CDATA content must remain readable");
+        for (String invalid : List.of(
+                valid.replace("HELLO", "HE<!--hidden-->LLO"),
+                valid.replace("<elements>", "<elements><?unknown data?>"),
+                valid.replace("<paragraph>", "<!--hidden--><paragraph>"),
+                "<!--hidden-->" + valid,
+                valid + "<?unknown data?>")) {
+            var failure = assertThrows(IllegalArgumentException.class, () -> parse(invalid));
+            assertTrue(failure.getMessage().contains("XML düğümü"), failure.getMessage());
+        }
+    }
+
     @Test void imageOnlyPdfRendersAndSavesWithoutAnySystemFont(@TempDir Path folder) throws Exception {
         // An image-only document must not pay the Windows system-font startup
         // cost or fail because a text font is missing. Keep the check scoped
