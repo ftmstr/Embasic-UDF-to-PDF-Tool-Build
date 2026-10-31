@@ -67,6 +67,31 @@ final class PublicDesktopSmokeTest {
         assertTrue(requested.contains(159), "Scrolling must request the previously deferred PDF");
     }
 
+    @Test void untrustedFilenameAndParserErrorNeverBecomeSwingHtml() throws Exception {
+        // Swing's BasicHTML renderer treats a filename beginning with <html>
+        // as markup unless explicitly disabled. The tooltip needs the same
+        // protection because it is a separate Swing component.
+        javax.swing.SwingUtilities.invokeAndWait(() -> {
+            for (String text : List.of("<html><b>case.udf</b></html>",
+                    "<HTML><font color='red'>unsupported</font></HTML>")) {
+                JLabel label = DesktopApp.literalLabel(text);
+                assertEquals(text, label.getText(), "Untrusted filename/error must stay literal");
+                assertEquals(Boolean.TRUE, label.getClientProperty("html.disable"));
+                assertNull(label.getClientProperty(
+                        javax.swing.plaf.basic.BasicHTML.propertyKey),
+                        "Label must not create an HTML renderer");
+                label.setToolTipText(text);
+                javax.swing.JToolTip tooltip = label.createToolTip();
+                tooltip.setTipText(text);
+                assertEquals(text, tooltip.getTipText());
+                assertEquals(Boolean.TRUE, tooltip.getClientProperty("html.disable"));
+                assertNull(tooltip.getClientProperty(
+                        javax.swing.plaf.basic.BasicHTML.propertyKey),
+                        "Tooltip must not create an HTML renderer");
+            }
+        });
+    }
+
     @Test void inGridAddCardSupportsKeyboardActivation() throws Exception {
         java.util.concurrent.atomic.AtomicInteger activations = new java.util.concurrent.atomic.AtomicInteger();
         javax.swing.SwingUtilities.invokeAndWait(() -> {
