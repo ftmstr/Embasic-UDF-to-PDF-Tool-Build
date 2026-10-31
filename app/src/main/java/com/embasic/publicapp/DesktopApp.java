@@ -13,6 +13,8 @@ import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.RenderingHints;
 import java.awt.datatransfer.DataFlavor;
+import java.awt.event.FocusAdapter;
+import java.awt.event.FocusEvent;
 import java.awt.event.InputEvent;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
@@ -54,6 +56,7 @@ import javax.swing.filechooser.FileNameExtensionFilter;
 /** Public-only Swing preview MVP. Native UYAP output parity and all UDF versions are NOT claimed. */
 public final class DesktopApp extends JFrame {
     private static final int PREVIEW_WIDTH = 244, PREVIEW_HEIGHT = 322;
+    private static final Color ACCENT = new Color(70, 139, 239);
     private final List<Item> items = new ArrayList<>();
     private final LinkedHashSet<Item> selected = new LinkedHashSet<>();
     // UDF parsing must not queue behind slow PDFBox font discovery/rasterization.
@@ -532,7 +535,7 @@ public final class DesktopApp extends JFrame {
     private Color background() { return dark ? new Color(20, 27, 42) : new Color(237, 242, 249); }
     private Color cardColor() { return dark ? new Color(36, 47, 66) : new Color(250, 251, 254); }
     private Color foreground() { return dark ? new Color(225, 231, 240) : new Color(33, 47, 66); }
-    private Color accent() { return new Color(70, 139, 239); }
+    private Color accent() { return ACCENT; }
 
     private JPanel card(Item item) {
         JPanel card = new JPanel(new BorderLayout(3, 5));
@@ -694,6 +697,17 @@ public final class DesktopApp extends JFrame {
      */
     static void installAddCardKeyboard(JPanel plus, Runnable chooseFiles) {
         plus.setFocusable(true);
+        // The add tile is a JPanel, not a JButton: show a distinct keyboard
+        // focus ring so Tab users can see where Enter/Space will act.
+        updateAddCardFocus(plus, false);
+        plus.addFocusListener(new FocusAdapter() {
+            @Override public void focusGained(FocusEvent event) {
+                updateAddCardFocus(plus, true);
+            }
+            @Override public void focusLost(FocusEvent event) {
+                updateAddCardFocus(plus, false);
+            }
+        });
         plus.getAccessibleContext().setAccessibleName("+ UDF ekle");
         plus.getAccessibleContext().setAccessibleDescription(
                 "UDF dosyası eklemek için Enter veya Boşluk tuşuna basın");
@@ -707,9 +721,18 @@ public final class DesktopApp extends JFrame {
         });
     }
 
+    /** Preserve the keyboard focus ring through theme, zoom and preview rebuilds. */
+    static void updateAddCardFocus(JPanel plus, boolean focused) {
+        plus.putClientProperty("embasic-add-focus", focused);
+        plus.setBorder(focused
+                ? BorderFactory.createLineBorder(ACCENT, 3, true)
+                : BorderFactory.createDashedBorder(ACCENT, 4f, 4f));
+    }
+
     private void styleAddCard(JPanel plus) {
         plus.setBackground(cardColor());
-        plus.setBorder(BorderFactory.createDashedBorder(accent(), 4f, 4f));
+        updateAddCardFocus(plus, plus.isFocusOwner()
+                || Boolean.TRUE.equals(plus.getClientProperty("embasic-add-focus")));
         ThumbnailSizing.Size size = ThumbnailSizing.at(thumbnailZoom.getValue());
         plus.setPreferredSize(new Dimension(size.cardWidth(), size.cardHeight()));
         for (Component child : plus.getComponents())
