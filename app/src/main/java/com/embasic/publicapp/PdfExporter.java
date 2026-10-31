@@ -78,6 +78,20 @@ public final class PdfExporter {
         return false;
     }
 
+    /**
+     * Image-only synthetic documents have no text to encode. Loading a system
+     * Unicode font for them can trigger expensive PDFBox font discovery on
+     * first launch, despite the PDF never referencing that font.
+     */
+    private static boolean requiresFont(List<UdfReader.DocumentSpec> docs) {
+        for (UdfReader.DocumentSpec document : docs)
+            for (DocumentElements.Block block : document.blocks())
+                if (block instanceof DocumentElements.ParagraphBlock
+                        || block instanceof DocumentElements.TableBlock)
+                    return true;
+        return false;
+    }
+
     public static PDDocument render(List<UdfReader.DocumentSpec> docs) throws Exception {
         return renderInternal(docs, false);
     }
@@ -124,11 +138,12 @@ public final class PdfExporter {
             }
         PDDocument pdf = new PDDocument();
         try {
-            PDType0Font regular = PDType0Font.load(pdf, systemFont(false).toFile());
-            // Preview and export documents containing only regular text must not
-            // load and parse an unused (potentially large) Windows bold font.
-            // Tables and images use the regular font; paragraph runs alone need bold.
-            PDType0Font bold = usesBold(docs)
+            // An image-only PDF never uses a text font. Avoid probing system
+            // font paths or warming PDFBox's font cache for that case.
+            PDType0Font regular = requiresFont(docs)
+                    ? PDType0Font.load(pdf, systemFont(false).toFile()) : null;
+            // Paragraph runs alone need bold; tables always use regular.
+            PDType0Font bold = regular != null && usesBold(docs)
                     ? PDType0Font.load(pdf, systemFont(true).toFile()) : regular;
             try {
                 for (UdfReader.DocumentSpec document : docs) {
