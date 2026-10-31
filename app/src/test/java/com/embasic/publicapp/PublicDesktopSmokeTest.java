@@ -52,6 +52,22 @@ final class PublicDesktopSmokeTest {
             DesktopApp.installAddCardKeyboard(tile, activations::incrementAndGet);
             assertTrue(tile.isFocusable(), "The add tile must be reachable with Tab");
             assertEquals("+ UDF ekle", tile.getAccessibleContext().getAccessibleName());
+            // A JPanel has no native button focus ring. Tab focus must be
+            // visibly distinguishable from the idle dashed add-card border.
+            assertEquals(Boolean.FALSE, tile.getClientProperty("embasic-add-focus"));
+            javax.swing.border.Border idleBorder = tile.getBorder();
+            java.awt.event.FocusEvent gained = new java.awt.event.FocusEvent(
+                    tile, java.awt.event.FocusEvent.FOCUS_GAINED);
+            for (java.awt.event.FocusListener listener : tile.getFocusListeners())
+                listener.focusGained(gained);
+            assertEquals(Boolean.TRUE, tile.getClientProperty("embasic-add-focus"));
+            assertNotSame(idleBorder, tile.getBorder(), "Focused add tile must have a visible ring");
+            java.awt.event.FocusEvent lost = new java.awt.event.FocusEvent(
+                    tile, java.awt.event.FocusEvent.FOCUS_LOST);
+            for (java.awt.event.FocusListener listener : tile.getFocusListeners())
+                listener.focusLost(lost);
+            assertEquals(Boolean.FALSE, tile.getClientProperty("embasic-add-focus"));
+            assertNotNull(tile.getBorder(), "Idle border must be restored");
             for (int key : new int[]{java.awt.event.KeyEvent.VK_ENTER, java.awt.event.KeyEvent.VK_SPACE}) {
                 Object binding = tile.getInputMap(javax.swing.JComponent.WHEN_FOCUSED)
                         .get(javax.swing.KeyStroke.getKeyStroke(key, 0));
