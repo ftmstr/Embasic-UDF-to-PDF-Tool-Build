@@ -707,21 +707,41 @@ public final class DesktopApp extends JFrame {
         });
     }
 
+    private void styleAddCard(JPanel plus) {
+        plus.setBackground(cardColor());
+        plus.setBorder(BorderFactory.createDashedBorder(accent(), 4f, 4f));
+        ThumbnailSizing.Size size = ThumbnailSizing.at(thumbnailZoom.getValue());
+        plus.setPreferredSize(new Dimension(size.cardWidth(), size.cardHeight()));
+        for (Component child : plus.getComponents())
+            if (child instanceof JLabel label) label.setForeground(foreground());
+    }
+
     private JPanel addCard() {
         JPanel plus = new JPanel(new BorderLayout());
         plus.putClientProperty("udf-add-card", Boolean.TRUE);
         installAddCardKeyboard(plus, this::chooseFiles);
-        plus.setBackground(cardColor());
-        plus.setBorder(BorderFactory.createDashedBorder(accent(), 4f, 4f));
-        ThumbnailSizing.Size size=ThumbnailSizing.at(thumbnailZoom.getValue());
-        plus.setPreferredSize(new Dimension(size.cardWidth(), size.cardHeight()));
         JLabel label = new JLabel("<html><center><span style='font-size:24pt'>+</span><br>UDF dosyası seç</center></html>", SwingConstants.CENTER);
-        label.setForeground(foreground());
         plus.add(label, BorderLayout.CENTER);
+        styleAddCard(plus);
         plus.addMouseListener(new MouseAdapter() { @Override public void mouseClicked(MouseEvent e) { chooseFiles(); } });
         label.addMouseListener(new MouseAdapter() { @Override public void mouseClicked(MouseEvent e) { chooseFiles(); } });
         installFileDrop(plus, fileDrop);
         return plus;
+    }
+
+    /** Find the existing keyboard-focusable + tile before replacing visible cards. */
+    static JPanel existingAddTile(JPanel grid) {
+        for (Component child : grid.getComponents())
+            if (child instanceof JPanel panel
+                    && Boolean.TRUE.equals(panel.getClientProperty("udf-add-card")))
+                return panel;
+        return null;
+    }
+
+    /** Keep the focused + tile parented during thumbnail, zoom and theme refreshes. */
+    static void clearVirtualCards(JPanel grid, Component captured, Component addTile) {
+        for (Component old : grid.getComponents())
+            if (old != captured && old != addTile) grid.remove(old);
     }
     private void refreshViewport(boolean force) {
         if (!SwingUtilities.isEventDispatchThread()) {
@@ -760,16 +780,24 @@ public final class DesktopApp extends JFrame {
         // scroll/zoom would lose the mouseReleased event and strand selection.
         boolean retainSource=pointerHeld && capturedCard!=null &&
                 capturedCard.getParent()==grid && items.contains(capturedItem);
-        if (retainSource) {
-            for (Component old:grid.getComponents())
-                if(old!=capturedCard)grid.remove(old);
-        } else grid.removeAll();
+        // Recreating a focused + tile during background preview completion
+        // steals keyboard focus, making Enter/Space unreliable for adding files.
+        JPanel oldAddTile = existingAddTile(grid);
+        boolean retainAddTile = oldAddTile != null &&
+                window.startInclusive() <= items.size() && items.size() < window.endExclusive();
+        if (retainSource || retainAddTile)
+            clearVirtualCards(grid, retainSource ? capturedCard : null,
+                    retainAddTile ? oldAddTile : null);
+        else grid.removeAll();
         for(int index=window.startInclusive(); index<window.endExclusive(); index++) {
             JPanel component;
             if (retainSource && index<items.size() && items.get(index)==capturedItem) {
                 component=capturedCard;
+            } else if (index==items.size()) {
+                component=retainAddTile ? oldAddTile : addCard();
+                if (retainAddTile) styleAddCard(component);
             } else {
-                component=index==items.size() ? addCard() : card(items.get(index));
+                component=card(items.get(index));
             }
             component.setBounds(next.bounds(index));
             if(component.getParent()!=grid)grid.add(component);
