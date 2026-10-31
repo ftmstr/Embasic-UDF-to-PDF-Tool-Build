@@ -378,6 +378,15 @@ public final class DesktopApp extends JFrame {
                     try {
                         UdfReader.DocumentSpec parsed = UdfReader.read(item.path);
                         if (item.cancelled) return;
+                        // Parsing establishes export eligibility. PDFBox thumbnail
+                        // rasterization (including first-use font discovery) may take
+                        // much longer; do not block PDF saving on a decorative preview.
+                        SwingUtilities.invokeLater(() -> {
+                            if (item.cancelled || !items.contains(item)) return;
+                            item.document = parsed;
+                            item.info = "Önizleme hazırlanıyor...";
+                            previewRefresh.restart();
+                        });
                         BufferedImage image = PdfExporter.firstPage(parsed);
                         if (item.cancelled) return;
                         BufferedImage thumb = new BufferedImage(PREVIEW_WIDTH, PREVIEW_HEIGHT, BufferedImage.TYPE_INT_RGB);
@@ -403,7 +412,11 @@ public final class DesktopApp extends JFrame {
                     } catch (Exception ex) {
                         SwingUtilities.invokeLater(() -> {
                             if (item.cancelled || !items.contains(item)) return;
-                            item.info = "Desteklenmiyor: " + friendly(ex);
+                            // A failed thumbnail is not proof that a successfully
+                            // parsed document is unsupported. Full export independently
+                            // validates every page and reports its own errors.
+                            item.info = (item.document == null ? "Desteklenmiyor: " : "Önizleme yok: ")
+                                    + friendly(ex);
                             previewRefresh.restart();
                         });
                     }
@@ -470,7 +483,8 @@ public final class DesktopApp extends JFrame {
         name.setToolTipText(filename);
         name.setForeground(foreground()); name.setFont(name.getFont().deriveFont(Font.BOLD, 11f));
         JLabel info = new JLabel(item.info);
-        info.setForeground(item.document == null && !item.info.equals("Okunuyor...") ?
+        info.setForeground(!item.info.equals("Hazır") && !item.info.equals("Okunuyor...")
+                && !item.info.equals("Önizleme hazırlanıyor...") ?
             new Color(228, 115, 100) : foreground());
         info.setFont(info.getFont().deriveFont(10f));
         labels.add(name, BorderLayout.NORTH); labels.add(info, BorderLayout.SOUTH);
