@@ -33,6 +33,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.Callable;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 import javax.swing.BorderFactory;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
@@ -57,6 +58,7 @@ import javax.swing.filechooser.FileNameExtensionFilter;
 public final class DesktopApp extends JFrame {
     private static final int PREVIEW_WIDTH = 244, PREVIEW_HEIGHT = 322;
     private static final Color ACCENT = new Color(70, 139, 239);
+    private static final String DEFERRED_PREVIEW = "Önizleme görünür olunca hazırlanacak";
     private final List<Item> items = new ArrayList<>();
     private final LinkedHashSet<Item> selected = new LinkedHashSet<>();
     // UDF parsing must not queue behind slow PDFBox font discovery/rasterization.
@@ -433,12 +435,9 @@ public final class DesktopApp extends JFrame {
                             // Export eligibility depends on parsing, never on PDFBox
                             // thumbnail rendering or first-use system font discovery.
                             item.document = parsed;
-                            item.info = "Önizleme hazırlanıyor...";
-                            try {
-                                item.previewTask = previews.submit(() -> renderThumbnail(item, parsed));
-                            } catch (RejectedExecutionException queueFull) {
-                                item.info = "Önizleme kuyruğu dolu — PDF kaydedilebilir";
-                            }
+                            // Do not render every offscreen PDF when importing 160 files.
+                            // A visible card requests its thumbnail in refreshViewport().
+                            item.info = DEFERRED_PREVIEW;
                             previewRefresh.restart();
                         },
                         ex -> {
@@ -559,7 +558,8 @@ public final class DesktopApp extends JFrame {
         name.setForeground(foreground()); name.setFont(name.getFont().deriveFont(Font.BOLD, 11f));
         JLabel info = new JLabel(item.info);
         info.setForeground(!item.info.equals("Hazır") && !item.info.equals("Okunuyor...")
-                && !item.info.equals("Önizleme hazırlanıyor...") ?
+                && !item.info.equals("Önizleme hazırlanıyor...")
+                && !item.info.equals(DEFERRED_PREVIEW) ?
             new Color(228, 115, 100) : foreground());
         info.setFont(info.getFont().deriveFont(10f));
         labels.add(name, BorderLayout.NORTH); labels.add(info, BorderLayout.SOUTH);
@@ -766,6 +766,16 @@ public final class DesktopApp extends JFrame {
         for (Component old : grid.getComponents())
             if (old != captured && old != addTile) grid.remove(old);
     }
+    /** Submit only currently visible, eligible cards; the + tile is not a UDF. */
+    static <T> void scheduleVisiblePreviews(List<T> cards, VirtualGridLayout.Visible window,
+                                             Predicate<T> needsPreview, Consumer<T> submit) {
+        int end = Math.min(window.endExclusive(), cards.size());
+        for (int i = window.startInclusive(); i < end; i++) {
+            T card = cards.get(i);
+            if (needsPreview.test(card)) submit.accept(card);
+        }
+    }
+
     private void refreshViewport(boolean force) {
         if (!SwingUtilities.isEventDispatchThread()) {
             SwingUtilities.invokeLater(() -> refreshViewport(force));
@@ -775,6 +785,21 @@ public final class DesktopApp extends JFrame {
         int zoom=thumbnailZoom.getValue();
         VirtualGridLayout next=new VirtualGridLayout(items.size()+1,width,zoom);
         VirtualGridLayout.Visible window=next.visible(scroll.getViewport().getViewRect());
+        // On-demand rasterization: offscreen UDFs remain export-ready without
+        // consuming PDFBox font/CPU time or retaining 160 full thumbnails.
+        scheduleVisiblePreviews(items, window,
+                item -> item.document != null && item.thumbnail == null
+                        && item.previewTask == null && !item.cancelled,
+                item -> {
+                    try {
+                        UdfReader.DocumentSpec parsed = item.document;
+                        item.previewTask = previews.submit(() -> renderThumbnail(item, parsed));
+                        item.info = "Önizleme hazırlanıyor...";
+                    } catch (RejectedExecutionException queueFull) {
+                        // No task was accepted; retry when the viewport refreshes.
+                        item.info = "Önizleme kuyruğu dolu — PDF kaydedilebilir";
+                    }
+                });
         // A user who scrolls to a distant card should not wait for every earlier
         // offscreen PDF preview. Only queued work is moved; active work is untouched.
         List<Future<?>> visibleTasks = new ArrayList<>();
