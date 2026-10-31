@@ -25,7 +25,7 @@ $forecastBase = [DateTime]::ParseExact($reviewDate, 'yyyy-MM-dd', [System.Global
 $milestones = @(
     [pscustomobject]@{ Name='Public kod tabani / Maven'; Weight=12; Complete=100; Evidence='Public kaynak + Linux/Windows Maven CI' }
     [pscustomobject]@{ Name='Windows launcher / smoke'; Weight=12; Complete=100; Evidence='jpackage EXE smoke 40919356940' }
-    [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=73; Evidence='Paint-only drag hedef gostergesi, 3 JUnit ve sanal grid testleri; gerçek GUI kabulü yok' }
+    [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=73; Evidence='Erisilebilir hedef+Esc iptal testleri; Robot GUI yalniz opt-in, fiziksel kabul HENUZ YOK' }
     [pscustomobject]@{ Name='UDF turleri ve surumleri'; Weight=26; Complete=12; Evidence='Sentetik ZIP PNG referans, A5/LEGAL; gercek UYAP schema dogrulanmadi' }
     [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Sentetik PDFBox var; resmî golden yok' }
     [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Sentetik gate var; binary dagitim onayi yok' }
@@ -77,6 +77,12 @@ $report = [pscustomobject]@{
     ProgressBasis='Manually weighted product milestones; NOT a UYAP accuracy or release-certification metric'
     Milestones=$milestones
     Ci=$ci
+    GuiAcceptance=[pscustomobject]@{
+        Status='NOT_RUN'
+        Mode='Explicit interactive Windows opt-in only'
+        Test='GuiRobotSmokeTest'
+        VerifiedPhysicalWindows=false
+    }
     Forecast=[pscustomobject]@{
         BetaEarliest=$forecastBase.AddDays(21).ToString('yyyy-MM-dd')
         BetaLatest=$forecastBase.AddDays(42).ToString('yyyy-MM-dd')
@@ -117,6 +123,7 @@ Write-Host ''
 $ciColor = if ($ci.Conclusion -eq 'success') { 'Green' } elseif ($ci.Conclusion -eq 'failure') { 'Red' } else { 'Yellow' }
 Write-Host "  GITHUB CI  : $($ci.Status) / $($ci.Conclusion)" -ForegroundColor $ciColor
 if ($ci.Url) { Write-Host "  CI URL     : $($ci.Url)" -ForegroundColor Gray }
+Write-Host '  ROBOT GUI   : NOT_RUN — yalnız izinli etkileşimli Windows testinden sonra doğrulanabilir' -ForegroundColor Yellow
 Write-Host '  YAYIN GATE: KAPALI — hak/lisans, gercek UDF, arayuz kabul testleri eksik' -ForegroundColor Red
 Write-Host ''
 Write-Host ("  ILK BETA ICIN PLANLAMA : {0} — {1}" -f $report.Forecast.BetaEarliest,$report.Forecast.BetaLatest) -ForegroundColor Cyan
