@@ -739,15 +739,30 @@ public final class DesktopApp extends JFrame {
                 converting = false;
                 setQueueEditingEnabled(true);
                 rebuild();
+                int count;
                 try {
-                    int count = get();
-                    status.setText(count + " sayfalık PDF kaydedildi: " + output.getFileName());
-                    int action = JOptionPane.showConfirmDialog(DesktopApp.this,
-                        "PDF başarıyla kaydedildi (" + count + " sayfa).\nÇıktı klasörü açılsın mı?",
-                        "İşlem tamamlandı", JOptionPane.YES_NO_OPTION);
-                    if (action == JOptionPane.YES_OPTION && Desktop.isDesktopSupported())
+                    count = get();
+                } catch (Exception ex) {
+                    status.setText("PDF oluşturulamadı");
+                    showError(ex);
+                    return;
+                }
+                // The PDF is already validated and committed at this point.
+                // A Windows Explorer launch failure must never be reported as
+                // a failed PDF export or cause the user to retry unnecessarily.
+                status.setText(count + " sayfalık PDF kaydedildi: " + output.getFileName());
+                int action = JOptionPane.showConfirmDialog(DesktopApp.this,
+                    "PDF başarıyla kaydedildi (" + count + " sayfa).\nÇıktı klasörü açılsın mı?",
+                    "İşlem tamamlandı", JOptionPane.YES_NO_OPTION);
+                if (action == JOptionPane.YES_OPTION && Desktop.isDesktopSupported()) {
+                    try {
                         Desktop.getDesktop().open(output.getParent().toFile());
-                } catch (Exception ex) { status.setText("PDF oluşturulamadı"); showError(ex); }
+                    } catch (Exception ex) {
+                        JOptionPane.showMessageDialog(DesktopApp.this,
+                            "PDF kaydedildi ancak çıktı klasörü açılamadı: " + friendly(ex),
+                            "Klasör açılamadı", JOptionPane.WARNING_MESSAGE);
+                    }
+                }
             }
         }.execute();
     }
