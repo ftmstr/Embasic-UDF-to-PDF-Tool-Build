@@ -554,6 +554,16 @@ public final class DesktopApp extends JFrame {
         return label;
     }
 
+    /** Make long parser/preview errors readable beyond the narrow thumbnail card.
+     *  The literal label also disables Swing HTML interpretation in tooltips.
+     */
+    static JLabel statusLabel(String message) {
+        JLabel label = literalLabel(message);
+        label.setToolTipText(message);
+        label.getAccessibleContext().setAccessibleDescription(message);
+        return label;
+    }
+
     private JPanel card(Item item) {
         JPanel card = new JPanel(new BorderLayout(3, 5));
         ThumbnailSizing.Size size=ThumbnailSizing.at(thumbnailZoom.getValue());
@@ -574,7 +584,7 @@ public final class DesktopApp extends JFrame {
         JLabel name = literalLabel(filename.length() > 28 ? filename.substring(0, 25) + "..." : filename);
         name.setToolTipText(filename);
         name.setForeground(foreground()); name.setFont(name.getFont().deriveFont(Font.BOLD, 11f));
-        JLabel info = literalLabel(item.info);
+        JLabel info = statusLabel(item.info);
         info.setForeground(!item.info.equals("Hazır") && !item.info.equals("Okunuyor...")
                 && !item.info.equals("Önizleme hazırlanıyor...")
                 && !item.info.equals(DEFERRED_PREVIEW) ?
