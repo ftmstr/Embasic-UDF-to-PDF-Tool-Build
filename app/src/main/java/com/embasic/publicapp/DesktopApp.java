@@ -108,11 +108,13 @@ public final class DesktopApp extends JFrame {
         setLocationRelativeTo(null);
         setLayout(new BorderLayout(0, 12));
 
-        JPanel top = new JPanel(new BorderLayout(12, 0));
+        // Stack the heading above the action row: at the 850px minimum window
+        // width, placing both in WEST/EAST clips the rightmost PDF button.
+        JPanel top = new JPanel(new BorderLayout(0, 6));
         top.setBorder(BorderFactory.createEmptyBorder(16, 20, 0, 20));
         JLabel title = new JLabel("EMBASIC  |  UDF to PDF");
         title.setFont(title.getFont().deriveFont(Font.BOLD, 19f));
-        top.add(title, BorderLayout.WEST);
+        top.add(title, BorderLayout.NORTH);
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         addButton.addActionListener(e -> chooseFiles());
         actions.add(addButton);
@@ -132,7 +134,7 @@ public final class DesktopApp extends JFrame {
         actions.add(thumbnailZoom);
         saveButton.addActionListener(e -> save());
         actions.add(saveButton);
-        top.add(actions, BorderLayout.EAST);
+        top.add(actions, BorderLayout.SOUTH);
         add(top, BorderLayout.NORTH);
 
         grid.setLayout(null); // Only visible card components exist; offscreen slots are geometry.
@@ -151,9 +153,11 @@ public final class DesktopApp extends JFrame {
         });
         scroll.getViewport().addChangeListener(e -> viewportRefresh.restart());
 
-        JPanel bottom = new JPanel(new BorderLayout());
+        // Keep long import/error status text on its own row. The queue controls
+        // must remain reachable even with 160 files or an unsupported UDF.
+        JPanel bottom = new JPanel(new BorderLayout(0, 6));
         bottom.setBorder(BorderFactory.createEmptyBorder(0, 22, 16, 22));
-        bottom.add(status, BorderLayout.WEST);
+        bottom.add(status, BorderLayout.NORTH);
         JPanel ordered = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
         moveLeftButton.addActionListener(e -> shift(-1));
         moveRightButton.addActionListener(e -> shift(1));
@@ -167,7 +171,7 @@ public final class DesktopApp extends JFrame {
         });
         ordered.add(moveLeftButton); ordered.add(moveRightButton);
         ordered.add(removeButton); ordered.add(clearButton);
-        bottom.add(ordered, BorderLayout.EAST);
+        bottom.add(ordered, BorderLayout.SOUTH);
         add(bottom, BorderLayout.SOUTH);
 
         fileDrop = new TransferHandler() {
