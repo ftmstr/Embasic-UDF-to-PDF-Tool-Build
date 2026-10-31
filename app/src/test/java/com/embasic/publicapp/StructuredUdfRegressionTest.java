@@ -33,14 +33,17 @@ final class StructuredUdfRegressionTest {
     private static String para(int start,int len) {
         return "<paragraph><content startOffset='"+start+"' length='"+len+"'/></paragraph>";
     }
-    private static String png() throws Exception {
+    private static byte[] pngBytes() throws Exception {
         BufferedImage picture=new BufferedImage(8,8,BufferedImage.TYPE_INT_ARGB);
         for(int y=0;y<8;y++)for(int x=0;x<8;x++)
             picture.setRGB(x,y,((x+y)%2==0?Color.BLUE:Color.RED).getRGB());
         ByteArrayOutputStream out=new ByteArrayOutputStream();
         assertTrue(ImageIO.write(picture,"png",out));
+        return out.toByteArray();
+    }
+    private static String png() throws Exception {
         return "<image mime='image/png' encoding='base64' width='52' height='52'>"+
-            Base64.getEncoder().encodeToString(out.toByteArray())+"</image>";
+            Base64.getEncoder().encodeToString(pngBytes())+"</image>";
     }
     @Test void mixedOrderedParagraphMergedTablePngAndLetterLandscape() throws Exception {
         String table="<table widths='80,110'><row height='28'><cell colspan='2'>BAŞLIK</cell></row>"+
@@ -107,15 +110,18 @@ final class StructuredUdfRegressionTest {
     @Test void zippedSyntheticMixedUdfProducesVerifiedPdf(@TempDir Path folder) throws Exception {
         String contentXml=container(para(0,2)
                 + "<table widths='90'><row height='28'><cell>ZIP-TABLO</cell></row></table>"
-                + png()+para(3,3),"<properties pageSize='A4' margin='48'/>");
+                + png()+"<image ref=\'media/zip.png\' mime=\'image/png\' width=\'52\' height=\'52\'/>"+para(3,3),"<properties pageSize='A4' margin='48'/>");
         Path udf=folder.resolve("mixed.udf");
         try(ZipOutputStream archive=new ZipOutputStream(Files.newOutputStream(udf))) {
             archive.putNextEntry(new ZipEntry("content.xml"));
             archive.write(contentXml.getBytes(StandardCharsets.UTF_8));
             archive.closeEntry();
+            archive.putNextEntry(new ZipEntry("media/zip.png"));
+            archive.write(pngBytes());
+            archive.closeEntry();
         }
         UdfReader.DocumentSpec input=UdfReader.read(udf);
-        assertEquals(4,input.blocks().size());
+        assertEquals(5,input.blocks().size());
         Path output=folder.resolve("mixed.pdf");
         assertEquals(1,PdfExporter.save(List.of(input),output,false));
         try(PDDocument pdf=Loader.loadPDF(output.toFile())) {
