@@ -45,6 +45,26 @@ final class PublicDesktopSmokeTest {
         return p;
     }
 
+    @Test void inGridAddCardSupportsKeyboardActivation() throws Exception {
+        java.util.concurrent.atomic.AtomicInteger activations = new java.util.concurrent.atomic.AtomicInteger();
+        javax.swing.SwingUtilities.invokeAndWait(() -> {
+            JPanel tile = new JPanel();
+            DesktopApp.installAddCardKeyboard(tile, activations::incrementAndGet);
+            assertTrue(tile.isFocusable(), "The add tile must be reachable with Tab");
+            assertEquals("+ UDF ekle", tile.getAccessibleContext().getAccessibleName());
+            for (int key : new int[]{java.awt.event.KeyEvent.VK_ENTER, java.awt.event.KeyEvent.VK_SPACE}) {
+                Object binding = tile.getInputMap(javax.swing.JComponent.WHEN_FOCUSED)
+                        .get(javax.swing.KeyStroke.getKeyStroke(key, 0));
+                assertNotNull(binding, "Enter and Space must activate the in-grid add tile");
+                javax.swing.Action action = tile.getActionMap().get(binding);
+                assertNotNull(action);
+                action.actionPerformed(new java.awt.event.ActionEvent(tile,
+                        java.awt.event.ActionEvent.ACTION_PERFORMED, "add"));
+            }
+        });
+        assertEquals(2, activations.get(), "Both keys must invoke the same add-file action");
+    }
+
     @Test void singleAndOrderedMerge() throws Exception {
         var first = UdfReader.read(udf("first.udf", "SMOKE-A İzmir ğüş"));
         var second = UdfReader.read(udf("second.udf", "SMOKE-B"));
