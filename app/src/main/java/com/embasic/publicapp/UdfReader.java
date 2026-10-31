@@ -149,7 +149,11 @@ public final class UdfReader {
         factory.setAttribute(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
         factory.setExpandEntityReferences(false);
         factory.setXIncludeAware(false);
-        Element root = factory.newDocumentBuilder().parse(new ByteArrayInputStream(xml)).getDocumentElement();
+        // Reject metadata nodes that the synthetic schema cannot represent in PDF.
+        // In particular, DOM comments and processing instructions must not disappear.
+        var document = factory.newDocumentBuilder().parse(new ByteArrayInputStream(xml));
+        rejectUnsupportedXmlNodes(document);
+        Element root = document.getDocumentElement();
         if (!root.getTagName().equals("template")) throw new IllegalArgumentException("Desteklenmeyen UDF XML kökü");
         onlyAttributes(root, "format_id");
         rejectDirectText(root);
@@ -259,6 +263,20 @@ public final class UdfReader {
             throw new IllegalArgumentException("UDF içeriğinde PDF\u0027ye aktarılmayan metin var");
         if (blocks.isEmpty()) throw new IllegalArgumentException("Dönüştürülebilir belge öğesi bulunamadı");
         return new DocumentSpec(name, version, paragraphs, blocks, DocumentElements.page(properties));
+    }
+
+    /** Fail closed on XML nodes outside the explicitly supported synthetic subset. */
+    private static void rejectUnsupportedXmlNodes(Node parent) {
+        NodeList nodes = parent.getChildNodes();
+        for (int i = 0; i < nodes.getLength(); i++) {
+            Node node = nodes.item(i);
+            switch (node.getNodeType()) {
+                case Node.ELEMENT_NODE -> rejectUnsupportedXmlNodes(node);
+                case Node.TEXT_NODE, Node.CDATA_SECTION_NODE -> { }
+                default -> throw new IllegalArgumentException(
+                        "Desteklenmeyen UDF XML düğümü: " + node.getNodeName());
+            }
+        }
     }
 
     private static void onlyAttributes(Element element, String... allowed) {
