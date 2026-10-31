@@ -23,7 +23,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.RejectedExecutionException;
@@ -53,8 +53,9 @@ public final class DesktopApp extends JFrame {
     private static final int PREVIEW_WIDTH = 244, PREVIEW_HEIGHT = 322;
     private final List<Item> items = new ArrayList<>();
     private final LinkedHashSet<Item> selected = new LinkedHashSet<>();
+    private final LinkedBlockingDeque<Runnable> previewQueue = new LinkedBlockingDeque<>(192);
     private final ThreadPoolExecutor previews = new ThreadPoolExecutor(2, 2, 0L,
-            TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(192), job -> {
+            TimeUnit.MILLISECONDS, previewQueue, job -> {
         Thread thread = new Thread(job, "embasic-preview");
         thread.setDaemon(true); return thread;
     });
@@ -554,6 +555,14 @@ public final class DesktopApp extends JFrame {
         int zoom=thumbnailZoom.getValue();
         VirtualGridLayout next=new VirtualGridLayout(items.size()+1,width,zoom);
         VirtualGridLayout.Visible window=next.visible(scroll.getViewport().getViewRect());
+        // A user who scrolls to a distant card should not wait for every earlier
+        // offscreen PDF preview. Only queued work is moved; active work is untouched.
+        List<Future<?>> visibleTasks = new ArrayList<>();
+        for (int i = window.startInclusive(); i < Math.min(window.endExclusive(), items.size()); i++) {
+            Future<?> task = items.get(i).previewTask;
+            if (task != null) visibleTasks.add(task);
+        }
+        prioritizeQueuedPreviews(previewQueue, visibleTasks);
         // Refresh logical geometry even when the visible component window does not change.
         virtualGrid=next;
         lastColumns=next.columns();
@@ -640,6 +649,24 @@ public final class DesktopApp extends JFrame {
             if (item.previewTask != null) tasks.add(item.previewTask);
         }
         cancelQueuedPreviews(previews, tasks);
+    }
+
+    /**
+     * Bring visible, not-yet-running previews to the front in their visual order.
+     * Both submit() and this method run on the Swing EDT; workers only take
+     * tasks from the deque, so a successful remove always frees an addFirst slot.
+     * Do not cancel or duplicate any task: offscreen documents remain queued.
+     */
+    static void prioritizeQueuedPreviews(LinkedBlockingDeque<Runnable> queue,
+                                         Iterable<? extends Future<?>> visibleTasks) {
+        List<Runnable> candidates = new ArrayList<>();
+        for (Future<?> task : visibleTasks)
+            if (task instanceof Runnable runnable && !task.isCancelled() && !task.isDone())
+                candidates.add(runnable);
+        for (int i = candidates.size() - 1; i >= 0; i--) {
+            Runnable task = candidates.get(i);
+            if (queue.remove(task)) queue.addFirst(task);
+        }
     }
 
     /** Package-visible for a headless queue cancellation regression. */
