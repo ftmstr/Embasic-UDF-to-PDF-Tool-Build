@@ -3,6 +3,9 @@ package com.embasic.publicapp;
 import static org.junit.jupiter.api.Assertions.*;
 import java.nio.charset.StandardCharsets;
 import java.awt.Color;
+import javax.swing.JPanel;
+import javax.swing.JLabel;
+import javax.swing.TransferHandler;
 import java.util.ArrayList;
 import org.apache.pdfbox.text.TextPosition;
 import java.nio.file.Files;
@@ -178,4 +181,22 @@ final class PublicDesktopSmokeTest {
             () -> PdfExporter.save(List.of(spec), source, true));
         assertArrayEquals(before, Files.readAllBytes(source));
     }
+    @Test void nativeFileDropTargetCoversThumbnailAndNestedLabels() {
+        // Headless Swing component contract: OS drag/drop must not depend on
+        // hitting the tiny exposed background of a thumbnail card.
+        JPanel card = new JPanel();
+        JLabel preview = new JLabel("Preview");
+        JPanel caption = new JPanel();
+        JLabel filename = new JLabel("sample.udf");
+        caption.add(filename);
+        card.add(preview);
+        card.add(caption);
+        TransferHandler drop = new TransferHandler() {};
+        DesktopApp.installFileDrop(card, drop);
+        assertSame(drop, card.getTransferHandler());
+        assertSame(drop, preview.getTransferHandler());
+        assertSame(drop, caption.getTransferHandler());
+        assertSame(drop, filename.getTransferHandler());
+    }
+
 }
