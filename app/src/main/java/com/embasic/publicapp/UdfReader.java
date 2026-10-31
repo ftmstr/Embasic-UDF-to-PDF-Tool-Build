@@ -70,12 +70,20 @@ public final class UdfReader {
             while (entries.hasMoreElements()) {
                 ZipEntry entry = entries.nextElement();
                 if (++count > MAX_ENTRIES) throw new IllegalArgumentException("UDF dosyasında çok fazla giriş var");
-                String name = entry.getName().replace('\\', '/');
+                // ZIP names use forward slashes. Rewriting backslashes or removing
+                // leading "./" aliases can silently reinterpret unknown members.
+                // The independently documented synthetic subset requires canonical paths.
+                String name = entry.getName();
+                if (name.indexOf('\\') >= 0)
+                    throw new IllegalArgumentException("UDF ZIP ters eğik çizgi içeriyor");
                 if (name.startsWith("/") || name.matches("^[A-Za-z]:.*"))
                     throw new IllegalArgumentException("UDF ZIP mutlak yol içeriyor");
-                for (String part : name.split("/"))
-                    if (part.equals("..")) throw new IllegalArgumentException("UDF ZIP güvenli olmayan yol içeriyor");
-                String normalized = name.replaceAll("^\\./+", "").toLowerCase(Locale.ROOT);
+                String path = entry.isDirectory() && name.endsWith("/")
+                        ? name.substring(0, name.length() - 1) : name;
+                for (String part : path.split("/", -1))
+                    if (part.isEmpty() || part.equals(".") || part.equals(".."))
+                        throw new IllegalArgumentException("UDF ZIP güvenli olmayan yol içeriyor");
+                String normalized = name.toLowerCase(Locale.ROOT);
                 if (!seen.add(normalized)) throw new IllegalArgumentException("UDF ZIP tekrarlanan giriş içeriyor");
                 if (entry.isDirectory()) continue;
                 if (entry.getSize() > MAX_TOTAL_UNCOMPRESSED)
