@@ -9,6 +9,7 @@ import javax.swing.JLabel;
 import javax.swing.TransferHandler;
 import java.util.ArrayList;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadPoolExecutor;
@@ -211,6 +212,40 @@ final class PublicDesktopSmokeTest {
             active.get(5, TimeUnit.SECONDS);
             assertTrue(fresh.get(5, TimeUnit.SECONDS), "A newly imported UDF must not wait behind cancelled previews");
             assertFalse(staleExecuted.get(), "Removed thumbnail must never render");
+        } finally {
+            release.countDown();
+            queue.shutdownNow();
+            assertTrue(queue.awaitTermination(5, TimeUnit.SECONDS));
+        }
+    }
+
+    @Test void scrollingPrioritizesVisibleThumbnailWithoutDiscardingOffscreenWork() throws Exception {
+        LinkedBlockingDeque<Runnable> pending = new LinkedBlockingDeque<>(4);
+        ThreadPoolExecutor queue = new ThreadPoolExecutor(1, 1, 0L,
+                TimeUnit.MILLISECONDS, pending);
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        List<String> rendered = java.util.Collections.synchronizedList(new ArrayList<>());
+        try {
+            Future<?> running = queue.submit(() -> {
+                started.countDown();
+                try { release.await(); }
+                catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+            });
+            assertTrue(started.await(5, TimeUnit.SECONDS));
+            Future<?> first = queue.submit(() -> rendered.add("first"));
+            Future<?> second = queue.submit(() -> rendered.add("second"));
+            Future<?> visible = queue.submit(() -> rendered.add("visible"));
+            assertEquals(3, pending.size());
+            DesktopApp.prioritizeQueuedPreviews(pending, List.of(visible));
+            assertEquals(3, pending.size(), "Prioritization must not lose or duplicate work");
+            release.countDown();
+            running.get(5, TimeUnit.SECONDS);
+            visible.get(5, TimeUnit.SECONDS);
+            first.get(5, TimeUnit.SECONDS);
+            second.get(5, TimeUnit.SECONDS);
+            assertEquals(List.of("visible", "first", "second"), rendered,
+                    "A scrolled-to card should render before queued offscreen cards");
         } finally {
             release.countDown();
             queue.shutdownNow();
