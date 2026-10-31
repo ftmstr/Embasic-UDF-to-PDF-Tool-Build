@@ -185,8 +185,7 @@ public final class DesktopApp extends JFrame {
                 } catch (Exception ex) { showError(ex); return false; }
             }
         };
-        grid.setTransferHandler(fileDrop);
-        scroll.setTransferHandler(fileDrop);
+        installWorkspaceFileDrop(scroll, grid, fileDrop);
         getRootPane().setTransferHandler(fileDrop);
         var input = getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
         var action = getRootPane().getActionMap();
@@ -494,6 +493,15 @@ public final class DesktopApp extends JFrame {
         component.addMouseMotionListener(mouse);
         if (component instanceof java.awt.Container container)
             for (Component child : container.getComponents()) attachMouse(child, mouse);
+    }
+    /**
+     * Empty space below the last card belongs to the viewport, not the grid.
+     * Explorer drops there must work even when only one small UDF tile is shown.
+     */
+    static void installWorkspaceFileDrop(JScrollPane pane, JPanel grid, TransferHandler handler) {
+        pane.setTransferHandler(handler);
+        pane.getViewport().setTransferHandler(handler);
+        grid.setTransferHandler(handler);
     }
     /** Make the full card, including its nested preview and filename, an OS file-drop target. */
     static void installFileDrop(JComponent component, TransferHandler handler) {
