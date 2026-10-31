@@ -3,12 +3,15 @@ package com.embasic.publicapp;
 import static org.junit.jupiter.api.Assertions.*;
 import java.awt.Color;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.apache.pdfbox.text.TextPosition;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 /** Regression: a trailing paragraph must not create an empty PDF page. */
 final class PdfTrailingPageTest {
@@ -19,6 +22,38 @@ final class PdfTrailingPageTest {
             paragraphs.add(new UdfReader.Paragraph(List.of(
                     new UdfReader.Run("LINE" + i, style))));
         return new UdfReader.DocumentSpec("synthetic.udf", "1.0", paragraphs);
+    }
+
+    @Test void whitespaceOnlyUdfCannotSilentlyProduceBlankPdf(@TempDir Path folder) throws Exception {
+        // Terminal whitespace is trimmed to avoid spurious pages, but an entire
+        // whitespace-only UDF must not be reported as a successful conversion.
+        var style = new UdfReader.Style(11f, false, Color.BLACK);
+        var blank = new UdfReader.DocumentSpec("blank.udf", "1.0", List.of(
+                new UdfReader.Paragraph(List.of(
+                        new UdfReader.Run("\r\n \t", style),
+                        new UdfReader.Run("", style)))));
+        var visible = paragraphs(1);
+        for (List<UdfReader.DocumentSpec> documents : List.of(
+                List.of(blank), List.of(visible, blank), List.of(blank, visible))) {
+            var error = assertThrows(IllegalArgumentException.class,
+                    () -> { try (PDDocument ignored = PdfExporter.render(documents)) {} });
+            assertTrue(error.getMessage().contains("blank.udf"), error.getMessage());
+            Path target = folder.resolve("merged.pdf");
+            assertThrows(IllegalArgumentException.class,
+                    () -> PdfExporter.save(documents, target, false));
+            assertFalse(Files.exists(target), "A rejected merge must not publish a PDF");
+        }
+        assertThrows(IllegalArgumentException.class,
+                () -> { try (PDDocument ignored = PdfExporter.renderPreview(blank)) {} });
+        // An empty table cell still draws a visible grid and is not a blank UDF.
+        var grid = new DocumentElements.TableBlock(List.of(120f),
+                List.of(new DocumentElements.Row(
+                        List.of(new DocumentElements.Cell("", 1, 1)), 24f)));
+        var tableDoc = new UdfReader.DocumentSpec("grid.udf", "1.0", List.of(),
+                List.of(grid), DocumentElements.PageSpec.a4());
+        try (PDDocument pdf = PdfExporter.render(List.of(tableDoc))) {
+            assertEquals(1, pdf.getNumberOfPages());
+        }
     }
 
     @Test void lastParagraphAtPageBoundaryDoesNotCreateBlankPage() throws Exception {
