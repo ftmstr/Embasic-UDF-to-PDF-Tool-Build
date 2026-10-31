@@ -399,6 +399,49 @@ final class PublicDesktopSmokeTest {
         }
     }
 
+    @Test void scrollingCancelsOnlyQueuedOffscreenThumbnails() throws Exception {
+        LinkedBlockingDeque<Runnable> pending = new LinkedBlockingDeque<>(4);
+        ThreadPoolExecutor queue = new ThreadPoolExecutor(1, 1, 0L,
+                TimeUnit.MILLISECONDS, pending);
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicBoolean staleRendered = new AtomicBoolean();
+        AtomicBoolean visibleRendered = new AtomicBoolean();
+        try {
+            Future<?> active = queue.submit(() -> {
+                started.countDown();
+                try { release.await(); }
+                catch (InterruptedException ex) { Thread.currentThread().interrupt(); }
+            });
+            assertTrue(started.await(5, TimeUnit.SECONDS));
+            Future<?> stale = queue.submit(() -> staleRendered.set(true));
+            Future<?> visible = queue.submit(() -> visibleRendered.set(true));
+            assertEquals(2, pending.size());
+
+            assertTrue(DesktopApp.cancelQueuedPreview(pending, stale),
+                    "A no-longer-visible queued preview must free its queue slot");
+            assertTrue(stale.isCancelled());
+            assertFalse(DesktopApp.cancelQueuedPreview(pending, active),
+                    "An active PDFBox render must never be cancelled by scrolling");
+            assertFalse(active.isCancelled());
+            assertEquals(1, pending.size(), "The still-visible thumbnail stays queued");
+
+            release.countDown();
+            active.get(5, TimeUnit.SECONDS);
+            visible.get(5, TimeUnit.SECONDS);
+            assertTrue(visibleRendered.get());
+            assertFalse(staleRendered.get(), "Stale thumbnail must not consume CPU");
+
+            // Scrolling back is allowed to request a fresh preview.
+            queue.submit(() -> staleRendered.set(true)).get(5, TimeUnit.SECONDS);
+            assertTrue(staleRendered.get());
+        } finally {
+            release.countDown();
+            queue.shutdownNow();
+            assertTrue(queue.awaitTermination(5, TimeUnit.SECONDS));
+        }
+    }
+
     @Test void nativeFileDropTargetCoversThumbnailAndNestedLabels() {
         // Headless Swing component contract: OS drag/drop must not depend on
         // hitting the tiny exposed background of a thumbnail card.
