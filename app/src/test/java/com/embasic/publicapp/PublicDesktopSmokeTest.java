@@ -203,6 +203,7 @@ final class PublicDesktopSmokeTest {
         CountDownLatch releasePreview = new CountDownLatch(1);
         CountDownLatch parsedReady = new CountDownLatch(1);
         CountDownLatch nextPreviewDone = new CountDownLatch(1);
+        CountDownLatch previewQueued = new CountDownLatch(1);
         AtomicBoolean failed = new AtomicBoolean();
         try {
             preview.submit(() -> {
@@ -216,12 +217,15 @@ final class PublicDesktopSmokeTest {
                     result -> {
                         if ("synthetic parsed document".equals(result)) parsedReady.countDown();
                         preview.submit(nextPreviewDone::countDown);
+                        previewQueued.countDown();
                     },
                     ex -> failed.set(true));
             parsing.get(5, TimeUnit.SECONDS);
             assertTrue(parsedReady.await(5, TimeUnit.SECONDS),
                     "Parsing must publish export readiness without waiting for PDFBox thumbnails");
             assertFalse(failed.get());
+            assertTrue(previewQueued.await(5, TimeUnit.SECONDS),
+                    "Wait for EDT to enqueue the thumbnail before inspecting its queue");
             assertEquals(1, preview.getQueue().size(),
                     "Thumbnail may remain queued after the document is export-ready");
             releasePreview.countDown();
