@@ -58,6 +58,7 @@ public final class DesktopApp extends JFrame {
         thread.setDaemon(true); return thread;
     });
     private final JPanel grid = new JPanel();
+    private TransferHandler fileDrop;
     private final JScrollPane scroll = new JScrollPane(grid);
     private final JLabel status = new JLabel("Dosyaları çalışma alanına bırakın veya + kartına basın");
     private final JButton saveButton = new JButton("PDF olarak kaydet");
@@ -166,7 +167,7 @@ public final class DesktopApp extends JFrame {
         bottom.add(ordered, BorderLayout.EAST);
         add(bottom, BorderLayout.SOUTH);
 
-        TransferHandler fileDrop = new TransferHandler() {
+        fileDrop = new TransferHandler() {
             @Override public boolean canImport(TransferSupport support) {
                 return !converting && support.isDataFlavorSupported(DataFlavor.javaFileListFlavor);
             }
@@ -481,6 +482,9 @@ public final class DesktopApp extends JFrame {
         };
         card.putClientProperty("udf-item", item);
         attachMouse(card, mouse);
+        // Native Explorer drops target the deepest Swing child under the pointer.
+        // Register every visible thumbnail/label, not only its background grid.
+        installFileDrop(card, fileDrop);
         return card;
     }
     private void attachMouse(Component component, MouseAdapter mouse) {
@@ -488,6 +492,12 @@ public final class DesktopApp extends JFrame {
         component.addMouseMotionListener(mouse);
         if (component instanceof java.awt.Container container)
             for (Component child : container.getComponents()) attachMouse(child, mouse);
+    }
+    /** Make the full card, including its nested preview and filename, an OS file-drop target. */
+    static void installFileDrop(JComponent component, TransferHandler handler) {
+        component.setTransferHandler(handler);
+        for (Component child : component.getComponents())
+            if (child instanceof JComponent nested) installFileDrop(nested, handler);
     }
     private Icon thumbnailIcon(Item item, ThumbnailSizing.Size size) {
         if (item.thumbnail == null) return null;
@@ -522,6 +532,7 @@ public final class DesktopApp extends JFrame {
         plus.add(label, BorderLayout.CENTER);
         plus.addMouseListener(new MouseAdapter() { @Override public void mouseClicked(MouseEvent e) { chooseFiles(); } });
         label.addMouseListener(new MouseAdapter() { @Override public void mouseClicked(MouseEvent e) { chooseFiles(); } });
+        installFileDrop(plus, fileDrop);
         return plus;
     }
     private void refreshViewport(boolean force) {
