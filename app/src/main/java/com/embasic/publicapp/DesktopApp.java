@@ -27,6 +27,7 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.Future;
 import javax.swing.BorderFactory;
 import javax.swing.ImageIcon;
 import javax.swing.JButton;
@@ -94,6 +95,7 @@ public final class DesktopApp extends JFrame {
         volatile ImageIcon thumbnail;
         volatile String info = "Okunuyor...";
         volatile boolean cancelled;
+        volatile Future<?> previewTask;
         Item(Path path) { this.path = path; }
     }
 
@@ -159,7 +161,7 @@ public final class DesktopApp extends JFrame {
             if (converting || items.isEmpty() || JOptionPane.showConfirmDialog(this,
                     "Tüm dosyalar kaldırılsın mı?", "Temizle",
                     JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) return;
-            for (Item it : items) it.cancelled = true;
+            cancelPreviewTasks(items);
             items.clear(); selected.clear(); rebuild(); updateFileStatus();
         });
         ordered.add(moveLeftButton); ordered.add(moveRightButton);
@@ -321,7 +323,7 @@ public final class DesktopApp extends JFrame {
             Item item = new Item(normalized);
             items.add(item);
             try {
-                previews.submit(() -> {
+                item.previewTask = previews.submit(() -> {
                     if (item.cancelled) return;
                     try {
                         UdfReader.DocumentSpec parsed = UdfReader.read(item.path);
@@ -618,9 +620,30 @@ public final class DesktopApp extends JFrame {
         clearButton.setEnabled(enabled);
     }
 
+    /**
+     * Clearing or removing cards must not leave hundreds of obsolete previews
+     * ahead of newly added UDFs in the bounded background queue. Running work
+     * is not interrupted; its cancelled flag prevents publishing stale UI.
+     */
+    private void cancelPreviewTasks(Iterable<Item> removed) {
+        List<Future<?>> tasks = new ArrayList<>();
+        for (Item item : removed) {
+            item.cancelled = true;
+            if (item.previewTask != null) tasks.add(item.previewTask);
+        }
+        cancelQueuedPreviews(previews, tasks);
+    }
+
+    /** Package-visible for a headless queue cancellation regression. */
+    static void cancelQueuedPreviews(ThreadPoolExecutor executor,
+                                     Iterable<? extends Future<?>> tasks) {
+        for (Future<?> task : tasks) task.cancel(false);
+        executor.purge();
+    }
+
     private void removeSelected() {
         if (converting || selected.isEmpty()) return;
-        for (Item item : selected) item.cancelled = true;
+        cancelPreviewTasks(selected);
         items.removeAll(selected);
         selected.clear();
         rebuild();
