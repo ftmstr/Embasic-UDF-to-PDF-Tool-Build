@@ -22,6 +22,15 @@ public final class GridDropIndicator {
         return new Rectangle(x,tile.y+4,4,Math.max(1,tile.height-8));
     }
 
+    /** Stable Turkish text for the on-screen and accessible drag target hint. */
+    public static String description(int index, int fileCount, boolean after) {
+        if (index < 0 || fileCount < 0 || index > fileCount)
+            return "Geçerli bırakma hedefi yok. Esc ile iptal edebilirsiniz.";
+        if (index == fileCount) return "Seçilen dosyaları listenin sonuna taşı.";
+        return (index + 1) + ". kartın " + (after ? "arkasına" : "önüne")
+                + " taşı. Esc ile iptal edebilirsiniz.";
+    }
+
     public static int targetAt(VirtualGridLayout geometry, int x, int y) {
         return geometry==null ? -1 : geometry.indexAt(x,y);
     }
