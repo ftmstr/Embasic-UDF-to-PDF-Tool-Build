@@ -85,7 +85,19 @@ public final class UdfReader {
                         throw new IllegalArgumentException("UDF ZIP güvenli olmayan yol içeriyor");
                 String normalized = name.toLowerCase(Locale.ROOT);
                 if (!seen.add(normalized)) throw new IllegalArgumentException("UDF ZIP tekrarlanan giriş içeriyor");
-                if (entry.isDirectory()) continue;
+                if (entry.isDirectory()) {
+                    // A ZIP directory is metadata, not an ignored payload. Accept
+                    // only canonical paths in the synthetic PNG namespace, and
+                    // reject directory records carrying bytes that would vanish.
+                    if (!(normalized.startsWith("media/") || normalized.startsWith("images/")))
+                        throw new IllegalArgumentException("Desteklenmeyen UDF ZIP dizini: " + normalized);
+                    DocumentElements.mediaPath(normalized + "placeholder.png");
+                    try (InputStream in = zip.getInputStream(entry)) {
+                        if (in.read() != -1)
+                            throw new IllegalArgumentException("UDF ZIP dizininde beklenmeyen veri var");
+                    }
+                    continue;
+                }
                 if (entry.getSize() > MAX_TOTAL_UNCOMPRESSED)
                     throw new IllegalArgumentException("UDF ZIP giriş boyutu sınırı aşıldı");
                 if (entry.getSize() > 0) total += entry.getSize();
