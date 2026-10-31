@@ -45,6 +45,28 @@ final class PublicDesktopSmokeTest {
         return p;
     }
 
+    @Test void offscreenPdfThumbnailsWaitUntilTheirCardsBecomeVisible() {
+        List<Integer> cards = new ArrayList<>();
+        for (int i = 0; i < 160; i++) cards.add(i);
+        VirtualGridLayout layout = new VirtualGridLayout(161, 900, ThumbnailSizing.DEFAULT_WIDTH);
+        var requested = new java.util.LinkedHashSet<Integer>();
+        var firstWindow = layout.visible(new java.awt.Rectangle(0, 0, 900, 600));
+        DesktopApp.scheduleVisiblePreviews(cards, firstWindow,
+                index -> !requested.contains(index), requested::add);
+        assertFalse(requested.isEmpty(), "Visible UDFs must get thumbnails");
+        assertTrue(requested.size() < 160, "Offscreen PDFs must not be eagerly rendered");
+        assertFalse(requested.contains(159), "Last UDF must remain deferred");
+        int before = requested.size();
+        DesktopApp.scheduleVisiblePreviews(cards, firstWindow,
+                index -> !requested.contains(index), requested::add);
+        assertEquals(before, requested.size(), "Repeated viewport refresh must not resubmit");
+        var lastWindow = layout.visible(new java.awt.Rectangle(
+                0, layout.bounds(159).y, 900, 600));
+        DesktopApp.scheduleVisiblePreviews(cards, lastWindow,
+                index -> !requested.contains(index), requested::add);
+        assertTrue(requested.contains(159), "Scrolling must request the previously deferred PDF");
+    }
+
     @Test void inGridAddCardSupportsKeyboardActivation() throws Exception {
         java.util.concurrent.atomic.AtomicInteger activations = new java.util.concurrent.atomic.AtomicInteger();
         javax.swing.SwingUtilities.invokeAndWait(() -> {
