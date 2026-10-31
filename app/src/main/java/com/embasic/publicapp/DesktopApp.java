@@ -688,9 +688,29 @@ public final class DesktopApp extends JFrame {
             }
         };
     }
+    /**
+     * The in-grid add tile must be reachable and actionable without a mouse.
+     * Its keyboard activation uses the same file chooser as pointer activation.
+     */
+    static void installAddCardKeyboard(JPanel plus, Runnable chooseFiles) {
+        plus.setFocusable(true);
+        plus.getAccessibleContext().setAccessibleName("+ UDF ekle");
+        plus.getAccessibleContext().setAccessibleDescription(
+                "UDF dosyası eklemek için Enter veya Boşluk tuşuna basın");
+        String action = "embasic-add-udf";
+        plus.getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), action);
+        plus.getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, 0), action);
+        plus.getActionMap().put(action, new javax.swing.AbstractAction() {
+            @Override public void actionPerformed(java.awt.event.ActionEvent event) {
+                chooseFiles.run();
+            }
+        });
+    }
+
     private JPanel addCard() {
         JPanel plus = new JPanel(new BorderLayout());
         plus.putClientProperty("udf-add-card", Boolean.TRUE);
+        installAddCardKeyboard(plus, this::chooseFiles);
         plus.setBackground(cardColor());
         plus.setBorder(BorderFactory.createDashedBorder(accent(), 4f, 4f));
         ThumbnailSizing.Size size=ThumbnailSizing.at(thumbnailZoom.getValue());
