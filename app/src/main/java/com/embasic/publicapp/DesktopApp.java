@@ -88,6 +88,7 @@ public final class DesktopApp extends JFrame {
     private TransferHandler fileDrop;
     private final JScrollPane scroll = new JScrollPane(grid);
     private final JLabel status = new JLabel("Dosyaları çalışma alanına bırakın veya + kartına basın");
+    private final JLabel dragFeedback = new JLabel("");
     private final JButton saveButton = new JButton("PDF olarak kaydet");
     private final JButton addButton = new JButton("+ UDF ekle");
     private final JButton moveLeftButton = new JButton("← Taşı");
@@ -186,6 +187,14 @@ public final class DesktopApp extends JFrame {
         JPanel bottom = new JPanel(new BorderLayout(0, 6));
         bottom.setBorder(BorderFactory.createEmptyBorder(0, 22, 16, 22));
         bottom.add(status, BorderLayout.NORTH);
+        dragFeedback.setForeground(foreground());
+        dragFeedback.getAccessibleContext().setAccessibleName("UDF sürükleme hedefi");
+        dragFeedback.getAccessibleContext().setAccessibleDescription(
+                "Sürükleme sırasında hedefin sırasını ve Esc iptal seçeneğini bildirir.");
+        bottom.add(dragFeedback, BorderLayout.CENTER);
+        grid.getAccessibleContext().setAccessibleName("UDF belge sıralama alanı");
+        grid.getAccessibleContext().setAccessibleDescription(
+                "Dosyaları seçip sürükleyerek sıralayın; Esc ile sürüklemeyi iptal edin.");
         JPanel ordered = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
         moveLeftButton.addActionListener(e -> shift(-1));
         moveRightButton.addActionListener(e -> shift(1));
@@ -262,6 +271,12 @@ public final class DesktopApp extends JFrame {
                 rebuild();
             }
         });
+        input.put(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), "cancelGridDrag");
+        action.put("cancelGridDrag", new javax.swing.AbstractAction() {
+            @Override public void actionPerformed(java.awt.event.ActionEvent e) {
+                cancelPointerDrag();
+            }
+        });
         input.put(KeyStroke.getKeyStroke(KeyEvent.VK_DELETE, 0), "remove");
         action.put("remove", new javax.swing.AbstractAction() {
             @Override public void actionPerformed(java.awt.event.ActionEvent e) { removeSelected(); }
@@ -304,11 +319,36 @@ public final class DesktopApp extends JFrame {
         setDropIndicator(index,after);
     }
 
+    private void cancelPointerDrag() {
+        if (!pointerHeld) return;
+        dragScroll.stop();
+        pointerHeld = false;
+        pointerDragging = false;
+        pointerViewport = null;
+        capturedCard = null;
+        capturedItem = null;
+        setDropIndicator(-1,false);
+        dragFeedback.setText("Sürükleme iptal edildi.");
+        dragFeedback.getAccessibleContext().setAccessibleDescription(
+                "Sürükleme iptal edildi. Dosya sırası değiştirilmedi.");
+        rebuild();
+    }
+
     private void setDropIndicator(int index,boolean after) {
         if (index==dropTargetIndex && after==dropAfter) return;
         Rectangle old=GridDropIndicator.bounds(virtualGrid,dropTargetIndex,dropAfter);
         dropTargetIndex=index;
         dropAfter=after;
+        if (pointerHeld && pointerDragging) {
+            String description=GridDropIndicator.description(index,items.size(),after);
+            dragFeedback.setText(description);
+            var context=dragFeedback.getAccessibleContext();
+            String previous=context.getAccessibleDescription();
+            context.setAccessibleDescription(description);
+            context.firePropertyChange(
+                    javax.accessibility.AccessibleContext.ACCESSIBLE_DESCRIPTION_PROPERTY,
+                    previous,description);
+        }
         Rectangle next=GridDropIndicator.bounds(virtualGrid,dropTargetIndex,dropAfter);
         if (old!=null) grid.repaint(old.x-2,old.y-2,old.width+4,old.height+4);
         if (next!=null) grid.repaint(next.x-2,next.y-2,next.width+4,next.height+4);
@@ -530,6 +570,9 @@ public final class DesktopApp extends JFrame {
                 capturedItem=item;
                 pointerHeld=true;
                 pointerDragging=false;
+                dragFeedback.setText("Kartı sürükleyin; Esc ile iptal edin.");
+                dragFeedback.getAccessibleContext().setAccessibleDescription(
+                        "Kart seçildi. Taşıma hedefi için sürükleyin veya Esc ile iptal edin.");
                 setDropIndicator(-1,false);
                 pointerViewport=SwingUtilities.convertPoint(
                         (Component)e.getSource(),e.getPoint(),scroll.getViewport());
@@ -556,6 +599,7 @@ public final class DesktopApp extends JFrame {
                 }
             }
             @Override public void mouseReleased(MouseEvent e) {
+                if (!pointerHeld) return; // Esc may have cancelled the capture.
                 Point released=SwingUtilities.convertPoint((Component)e.getSource(),e.getPoint(),grid);
                 boolean dragged=pointerDragging || pressed != null && pressed.distance(released)>12;
                 dragScroll.stop();
@@ -589,6 +633,9 @@ public final class DesktopApp extends JFrame {
                 pointerViewport=null;
                 capturedItem=null;
                 capturedCard=null;
+                dragFeedback.setText("");
+                dragFeedback.getAccessibleContext().setAccessibleDescription(
+                        "Sürükleme tamamlandı. Yeni dosya sırası çalışma alanında görüntülenir.");
                 rebuild();
             }
         };
@@ -727,6 +774,7 @@ public final class DesktopApp extends JFrame {
         saveButton.setEnabled(!converting && !items.isEmpty()
                 && items.stream().allMatch(item -> item.document!=null));
         status.setForeground(fg);
+        dragFeedback.setForeground(fg);
         for (Component cmp : getContentPane().getComponents())
             if (cmp instanceof JPanel panel) {
                 if (panel != grid) panel.setBackground(bg);
