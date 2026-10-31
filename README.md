@@ -115,3 +115,18 @@ The Public-only Swing grid now paints a blue, **noninteractive insertion marker*
 
 `GridDropIndicatorTest` adds three headless regression cases for target coordinates across 132/188/272-pixel zoom and 680/1000/1430-pixel viewport widths, marker painting and invalid/empty targets. Existing `VirtualGridLayoutTest`, `VirtualGridSwingLoadTest`, full Maven/JUnit, Windows packaged launcher and PDF engine/audit gates remain in the Public CI. The synthetic Swing load metrics **do not establish real Windows GUI FPS or native UYAP PDF fidelity**. The Windows release authorization gate remains closed; no downloadable executable was published.
 
+
+## Tur 43 — Accessible drag hints, Escape cancellation and manual Windows Robot acceptance (2026-10-31)
+
+The Public-only desktop UI now exposes a text and accessibility description of the active virtual-grid drop target (e.g. *3. kartın önüne taşı*), along with the `Esc` cancellation option. The status is updated only when the target changes. Escape stops edge autoscroll and releases the captured card **without moving UDFs**. Mouse release after cancellation cannot accidentally reorder a file. The visual blue insert marker remains paint-only.
+
+For a **real interactive Windows desktop** (JDK 17 + Maven, public checkout), use:
+
+```powershell
+pwsh -NoProfile -File app/scripts/Run-Windows-GuiRobotSmoke.ps1 -AllowGui
+```
+
+The opt-in `GuiRobotSmokeTest` opens the actual DesktopApp, imports 40 synthetic local ZIP UDFs, drives a real mouse press/drag to the bottom edge, verifies the viewport scrolled, checks the insertion marker and accessible status text, then releases and verifies file order. It never uses real case files or publishes an EXE. Do not touch the mouse while the test runs. If the Windows session is locked, headless or lacks desktop input permission, the opt-in run **fails/inconclusive** rather than being reported as passing. The regular Maven/CI run intentionally skips physical GUI acceptance. A manual `workflow_dispatch` option `run_gui_robot` on the Public-only Desktop MVP Proof workflow enables this explicit additional test on a Windows runner. Its result must be checked separately.
+
+`GridDropAccessibilityTest` runs under default CI and verifies Turkish before/after/end and invalid-target announcements. Physical Windows acceptance, full screen-reader compatibility, real UYAP PDF parity and redistribution rights remain **unverified** until explicitly tested and approved. Source approval/SHA/NOTICE gates remain intact.
+
