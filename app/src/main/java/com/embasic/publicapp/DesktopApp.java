@@ -536,6 +536,24 @@ public final class DesktopApp extends JFrame {
     private Color foreground() { return dark ? new Color(225, 231, 240) : new Color(33, 47, 66); }
     private Color accent() { return ACCENT; }
 
+    /**
+     * Filenames and parser errors are untrusted text. Swing interprets strings
+     * beginning with <html> as markup, including remote <img> resources.
+     * Keep both the visible label and its tooltip strictly literal.
+     */
+    static JLabel literalLabel(String value) {
+        JLabel label = new JLabel() {
+            @Override public javax.swing.JToolTip createToolTip() {
+                javax.swing.JToolTip tooltip = super.createToolTip();
+                tooltip.putClientProperty("html.disable", Boolean.TRUE);
+                return tooltip;
+            }
+        };
+        label.putClientProperty("html.disable", Boolean.TRUE);
+        label.setText(value);
+        return label;
+    }
+
     private JPanel card(Item item) {
         JPanel card = new JPanel(new BorderLayout(3, 5));
         ThumbnailSizing.Size size=ThumbnailSizing.at(thumbnailZoom.getValue());
@@ -553,10 +571,10 @@ public final class DesktopApp extends JFrame {
         JPanel labels = new JPanel(new BorderLayout());
         labels.setOpaque(false);
         String filename = item.path.getFileName().toString();
-        JLabel name = new JLabel(filename.length() > 28 ? filename.substring(0, 25) + "..." : filename);
+        JLabel name = literalLabel(filename.length() > 28 ? filename.substring(0, 25) + "..." : filename);
         name.setToolTipText(filename);
         name.setForeground(foreground()); name.setFont(name.getFont().deriveFont(Font.BOLD, 11f));
-        JLabel info = new JLabel(item.info);
+        JLabel info = literalLabel(item.info);
         info.setForeground(!item.info.equals("Hazır") && !item.info.equals("Okunuyor...")
                 && !item.info.equals("Önizleme hazırlanıyor...")
                 && !item.info.equals(DEFERRED_PREVIEW) ?
