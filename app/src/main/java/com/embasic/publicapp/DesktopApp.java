@@ -566,7 +566,7 @@ public final class DesktopApp extends JFrame {
         return label;
     }
 
-    /** Only a primary-button press may capture a card for selection and reorder. */
+    /** Only a primary-button gesture may select, finish a reorder or activate the add tile. */
     static boolean isPrimaryCardPress(MouseEvent event) {
         return SwingUtilities.isLeftMouseButton(event);
     }
@@ -640,7 +640,9 @@ public final class DesktopApp extends JFrame {
                 }
             }
             @Override public void mouseReleased(MouseEvent e) {
-                if (!pointerHeld) return; // Esc may have cancelled the capture.
+                // Releasing a secondary button while the primary button is held
+                // must not commit a drag or collapse the Explorer selection.
+                if (!pointerHeld || !isPrimaryCardPress(e)) return; // Esc may have cancelled.
                 Point released=SwingUtilities.convertPoint((Component)e.getSource(),e.getPoint(),grid);
                 boolean dragged=pointerDragging || pressed != null && pressed.distance(released)>12;
                 dragScroll.stop();
@@ -784,10 +786,22 @@ public final class DesktopApp extends JFrame {
         JLabel label = new JLabel("<html><center><span style='font-size:24pt'>+</span><br>UDF dosyası seç</center></html>", SwingConstants.CENTER);
         plus.add(label, BorderLayout.CENTER);
         styleAddCard(plus);
-        plus.addMouseListener(new MouseAdapter() { @Override public void mouseClicked(MouseEvent e) { chooseFiles(); } });
-        label.addMouseListener(new MouseAdapter() { @Override public void mouseClicked(MouseEvent e) { chooseFiles(); } });
+        installAddCardMouse(plus, label, this::chooseFiles);
         installFileDrop(plus, fileDrop);
         return plus;
+    }
+
+    /** Clicking either part of the add tile is equivalent to its keyboard action.
+     *  Secondary/middle clicks must not open an unexpected file chooser.
+     */
+    static void installAddCardMouse(JPanel plus, JLabel label, Runnable chooseFiles) {
+        MouseAdapter click = new MouseAdapter() {
+            @Override public void mouseClicked(MouseEvent event) {
+                if (isPrimaryCardPress(event)) chooseFiles.run();
+            }
+        };
+        plus.addMouseListener(click);
+        label.addMouseListener(click);
     }
 
     /** Find the existing keyboard-focusable + tile before replacing visible cards. */
