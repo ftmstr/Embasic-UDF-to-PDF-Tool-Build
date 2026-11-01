@@ -60,7 +60,7 @@ final class PdfTrailingPageTest {
             try (PDDocument pdf = PdfExporter.render(List.of(tableDoc))) {
                 assertEquals(1, pdf.getNumberOfPages());
             }
-            // CR/LF/tab-only editor runs do not measure glyphs. They must not
+            // Space-padded empty cells are visually border-only too. They\n            // must not require a Unicode font or produce phantom PDF text.\n            var paddedGrid = new DocumentElements.TableBlock(List.of(120f),\n                    List.of(new DocumentElements.Row(\n                            List.of(new DocumentElements.Cell("   ", 1, 1)), 24f)));\n            var paddedDoc = new UdfReader.DocumentSpec("padded-grid.udf", "1.0",\n                    List.of(), List.of(paddedGrid), DocumentElements.PageSpec.a4());\n            try (PDDocument pdf = PdfExporter.render(List.of(paddedDoc))) {\n                assertEquals(1, pdf.getNumberOfPages());\n                assertTrue(new PDFTextStripper().getText(pdf).isBlank(),\n                        "Space-only cells must draw borders without emitting text");\n            }\n            // CR/LF/tab-only editor runs do not measure glyphs. They must not
             // force a system font scan when the visible content is a grid.
             var breaks = new UdfReader.Paragraph(List.of(
                     new UdfReader.Run("\r\n\t", style)));
@@ -78,7 +78,7 @@ final class PdfTrailingPageTest {
                     List.of(), List.of(textGrid), DocumentElements.PageSpec.a4());
             assertThrows(IllegalArgumentException.class,
                     () -> { try (PDDocument ignored = PdfExporter.render(List.of(textDoc))) {} },
-                    "A table with text must still require a usable Unicode font");
+                    "A table with text must still require a usable Unicode font");\n            var paddedTextGrid = new DocumentElements.TableBlock(List.of(120f),\n                    List.of(new DocumentElements.Row(\n                            List.of(new DocumentElements.Cell(" TEXT ", 1, 1)), 24f)));\n            var paddedTextDoc = new UdfReader.DocumentSpec("padded-text.udf", "1.0",\n                    List.of(), List.of(paddedTextGrid), DocumentElements.PageSpec.a4());\n            assertThrows(IllegalArgumentException.class,\n                    () -> { try (PDDocument ignored = PdfExporter.render(List.of(paddedTextDoc))) {} },\n                    "A cell containing real text must still fail closed when its font is absent");
         } finally {
             if (previousFont == null) System.clearProperty(fontProperty);
             else System.setProperty(fontProperty, previousFont);
