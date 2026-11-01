@@ -230,7 +230,10 @@ public final class DesktopApp extends JFrame {
                     List<Path> paths = new ArrayList<>();
                     for (Object file : list)
                         if (file instanceof java.io.File f) paths.add(f.toPath());
-                    addFiles(paths); return true;
+                    // A native Explorer drop is successful only if at least one
+                    // new UDF card was actually accepted. All-duplicate, invalid
+                    // or full-grid drops must not report a phantom import.
+                    return addFiles(paths);
                 } catch (Exception ex) { showError(ex); return false; }
             }
         };
@@ -426,8 +429,8 @@ public final class DesktopApp extends JFrame {
         addFiles(paths);
     }
 
-    private void addFiles(List<Path> paths) {
-        if (converting) return;
+    private boolean addFiles(List<Path> paths) {
+        if (converting) return false;
         FileImportPolicy.Selection plan = FileImportPolicy.plan(
                 items.stream().map(item -> item.path).toList(), paths);
         for (Path normalized : plan.accepted()) {
@@ -471,6 +474,7 @@ public final class DesktopApp extends JFrame {
             JOptionPane.showMessageDialog(this,
                     String.join("\n", warnings) + "\nAtlanan dosyalar PDF'ye eklenmedi.",
                     "İçe aktarma uyarısı", JOptionPane.WARNING_MESSAGE);
+        return !plan.accepted().isEmpty();
     }
 
     /**
