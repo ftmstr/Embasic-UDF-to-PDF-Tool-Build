@@ -511,7 +511,7 @@ final class PublicDesktopSmokeTest {
         }
     }
 
-    @Test void nativeFileDropTargetCoversThumbnailAndNestedLabels() {
+    @Test void nativeFileDropTargetsAndPrimaryButtonDragContract() {
         // Headless Swing component contract: OS drag/drop must not depend on
         // hitting the tiny exposed background of a thumbnail card.
         JPanel card = new JPanel();
@@ -534,6 +534,28 @@ final class PublicDesktopSmokeTest {
         assertSame(drop, workspace.getTransferHandler());
         assertSame(drop, workspace.getViewport().getTransferHandler());
         assertSame(drop, card.getTransferHandler());
+
+        // A secondary/middle press must not capture a selected card for
+        // reordering. Modifier-assisted primary selection remains available.
+        for (int modifiers : new int[]{0, java.awt.event.InputEvent.CTRL_DOWN_MASK,
+                java.awt.event.InputEvent.SHIFT_DOWN_MASK}) {
+            var left = new java.awt.event.MouseEvent(card,
+                    java.awt.event.MouseEvent.MOUSE_PRESSED, 0L,
+                    java.awt.event.InputEvent.BUTTON1_DOWN_MASK | modifiers,
+                    8, 8, 1, false, java.awt.event.MouseEvent.BUTTON1);
+            assertTrue(DesktopApp.isPrimaryCardPress(left));
+        }
+        for (int button : new int[]{java.awt.event.MouseEvent.BUTTON2,
+                java.awt.event.MouseEvent.BUTTON3}) {
+            var other = new java.awt.event.MouseEvent(card,
+                    java.awt.event.MouseEvent.MOUSE_PRESSED, 0L,
+                    button == java.awt.event.MouseEvent.BUTTON2
+                            ? java.awt.event.InputEvent.BUTTON2_DOWN_MASK
+                            : java.awt.event.InputEvent.BUTTON3_DOWN_MASK,
+                    8, 8, 1, button == java.awt.event.MouseEvent.BUTTON3, button);
+            assertFalse(DesktopApp.isPrimaryCardPress(other),
+                    "Non-primary mouse buttons must never start a UDF reorder");
+        }
     }
 
 }
