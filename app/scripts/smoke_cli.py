@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Isolated synthetic public-MVP CLI smoke. No authentic UYAP documents."""
 from pathlib import Path
+import os
 import subprocess
 import sys
 import tempfile
@@ -64,6 +65,19 @@ with tempfile.TemporaryDirectory(prefix="embasic-public-smoke-") as folder:
         if attempt.returncode == 0 or rejected.exists() or reason not in attempt.stderr:
             raise AssertionError(
                 f"Invalid CLI batch was not rejected before output: {attempt.stderr}")
+    # A hard link has a different filename but is the same physical UDF.
+    # Reject it before PDFBox font loading or any output staging.
+    alias = root / "alias.udf"
+    os.link(root / "1.udf", alias)
+    alias_target = root / "alias-rejected.pdf"
+    alias_attempt = subprocess.run(
+        ["java", "-Djava.awt.headless=true", "-jar", str(jar),
+         "--merge", str(alias_target), str(root / "1.udf"), str(alias)],
+        capture_output=True, text=True, timeout=90)
+    if (alias_attempt.returncode == 0 or alias_target.exists()
+            or "yinelenen" not in alias_attempt.stderr):
+        raise AssertionError(
+            f"Physical UDF alias was not rejected: {alias_attempt.stderr!r}")
     # A batch of 160 inputs with an absent final file must be rejected before
     # opening the deliberately malformed first ZIP. This is a real CLI path,
     # not a synthetic JUnit-only check, and keeps the output directory clean.
@@ -85,4 +99,4 @@ with tempfile.TemporaryDirectory(prefix="embasic-public-smoke-") as folder:
             f"160-input readability preflight failed: {missing_attempt.stderr!r}")
     print("PASS public synthetic CLI smoke: 2 UDF inputs, PDF header, "
           "early output/input preflight (160 files), non-overwrite, "
-          "duplicate/unsupported batch rejection")
+          "duplicate/alias/unsupported batch rejection")
