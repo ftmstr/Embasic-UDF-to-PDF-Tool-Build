@@ -106,7 +106,7 @@ public final class PdfExporter {
                         while (lastRun >= 0 && runs.get(lastRun).text().isBlank()) lastRun--;
                     for (int runIndex = 0; runIndex <= lastRun; runIndex++) {
                         UdfReader.Run run = runs.get(runIndex);
-                        if (boldOnly && !run.style().bold()) continue;
+                        if (run.style().bold() != boldOnly) continue;
                         String text = run.text();
                         if (index == lastBlock && runIndex == lastRun) text = text.stripTrailing();
                         if (hasMeasuredText(text)) return true;
@@ -185,13 +185,13 @@ public final class PdfExporter {
         }
         PDDocument pdf = new PDDocument();
         try {
-            // An image-only PDF never uses a text font. Avoid probing system
-            // font paths or warming PDFBox's font cache for that case.
+            // Load only fonts used by measured text. Border-only tables and images
+            // need neither font; bold-only paragraphs must not require a
+            // regular font that is never used. Tables with text use regular.
             PDType0Font regular = requiresFont(docs)
                     ? PDType0Font.load(pdf, systemFont(false).toFile()) : null;
-            // Paragraph runs alone need bold; tables always use regular.
-            PDType0Font bold = regular != null && usesBold(docs)
-                    ? PDType0Font.load(pdf, systemFont(true).toFile()) : regular;
+            PDType0Font bold = usesBold(docs)
+                    ? PDType0Font.load(pdf, systemFont(true).toFile()) : null;
             try {
                 for (UdfReader.DocumentSpec document : docs) {
                 try (Layout layout = new Layout(pdf, regular, bold, document.page(), previewOnly)) {
