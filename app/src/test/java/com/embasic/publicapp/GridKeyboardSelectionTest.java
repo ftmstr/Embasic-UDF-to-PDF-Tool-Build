@@ -75,6 +75,22 @@ final class GridKeyboardSelectionTest {
         assertEquals("A",focusOnly.focused());
         assertEquals(List.of("C","F"),focusOnly.selected());
 
+        // Ctrl+A must retain keyboard focus even when the focused card is
+        // virtualized/offscreen; the next arrow must start from that card.
+        var all = GridKeyboardSelection.selectAll(FILES, "F");
+        assertEquals(FILES, all.selected());
+        assertEquals("F", all.focused());
+        assertEquals("F", all.anchor());
+        var afterAll = GridKeyboardSelection.move(FILES, all.selected(),
+                all.anchor(), all.focused(), 1, false, false);
+        assertEquals(List.of("G"), afterAll.selected());
+        assertEquals("G", afterAll.focused());
+        var noFocus = GridKeyboardSelection.selectAll(FILES, null);
+        assertEquals("A", noFocus.focused());
+        assertEquals("A", noFocus.anchor());
+        assertTrue(GridKeyboardSelection.selectAll(List.<String>of(), null).selected().isEmpty());
+        assertNull(GridKeyboardSelection.selectAll(List.<String>of(), null).focused());
+
         var reverseRange = GridKeyboardSelection.move(FILES,List.of("F"),"F","F",
                 -Integer.MAX_VALUE,true,false);
         assertEquals(List.of("A","B","C","D","E","F"),reverseRange.selected());
