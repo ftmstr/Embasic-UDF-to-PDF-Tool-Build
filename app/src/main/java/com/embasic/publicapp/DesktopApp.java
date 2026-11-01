@@ -1116,6 +1116,20 @@ public final class DesktopApp extends JFrame {
             if (index >= 0) grid.scrollRectToVisible(virtualGrid.bounds(index));
         }
     }
+    /**
+     * The GUI's path-only import deduplication deliberately avoids filesystem
+     * probes on Swing's event thread. Recheck physical identity on the worker
+     * before PDF staging so hard/symbolic-link aliases cannot silently produce
+     * duplicate pages. Also fail closed if a source vanished after import.
+     */
+    static int saveWorkspace(List<Path> sources, List<UdfReader.DocumentSpec> docs,
+                             Path output, boolean overwrite) throws Exception {
+        if (sources == null || docs == null || sources.isEmpty() || sources.size() != docs.size())
+            throw new IllegalArgumentException("PDF kaynak listesi tutarsız");
+        FileImportPolicy.preflightReadableMergeFiles(sources);
+        return PdfExporter.save(docs, output, overwrite);
+    }
+
     private void save() {
         if (converting || items.isEmpty() || items.stream().anyMatch(x -> x.document == null)) return;
         JFileChooser picker = new JFileChooser();
@@ -1129,6 +1143,10 @@ public final class DesktopApp extends JFrame {
         if (overwrite && JOptionPane.showConfirmDialog(this, "Mevcut PDF'nin üzerine yazılsın mı?",
                 "Dosya mevcut", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) return;
         final Path output = target;
+        // Snapshot both the source paths and parsed documents in the same EDT turn.
+        // A GUI import may contain two different links to the same physical UDF:
+        // reject that merge before allocating a PDF, just as the CLI does.
+        List<Path> sources = items.stream().map(x -> x.path).toList();
         List<UdfReader.DocumentSpec> docs = items.stream().map(x -> x.document).toList();
         converting = true;
         setQueueEditingEnabled(false);
@@ -1136,7 +1154,7 @@ public final class DesktopApp extends JFrame {
         status.setText("PDF oluşturuluyor...");
         new SwingWorker<Integer, Void>() {
             @Override protected Integer doInBackground() throws Exception {
-                return PdfExporter.save(docs, output, overwrite);
+                return saveWorkspace(sources, docs, output, overwrite);
             }
             @Override protected void done() {
                 converting = false;
