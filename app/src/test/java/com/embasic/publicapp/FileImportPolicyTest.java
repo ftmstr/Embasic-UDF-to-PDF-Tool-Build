@@ -2,12 +2,14 @@ package com.embasic.publicapp;
 
 import static org.junit.jupiter.api.Assertions.*;
 import java.nio.file.Path;
+import java.nio.file.Files;
+import org.junit.jupiter.api.io.TempDir;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
 final class FileImportPolicyTest {
-    @Test void retainsOrderAndIgnoresDuplicatesAndOtherExtensions() {
+    @Test void retainsOrderAndIgnoresDuplicatesAndOtherExtensions(@TempDir Path folder) throws Exception {
         var plan=FileImportPolicy.plan(List.of(Path.of("previous.udf")),
                 List.of(Path.of("next.udf"),Path.of("notes.txt"),
                         Path.of("next.udf"),Path.of("./previous.udf"),
@@ -29,6 +31,18 @@ final class FileImportPolicyTest {
                         Path.of("Üçüncü.UDF").toAbsolutePath().normalize()),
                 FileImportPolicy.requireCompleteMerge(List.of(Path.of("next.udf"),
                         Path.of("Üçüncü.UDF"))));
+        // Two distinct files with identical contents are valid; two paths to
+        // one physical file would duplicate pages even though names differ.
+        Path original = Files.writeString(folder.resolve("original.udf"), "synthetic");
+        Path separate = Files.writeString(folder.resolve("separate.udf"), "synthetic");
+        Path hardLink = Files.createLink(folder.resolve("alias.udf"), original);
+        FileImportPolicy.preflightReadableMergeFiles(
+                FileImportPolicy.requireCompleteMerge(List.of(original, separate)));
+        IllegalArgumentException aliasError = assertThrows(IllegalArgumentException.class,
+                () -> FileImportPolicy.preflightReadableMergeFiles(
+                        FileImportPolicy.requireCompleteMerge(List.of(original, hardLink))));
+        assertTrue(aliasError.getMessage().contains("yinelenen"),
+                "A hard-link alias must be rejected before either archive is parsed");
     }
     @Test void capsHugeFileBatchesWithoutDroppingAcceptedOrder() {
         List<Path> files=new ArrayList<>();
