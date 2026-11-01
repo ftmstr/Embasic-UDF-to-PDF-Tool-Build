@@ -356,8 +356,12 @@ public final class PdfExporter {
         }
         private void word(String text, UdfReader.Style style) throws IOException {
             if (text.isEmpty()) return;
-            PDType0Font font = fonts.get(style.bold());
             float size = style.size();
+            // A glyph that cannot fit vertically on this page belongs to the
+            // next page. In a first-page preview, stop before resolving a font
+            // used only by that later page (potentially expensive on Windows).
+            if (y - size < bottom) newPage();
+            PDType0Font font = fonts.get(style.bold());
             float length = width(text, font, size);
             if (length > right - left)
                 throw new IllegalArgumentException("Sayfaya sığmayan kelime: " + text.substring(0, Math.min(30, text.length())));
