@@ -1151,6 +1151,10 @@ public final class DesktopApp extends JFrame {
                 List<Path> inputs = new ArrayList<>();
                 for (int i = 2; i < args.length; i++) inputs.add(Path.of(args[i]));
                 List<Path> validated = FileImportPolicy.requireCompleteMerge(inputs);
+                // Fail fast if the destination is unusable. In a 160-file merge,
+                // reading all archives before noticing an existing PDF wastes
+                // CPU/RAM; save() rechecks this path to close the race.
+                PdfExporter.preflightTarget(output, false);
                 List<UdfReader.DocumentSpec> parsed = new ArrayList<>();
                 for (Path input : validated) parsed.add(UdfReader.read(input));
                 int count = PdfExporter.save(parsed, output, false);
