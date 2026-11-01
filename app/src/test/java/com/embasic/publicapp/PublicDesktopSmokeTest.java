@@ -567,6 +567,25 @@ final class PublicDesktopSmokeTest {
         assertTrue(DesktopApp.isPrimaryCardPress(primaryRelease),
                 "The primary release must still complete the drag");
 
+        // Drag motion is only actionable while BUTTON1 remains held. In
+        // particular, a secondary drag event must not move selected UDFs.
+        for (int modifiers : new int[]{java.awt.event.InputEvent.BUTTON1_DOWN_MASK,
+                java.awt.event.InputEvent.BUTTON1_DOWN_MASK | java.awt.event.InputEvent.CTRL_DOWN_MASK,
+                java.awt.event.InputEvent.BUTTON1_DOWN_MASK | java.awt.event.InputEvent.SHIFT_DOWN_MASK}) {
+            var primaryDrag = new java.awt.event.MouseEvent(card,
+                    java.awt.event.MouseEvent.MOUSE_DRAGGED, 0L, modifiers,
+                    20, 20, 0, false, java.awt.event.MouseEvent.NOBUTTON);
+            assertTrue(DesktopApp.isPrimaryCardDrag(primaryDrag));
+        }
+        for (int modifiers : new int[]{0, java.awt.event.InputEvent.BUTTON2_DOWN_MASK,
+                java.awt.event.InputEvent.BUTTON3_DOWN_MASK}) {
+            var secondaryDrag = new java.awt.event.MouseEvent(card,
+                    java.awt.event.MouseEvent.MOUSE_DRAGGED, 0L, modifiers,
+                    20, 20, 0, false, java.awt.event.MouseEvent.NOBUTTON);
+            assertFalse(DesktopApp.isPrimaryCardDrag(secondaryDrag),
+                    "Secondary-only motion must never start or continue a reorder");
+        }
+
         // Both the + tile background and its caption receive mouse events.
         // Only primary clicks should open the chooser; keyboard bindings stay separate.
         javax.swing.SwingUtilities.invokeAndWait(() -> {
