@@ -42,12 +42,15 @@ public final class GridKeyboardSelection {
                 if (oldIndex >= 0) break;
             }
         }
-        // With no focused or selected card, the first arrow must reach an\n        // endpoint rather than skip the first/last card.\n        if (oldIndex < 0) oldIndex = delta < 0 ? files.size() : -1;
+        // With no focused or selected card, the first arrow must reach an
+        // endpoint rather than skip the first/last card.
+        if (oldIndex < 0) oldIndex = delta < 0 ? files.size() : -1;
         int next = (int) Math.max(0L, Math.min(files.size() - 1L, (long) oldIndex + delta));
         T nextFile = files.get(next);
         LinkedHashSet<T> nextSelection = new LinkedHashSet<>();
         for (T item : files) if (selected.contains(item)) nextSelection.add(item);
-        T nextAnchor = anchor != null && files.contains(anchor) ? anchor\n                : files.get(Math.max(0, Math.min(files.size() - 1, oldIndex)));
+        T nextAnchor = anchor != null && files.contains(anchor) ? anchor
+                : files.get(Math.max(0, Math.min(files.size() - 1, oldIndex)));
         if (shift) {
             int start = files.indexOf(nextAnchor);
             if (!ctrl) nextSelection.clear();
