@@ -442,13 +442,12 @@ public final class PdfExporter {
             float totalWidth=0;
             for(float width:geometry.widths())totalWidth+=width;
             if(totalWidth>right-left)throw new IllegalArgumentException("Tablo sayfa genişliğini aşıyor");
-            // Validate all visible cell text and vertical constraints before writing any cell.
-            // Spaces-only cells draw borders but no glyphs or text advances.
-            for(TableLayout.CellPosition cell:geometry.cells()) {
-                if(cell.height()<18 || (!cell.text().isBlank()
-                        && fonts.get(false).getStringWidth(cell.text())*10/1000f>cell.width()-8))
+            // Font-independent cell height checks remain eager. Text widths
+            // are checked only when their page group is actually rendered:
+            // a first-page thumbnail must not load fonts for later table pages.
+            for(TableLayout.CellPosition cell:geometry.cells())
+                if(cell.height()<18)
                     throw new IllegalArgumentException("Tablo hücresi taşıyor: "+cell.text());
-            }
             List<int[]> groups=TableLayout.pageGroups(geometry);
             // Cells are in row order. A row-height prefix and forward-only cell
             // cursor avoid rescanning the entire table for every page group.
@@ -464,6 +463,11 @@ public final class PdfExporter {
                 if(y-height<bottom)newPage();
                 while(cellCursor<cells.size() && cells.get(cellCursor).row()<group[1]) {
                     TableLayout.CellPosition cell=cells.get(cellCursor++);
+                    // The full export still rejects overflow and missing glyphs.
+                    // Preview does not probe fonts belonging only to later pages.
+                    if(!cell.text().isBlank()
+                            && fonts.get(false).getStringWidth(cell.text())*10/1000f>cell.width()-8)
+                        throw new IllegalArgumentException("Tablo hücresi taşıyor: "+cell.text());
                     float rowOffset=(float)(rowTop[cell.row()]-rowTop[group[0]]);
                     float cellTop=y-rowOffset;
                     stream.setStrokingColor(Color.BLACK);
