@@ -42,8 +42,12 @@ final class FileImportPolicyTest {
         assertEquals("fixture-159.udf",plan.accepted().get(159).getFileName().toString());
         assertThrows(IllegalArgumentException.class, () -> FileImportPolicy.requireCompleteMerge(files),
                 "CLI must reject all 2,500 arguments before parsing the first archive");
-        assertEquals(160, FileImportPolicy.requireCompleteMerge(
-                files.subList(0, FileImportPolicy.MAX_CARDS)).size());
+        var accepted = FileImportPolicy.requireCompleteMerge(
+                files.subList(0, FileImportPolicy.MAX_CARDS));
+        assertEquals(160, accepted.size());
+        assertThrows(IllegalArgumentException.class,
+                () -> FileImportPolicy.preflightReadableMergeFiles(accepted),
+                "A missing input must fail before opening any ZIP");
     }
     @Test void existingLimitAndRepeatedBatchAreSafe() {
         List<Path> existing=new ArrayList<>();
