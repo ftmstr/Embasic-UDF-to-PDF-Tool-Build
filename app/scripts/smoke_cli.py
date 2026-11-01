@@ -27,6 +27,26 @@ with tempfile.TemporaryDirectory(prefix="embasic-public-smoke-") as folder:
     failed = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
     if failed.returncode == 0 or target.read_bytes() != pdf:
         raise AssertionError("Existing PDF overwrite guard failed")
+    # A 160-file merge must not parse even the first archive when its output
+    # cannot be published. A deliberately malformed synthetic ZIP proves the
+    # existing-target error wins before UDF parsing, with no output mutation.
+    corrupt = root / "malformed.udf"
+    corrupt.write_bytes(b"not a ZIP archive")
+    early = subprocess.run(
+        ["java", "-Djava.awt.headless=true", "-jar", str(jar),
+         "--merge", str(target), str(corrupt)],
+        capture_output=True, text=True, timeout=90)
+    if (early.returncode == 0 or "PDF zaten var" not in early.stderr
+            or target.read_bytes() != pdf):
+        raise AssertionError("Existing target was not rejected before UDF parsing")
+    invalid_folder = root / "missing-folder" / "new.pdf"
+    early_folder = subprocess.run(
+        ["java", "-Djava.awt.headless=true", "-jar", str(jar),
+         "--merge", str(invalid_folder), str(corrupt)],
+        capture_output=True, text=True, timeout=90)
+    if (early_folder.returncode == 0 or "Çıktı klasörü bulunamadı" not in early_folder.stderr
+            or invalid_folder.exists()):
+        raise AssertionError("Missing output directory was not rejected before UDF parsing")
     # The CLI must reject an incomplete batch before parsing or publishing a
     # PDF. Otherwise duplicate arguments silently repeat pages in the merge.
     for invalid, reason in (
@@ -42,4 +62,4 @@ with tempfile.TemporaryDirectory(prefix="embasic-public-smoke-") as folder:
             raise AssertionError(
                 f"Invalid CLI batch was not rejected before output: {attempt.stderr}")
     print("PASS public synthetic CLI smoke: 2 UDF inputs, PDF header, "
-          "non-overwrite, duplicate/unsupported batch rejection")
+          "early output preflight, non-overwrite, duplicate/unsupported batch rejection")
