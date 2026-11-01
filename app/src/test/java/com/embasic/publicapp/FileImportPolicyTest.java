@@ -44,6 +44,29 @@ final class FileImportPolicyTest {
         assertTrue(aliasError.getMessage().contains("yinelenen"),
                 "A hard-link alias must be rejected before either archive is parsed");
     }
+    @Test void guiExportRejectsAliasedOrMissingSourcesBeforePdfStaging(@TempDir Path folder) throws Exception {
+        // The GUI accepts paths without blocking the EDT on filesystem identity
+        // probes. Its background save must reject hard links before PDFBox runs.
+        Path source = Files.writeString(folder.resolve("source.udf"), "public synthetic fixture");
+        Path alias = Files.createLink(folder.resolve("alias.udf"), source);
+        Path output = folder.resolve("merged.pdf");
+        var paragraph = new UdfReader.Paragraph(List.of(
+                new UdfReader.Run("public test", new UdfReader.Style(
+                        11, false, java.awt.Color.BLACK))));
+        var doc = new UdfReader.DocumentSpec("source.udf", "1.0", List.of(paragraph));
+        var docs = List.of(doc, doc);
+        IllegalArgumentException duplicate = assertThrows(IllegalArgumentException.class,
+                () -> DesktopApp.saveWorkspace(List.of(source, alias), docs, output, false));
+        assertTrue(duplicate.getMessage().contains("yinelenen"));
+        assertFalse(Files.exists(output), "Rejected GUI merge must not stage or publish a PDF");
+
+        Files.delete(alias);
+        IllegalArgumentException missing = assertThrows(IllegalArgumentException.class,
+                () -> DesktopApp.saveWorkspace(List.of(source, alias), docs, output, false));
+        assertTrue(missing.getMessage().contains("okunabilir"));
+        assertFalse(Files.exists(output));
+    }
+
     @Test void capsHugeFileBatchesWithoutDroppingAcceptedOrder() {
         List<Path> files=new ArrayList<>();
         for(int i=0;i<2_500;i++)files.add(Path.of("fixture-"+i+".udf"));
