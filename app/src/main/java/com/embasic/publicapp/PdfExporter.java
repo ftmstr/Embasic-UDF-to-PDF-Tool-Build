@@ -85,10 +85,20 @@ public final class PdfExporter {
      */
     private static boolean requiresFont(List<UdfReader.DocumentSpec> docs) {
         for (UdfReader.DocumentSpec document : docs)
-            for (DocumentElements.Block block : document.blocks())
-                if (block instanceof DocumentElements.ParagraphBlock
-                        || block instanceof DocumentElements.TableBlock)
-                    return true;
+            for (DocumentElements.Block block : document.blocks()) {
+                // An empty editor run emits no glyph and needs no font. Keep
+                // whitespace runs: layout measures their advance widths.
+                if (block instanceof DocumentElements.ParagraphBlock paragraph) {
+                    for (UdfReader.Run run : paragraph.paragraph().runs())
+                        if (!run.text().isEmpty()) return true;
+                } else if (block instanceof DocumentElements.TableBlock table) {
+                    // Empty cells still draw borders, but emit no text. Avoid
+                    // triggering first-use system font discovery for grid-only UDFs.
+                    for (DocumentElements.Row row : table.rows())
+                        for (DocumentElements.Cell cell : row.cells())
+                            if (!cell.text().isEmpty()) return true;
+                }
+            }
         return false;
     }
 
@@ -417,7 +427,8 @@ public final class PdfExporter {
             if(totalWidth>right-left)throw new IllegalArgumentException("Tablo sayfa genişliğini aşıyor");
             // Validate all cell text and vertical constraints before writing any cell.
             for(TableLayout.CellPosition cell:geometry.cells()) {
-                if(cell.height()<18 || regular.getStringWidth(cell.text())*10/1000f>cell.width()-8)
+                if(cell.height()<18 || (!cell.text().isEmpty()
+                        && regular.getStringWidth(cell.text())*10/1000f>cell.width()-8))
                     throw new IllegalArgumentException("Tablo hücresi taşıyor: "+cell.text());
             }
             List<int[]> groups=TableLayout.pageGroups(geometry);
