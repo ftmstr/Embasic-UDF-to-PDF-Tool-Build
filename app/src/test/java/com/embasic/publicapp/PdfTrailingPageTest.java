@@ -231,6 +231,24 @@ final class PdfTrailingPageTest {
                 assertEquals(1, pdf.getNumberOfPages());
                 assertTrue(new PDFTextStripper().getText(pdf).contains("VISIBLE"));
             }
+            // A bold glyph on a later page must not make the first-page
+            // thumbnail depend on that missing font. Full export must still
+            // reject the same document instead of silently losing the glyph.
+            List<DocumentElements.Block> lateBlocks = new ArrayList<>(paragraphs(100).blocks());
+            lateBlocks.set(99, new DocumentElements.ParagraphBlock(
+                    new UdfReader.Paragraph(List.of(
+                            new UdfReader.Run("LATE_BOLD", boldStyle)))));
+            var lateBold = new UdfReader.DocumentSpec("late-bold.udf", "1.0",
+                    List.of(), lateBlocks, DocumentElements.PageSpec.a4());
+            try (PDDocument preview = PdfExporter.renderPreview(lateBold)) {
+                assertEquals(1, preview.getNumberOfPages());
+                String text = new PDFTextStripper().getText(preview);
+                assertTrue(text.contains("LINE0"));
+                assertFalse(text.contains("LATE_BOLD"));
+            }
+            assertThrows(IllegalArgumentException.class,
+                    () -> { try (PDDocument ignored = PdfExporter.render(List.of(lateBold))) {} },
+                    "Full export must still require the bold font on later pages");
             // Interior bold spaces still require their own font for width.
             var measuredBoldSpace = new UdfReader.DocumentSpec("bold-space.udf", "1.0",
                     List.of(new UdfReader.Paragraph(List.of(
