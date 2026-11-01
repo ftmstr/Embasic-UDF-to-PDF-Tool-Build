@@ -238,13 +238,26 @@ public final class PdfExporter {
         }
     }
 
-    public static int save(List<UdfReader.DocumentSpec> docs, Path target, boolean overwrite) throws Exception {
-        if (target == null || !target.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".pdf"))
+    /**
+     * Reject unusable output paths before a CLI merge parses up to 160 UDFs.
+     * This is advisory only: save() repeats the check and publishValidated()
+     * still enforces no-replace semantics against concurrent file creation.
+     */
+    static Path preflightTarget(Path target, boolean overwrite) {
+        if (target == null || target.getFileName() == null
+                || !target.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".pdf"))
             throw new IllegalArgumentException("Çıktı dosyası .pdf uzantılı olmalıdır");
         Path abs = target.toAbsolutePath().normalize();
         Path folder = abs.getParent();
         if (!Files.isDirectory(folder)) throw new IllegalArgumentException("Çıktı klasörü bulunamadı");
-        if (Files.exists(abs) && !overwrite) throw new IllegalArgumentException("PDF zaten var, üzerine yazma onayı gerekli");
+        if (Files.exists(abs) && !overwrite)
+            throw new IllegalArgumentException("PDF zaten var, üzerine yazma onayı gerekli");
+        return abs;
+    }
+
+    public static int save(List<UdfReader.DocumentSpec> docs, Path target, boolean overwrite) throws Exception {
+        Path abs = preflightTarget(target, overwrite);
+        Path folder = abs.getParent();
         Path staging = Files.createTempFile(folder, ".embasic-pending-", ".pdf");
         try {
             int pages;
