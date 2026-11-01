@@ -511,7 +511,7 @@ final class PublicDesktopSmokeTest {
         }
     }
 
-    @Test void nativeFileDropTargetsAndPrimaryButtonDragContract() {
+    @Test void nativeFileDropTargetsAndPrimaryButtonDragContract() throws Exception {
         // Headless Swing component contract: OS drag/drop must not depend on
         // hitting the tiny exposed background of a thumbnail card.
         JPanel card = new JPanel();
@@ -555,7 +555,37 @@ final class PublicDesktopSmokeTest {
                     8, 8, 1, button == java.awt.event.MouseEvent.BUTTON3, button);
             assertFalse(DesktopApp.isPrimaryCardPress(other),
                     "Non-primary mouse buttons must never start a UDF reorder");
+            var secondaryRelease = new java.awt.event.MouseEvent(card,
+                    java.awt.event.MouseEvent.MOUSE_RELEASED, 0L, 0,
+                    8, 8, 1, false, button);
+            assertFalse(DesktopApp.isPrimaryCardPress(secondaryRelease),
+                    "A secondary release during a primary drag must not commit a reorder");
         }
+        var primaryRelease = new java.awt.event.MouseEvent(card,
+                java.awt.event.MouseEvent.MOUSE_RELEASED, 0L, 0,
+                8, 8, 1, false, java.awt.event.MouseEvent.BUTTON1);
+        assertTrue(DesktopApp.isPrimaryCardPress(primaryRelease),
+                "The primary release must still complete the drag");
+
+        // Both the + tile background and its caption receive mouse events.
+        // Only primary clicks should open the chooser; keyboard bindings stay separate.
+        javax.swing.SwingUtilities.invokeAndWait(() -> {
+            JPanel addTile = new JPanel();
+            JLabel addCaption = new JLabel("+ UDF ekle");
+            java.util.concurrent.atomic.AtomicInteger opens = new java.util.concurrent.atomic.AtomicInteger();
+            DesktopApp.installAddCardMouse(addTile, addCaption, opens::incrementAndGet);
+            for (javax.swing.JComponent target : new javax.swing.JComponent[]{addTile, addCaption}) {
+                for (int button : new int[]{java.awt.event.MouseEvent.BUTTON3,
+                        java.awt.event.MouseEvent.BUTTON2, java.awt.event.MouseEvent.BUTTON1}) {
+                    var click = new java.awt.event.MouseEvent(target,
+                            java.awt.event.MouseEvent.MOUSE_CLICKED, 0L, 0,
+                            8, 8, 1, button == java.awt.event.MouseEvent.BUTTON3, button);
+                    for (java.awt.event.MouseListener listener : target.getMouseListeners())
+                        listener.mouseClicked(click);
+                }
+            }
+            assertEquals(2, opens.get(), "Only left clicks on the tile and caption activate add");
+        });
     }
 
 }
