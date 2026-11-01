@@ -64,5 +64,25 @@ with tempfile.TemporaryDirectory(prefix="embasic-public-smoke-") as folder:
         if attempt.returncode == 0 or rejected.exists() or reason not in attempt.stderr:
             raise AssertionError(
                 f"Invalid CLI batch was not rejected before output: {attempt.stderr}")
+    # A batch of 160 inputs with an absent final file must be rejected before
+    # opening the deliberately malformed first ZIP. This is a real CLI path,
+    # not a synthetic JUnit-only check, and keeps the output directory clean.
+    for n in range(3, 161):
+        (root / f"fixture-{n}.udf").write_bytes((root / "1.udf").read_bytes())
+    missing = root / "missing-last.udf"
+    batch = [str(corrupt)] + [str(root / f"fixture-{n}.udf")
+                              for n in range(3, 161)] + [str(missing)]
+    assert len(batch) == 160
+    preflight_target = root / "incomplete-batch.pdf"
+    missing_attempt = subprocess.run(
+        ["java", "-Djava.awt.headless=true", "-jar", str(jar),
+         "--merge", str(preflight_target), *batch],
+        capture_output=True, text=True, timeout=90)
+    if (missing_attempt.returncode == 0 or preflight_target.exists()
+            or "okunabilir" not in missing_attempt.stderr
+            or "ZIP" in missing_attempt.stderr):
+        raise AssertionError(
+            f"160-input readability preflight failed: {missing_attempt.stderr!r}")
     print("PASS public synthetic CLI smoke: 2 UDF inputs, PDF header, "
-          "early output preflight, non-overwrite, duplicate/unsupported batch rejection")
+          "early output/input preflight (160 files), non-overwrite, "
+          "duplicate/unsupported batch rejection")
