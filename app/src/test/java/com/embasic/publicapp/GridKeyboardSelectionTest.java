@@ -95,6 +95,30 @@ final class GridKeyboardSelectionTest {
                 null, null, -1, false, false);
         assertEquals(List.of("I"), reverseFirst.selected());
         assertEquals("I", reverseFirst.focused());
+        // The first vertical arrow uses the first/last logical card, not
+        // column-1 or size-column when focus has never been established.
+        var firstDown = GridKeyboardSelection.move(FILES, List.of(),
+                null, null, 3, false, false);
+        assertEquals(List.of("A"), firstDown.selected());
+        assertEquals("A", firstDown.focused());
+        var firstUp = GridKeyboardSelection.move(FILES, List.of(),
+                null, null, -3, false, false);
+        assertEquals(List.of("I"), firstUp.selected());
+        assertEquals("I", firstUp.focused());
+        // A stale anchor from a previous selection cannot extend the first
+        // Shift+Down to an unrelated offscreen card.
+        var firstShiftDown = GridKeyboardSelection.move(FILES, List.of(),
+                "G", null, 3, true, false);
+        assertEquals(List.of("A"), firstShiftDown.selected());
+        assertEquals("A", firstShiftDown.anchor());
+        var firstCtrlDown = GridKeyboardSelection.move(FILES, List.of(),
+                null, null, 3, false, true);
+        assertTrue(firstCtrlDown.selected().isEmpty());
+        assertEquals("A", firstCtrlDown.focused());
+        // Existing logical selection still provides the navigation origin.
+        var fromSelection = GridKeyboardSelection.move(FILES, List.of("F"),
+                "F", null, 3, false, false);
+        assertEquals(List.of("I"), fromSelection.selected());
         var noFocus = GridKeyboardSelection.selectAll(FILES, null);
         assertEquals("A", noFocus.focused());
         assertEquals("A", noFocus.anchor());
