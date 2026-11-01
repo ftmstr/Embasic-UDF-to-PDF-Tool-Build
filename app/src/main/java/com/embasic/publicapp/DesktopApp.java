@@ -566,6 +566,11 @@ public final class DesktopApp extends JFrame {
         return label;
     }
 
+    /** Only a primary-button press may capture a card for selection and reorder. */
+    static boolean isPrimaryCardPress(MouseEvent event) {
+        return SwingUtilities.isLeftMouseButton(event);
+    }
+
     private JPanel card(Item item) {
         JPanel card = new JPanel(new BorderLayout(3, 5));
         ThumbnailSizing.Size size=ThumbnailSizing.at(thumbnailZoom.getValue());
@@ -598,6 +603,9 @@ public final class DesktopApp extends JFrame {
             private Point pressed;
             private boolean collapseOnClick;
             @Override public void mousePressed(MouseEvent e) {
+                // A Windows right-click or middle-button gesture must never
+                // capture the card and accidentally reorder selected UDFs.
+                if (!isPrimaryCardPress(e)) return;
                 pressed = SwingUtilities.convertPoint((Component) e.getSource(), e.getPoint(), grid);
                 capturedCard=card;
                 capturedItem=item;
