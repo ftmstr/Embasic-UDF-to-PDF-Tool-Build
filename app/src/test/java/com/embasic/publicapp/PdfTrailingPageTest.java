@@ -230,6 +230,33 @@ final class PdfTrailingPageTest {
             if (previous == null) System.clearProperty(property);
             else System.setProperty(property, previous);
         }
+
+        // A bold-only paragraph must not probe an unused regular font.
+        // Mixed-style documents must still fail closed if regular is missing.
+        String regularProperty = "embasic.font.regular";
+        String priorRegular = System.getProperty(regularProperty);
+        System.setProperty(regularProperty, "__embasic_missing_regular_font_test__.ttf");
+        try {
+            var boldStyle = new UdfReader.Style(11f, true, Color.BLACK);
+            var plainStyle = new UdfReader.Style(11f, false, Color.BLACK);
+            var boldOnly = new UdfReader.DocumentSpec("bold-only.udf", "1.0",
+                    List.of(new UdfReader.Paragraph(List.of(
+                            new UdfReader.Run("BOLDONLY", boldStyle)))));
+            try (PDDocument pdf = PdfExporter.render(List.of(boldOnly))) {
+                assertEquals(1, pdf.getNumberOfPages());
+                assertTrue(new PDFTextStripper().getText(pdf).contains("BOLDONLY"));
+            }
+            var mixed = new UdfReader.DocumentSpec("mixed.udf", "1.0",
+                    List.of(new UdfReader.Paragraph(List.of(
+                            new UdfReader.Run("BOLD", boldStyle),
+                            new UdfReader.Run("REGULAR", plainStyle)))));
+            assertThrows(IllegalArgumentException.class,
+                    () -> { try (PDDocument ignored = PdfExporter.render(List.of(mixed))) {} },
+                    "A mixed-style PDF must not silently omit its regular font");
+        } finally {
+            if (priorRegular == null) System.clearProperty(regularProperty);
+            else System.setProperty(regularProperty, priorRegular);
+        }
     }
 
 
