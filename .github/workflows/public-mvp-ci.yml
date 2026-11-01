@@ -54,6 +54,12 @@ jobs:
       - name: CLI synthetic UDF to PDF smoke
         run: python app/scripts/smoke_cli.py app/target/embasic-public-desktop-0.1.0-SNAPSHOT-all.jar
 
+      # Measure a real, valid 160-file batch on both OS runners. This is a
+      # performance baseline (wall time, Java CPU and peak RSS), not a claim of
+      # physical Windows acceptance or a new JUnit pass count.
+      - name: Profile 160 valid public synthetic UDF files (512 MiB heap)
+        run: python app/scripts/profile_160.py app/target/embasic-public-desktop-0.1.0-SNAPSHOT-all.jar
+
       # Robot is never part of the default/scheduled CI gate: hosted runners
       # may not expose a real interactive desktop. Opt-in runs fail when
       # there is no desktop rather than falsely reporting GUI acceptance.
