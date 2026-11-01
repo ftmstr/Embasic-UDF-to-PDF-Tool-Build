@@ -42,15 +42,20 @@ public final class GridKeyboardSelection {
                 if (oldIndex >= 0) break;
             }
         }
-        // With no focused or selected card, the first arrow must reach an
-        // endpoint rather than skip the first/last card.
-        if (oldIndex < 0) oldIndex = delta < 0 ? files.size() : -1;
-        int next = (int) Math.max(0L, Math.min(files.size() - 1L, (long) oldIndex + delta));
+        // Without focus or selection, the first key must land on the first
+        // or last card even for a vertical (+/-columns) arrow. Adding delta
+        // to a synthetic -1/size origin would otherwise skip an entire row.
+        boolean hasOrigin = oldIndex >= 0;
+        int next = hasOrigin
+                ? (int) Math.max(0L, Math.min(files.size() - 1L, (long) oldIndex + delta))
+                : (delta < 0 ? files.size() - 1 : 0);
         T nextFile = files.get(next);
         LinkedHashSet<T> nextSelection = new LinkedHashSet<>();
         for (T item : files) if (selected.contains(item)) nextSelection.add(item);
-        T nextAnchor = anchor != null && files.contains(anchor) ? anchor
-                : files.get(Math.max(0, Math.min(files.size() - 1, oldIndex)));
+        // A stale anchor must not turn the first Shift+arrow into a surprise
+        // multi-card range when no card is currently focused or selected.
+        T nextAnchor = !hasOrigin ? nextFile
+                : anchor != null && files.contains(anchor) ? anchor : files.get(oldIndex);
         if (shift) {
             int start = files.indexOf(nextAnchor);
             if (!ctrl) nextSelection.clear();
