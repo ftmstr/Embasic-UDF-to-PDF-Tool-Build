@@ -1155,6 +1155,9 @@ public final class DesktopApp extends JFrame {
                 // reading all archives before noticing an existing PDF wastes
                 // CPU/RAM; save() rechecks this path to close the race.
                 PdfExporter.preflightTarget(output, false);
+                // Check every input first: a missing final file must not trigger
+                // expensive parsing of up to 159 earlier ZIP/XML documents.
+                FileImportPolicy.preflightReadableMergeFiles(validated);
                 List<UdfReader.DocumentSpec> parsed = new ArrayList<>();
                 for (Path input : validated) parsed.add(UdfReader.read(input));
                 int count = PdfExporter.save(parsed, output, false);
