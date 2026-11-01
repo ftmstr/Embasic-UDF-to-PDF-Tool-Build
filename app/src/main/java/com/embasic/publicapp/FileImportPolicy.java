@@ -1,6 +1,8 @@
 package com.embasic.publicapp;
 
+import java.io.IOException;
 import java.nio.file.Files;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -43,10 +45,36 @@ public final class FileImportPolicy {
      * The interactive grid retains its existing per-card error handling.
      */
     static void preflightReadableMergeFiles(List<Path> validated) {
+        // A second spelling of the same file (symbolic link or hard link)
+        // must not silently duplicate its pages in the output PDF. File keys
+        // avoid quadratic filesystem probes for ordinary 160-file batches.
+        Set<Object> identities = new HashSet<>();
+        List<Path> checked = new ArrayList<>();
+        List<Path> withoutIdentity = new ArrayList<>();
         for (Path path : validated) {
             if (!Files.isRegularFile(path) || !Files.isReadable(path))
                 throw new IllegalArgumentException("Geçerli, okunabilir bir .udf dosyası seçin: "
                         + path.getFileName());
+            try {
+                Object identity = Files.readAttributes(path, BasicFileAttributes.class).fileKey();
+                if (identity != null) {
+                    if (!identities.add(identity))
+                        throw new IllegalArgumentException("Birleştirme aynı UDF dosyasına ait yinelenen bağlantı içeriyor");
+                    // Some providers cannot supply file keys; compare those
+                    // earlier paths with isSameFile instead of trusting names.
+                    for (Path previous : withoutIdentity)
+                        if (Files.isSameFile(path, previous))
+                            throw new IllegalArgumentException("Birleştirme aynı UDF dosyasına ait yinelenen bağlantı içeriyor");
+                } else {
+                    for (Path previous : checked)
+                        if (Files.isSameFile(path, previous))
+                            throw new IllegalArgumentException("Birleştirme aynı UDF dosyasına ait yinelenen bağlantı içeriyor");
+                    withoutIdentity.add(path);
+                }
+                checked.add(path);
+            } catch (IOException ex) {
+                throw new IllegalArgumentException("UDF dosyası doğrulanamadı: " + path.getFileName(), ex);
+            }
         }
     }
 
