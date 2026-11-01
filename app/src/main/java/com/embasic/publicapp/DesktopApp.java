@@ -1146,6 +1146,10 @@ public final class DesktopApp extends JFrame {
                 if (args.length < 3 || !args[0].equals("--merge"))
                     throw new IllegalArgumentException("Kullanım: --merge output.pdf file1.udf [file2.udf ...]");
                 Path output = Path.of(args[1]);
+                // Reject oversized CLI batches before parsing any UDF or allocating previews.
+                if (args.length - 2 > FileImportPolicy.MAX_CARDS)
+                    throw new IllegalArgumentException("En fazla " + FileImportPolicy.MAX_CARDS
+                            + " UDF dosyası birleştirilebilir");
                 List<UdfReader.DocumentSpec> parsed = new ArrayList<>();
                 for (int i = 2; i < args.length; i++)
                     parsed.add(UdfReader.read(Path.of(args[i])));

@@ -126,6 +126,11 @@ public final class PdfExporter {
     private static PDDocument renderInternal(List<UdfReader.DocumentSpec> docs,
                                              boolean previewOnly) throws Exception {
         if (docs == null || docs.isEmpty()) throw new IllegalArgumentException("PDF için en az bir UDF gerekli");
+        // Match the 160-card desktop limit for direct API/CLI merges as well.
+        // Reject before PDF allocation, font discovery, or output staging.
+        if (docs.size() > FileImportPolicy.MAX_CARDS)
+            throw new IllegalArgumentException("En fazla " + FileImportPolicy.MAX_CARDS
+                    + " UDF dosyası birleştirilebilir");
         // A final run or paragraph may be omitted during layout to avoid blank
         // pages. Validate the ORIGINAL text first: unsupported separators must
         // never disappear through stripTrailing(), isBlank(), or run skipping.
