@@ -142,6 +142,43 @@ public final class PdfExporter {
         PreviewPageComplete() { super(null, null, false, false); }
     }
 
+    /**
+     * Check font-independent geometry before loading system fonts. An invalid
+     * table or oversized image must fail immediately instead of waiting for
+     * PDFBox's potentially expensive first-use font discovery on Windows.
+     * The actual renderer retains its layout checks as a second safeguard.
+     */
+    private static void preflightPageGeometry(UdfReader.DocumentSpec document) {
+        DocumentElements.PageSpec page = document.page();
+        float usableWidth = page.width() - 2 * page.margin();
+        float usableHeight = page.height() - 2 * page.margin();
+        if (!Float.isFinite(usableWidth) || !Float.isFinite(usableHeight)
+                || usableWidth <= 0 || usableHeight <= 0)
+            throw new IllegalArgumentException("Geçersiz sayfa geometrisi");
+        for (DocumentElements.Block block : document.blocks()) {
+            if (block instanceof DocumentElements.TableBlock table) {
+                TableLayout.Geometry geometry = TableLayout.calculate(table);
+                float width = 0f;
+                for (float column : geometry.widths()) width += column;
+                if (width > usableWidth)
+                    throw new IllegalArgumentException("Tablo sayfa genişliğini aşıyor");
+                for (TableLayout.CellPosition cell : geometry.cells())
+                    if (cell.height() < 18)
+                        throw new IllegalArgumentException("Tablo hücresi taşıyor: " + cell.text());
+                for (int[] group : TableLayout.pageGroups(geometry)) {
+                    double height = 0;
+                    for (int row = group[0]; row < group[1]; row++)
+                        height += geometry.rowHeights().get(row);
+                    if (height > usableHeight)
+                        throw new IllegalArgumentException("Rowspan grubu tek sayfaya sığmıyor");
+                }
+            } else if (block instanceof DocumentElements.ImageBlock image) {
+                if (image.width() > usableWidth || image.height() > usableHeight)
+                    throw new IllegalArgumentException("PNG sayfaya sığmıyor");
+            }
+        }
+    }
+
     private static PDDocument renderInternal(List<UdfReader.DocumentSpec> docs,
                                              boolean previewOnly) throws Exception {
         if (docs == null || docs.isEmpty()) throw new IllegalArgumentException("PDF için en az bir UDF gerekli");
@@ -182,6 +219,7 @@ public final class PdfExporter {
             if (!hasVisibleContent)
                 throw new IllegalArgumentException(
                         "PDF'ye aktarılacak görünür UDF içeriği bulunamadı: " + document.fileName());
+            preflightPageGeometry(document);
         }
         PDDocument pdf = new PDDocument();
         try {
