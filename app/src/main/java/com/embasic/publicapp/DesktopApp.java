@@ -220,7 +220,17 @@ public final class DesktopApp extends JFrame {
 
         fileDrop = new TransferHandler() {
             @Override public boolean canImport(TransferSupport support) {
-                return !converting && support.isDataFlavorSupported(DataFlavor.javaFileListFlavor);
+                if (converting || !support.isDataFlavorSupported(DataFlavor.javaFileListFlavor))
+                    return false;
+                if (support.isDrop()) {
+                    // Never let a Windows Explorer MOVE/LINK gesture remove or
+                    // relocate the source UDF: this workspace only imports a copy.
+                    // Reject sources that cannot supply COPY instead of silently
+                    // accepting a destructive action.
+                    if ((support.getSourceDropActions() & COPY) == 0) return false;
+                    support.setDropAction(COPY);
+                }
+                return true;
             }
             @Override public boolean importData(TransferSupport support) {
                 try {
