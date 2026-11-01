@@ -98,7 +98,7 @@ public final class PdfExporter {
                     if (!boldOnly)
                         for (DocumentElements.Row row : table.rows())
                             for (DocumentElements.Cell cell : row.cells())
-                                if (!cell.text().isEmpty()) return true;
+                                if (!cell.text().isBlank()) return true;
                 } else if (block instanceof DocumentElements.ParagraphBlock paragraph) {
                     List<UdfReader.Run> runs = paragraph.paragraph().runs();
                     int lastRun = runs.size() - 1;
@@ -185,7 +185,7 @@ public final class PdfExporter {
         }
         PDDocument pdf = new PDDocument();
         try {
-            // Load only fonts used by measured text. Border-only tables and images
+            // Load only fonts used by measured text. Border-only tables (including\n            // space-padded empty cells) and images
             // need neither font; bold-only paragraphs must not require a
             // regular font that is never used. Tables with text use regular.
             PDType0Font regular = requiresFont(docs)
@@ -448,9 +448,9 @@ public final class PdfExporter {
             float totalWidth=0;
             for(float width:geometry.widths())totalWidth+=width;
             if(totalWidth>right-left)throw new IllegalArgumentException("Tablo sayfa genişliğini aşıyor");
-            // Validate all cell text and vertical constraints before writing any cell.
+            // Validate all visible cell text and vertical constraints before writing any cell.\n            // Spaces-only cells draw borders but no glyphs or text advances.
             for(TableLayout.CellPosition cell:geometry.cells()) {
-                if(cell.height()<18 || (!cell.text().isEmpty()
+                if(cell.height()<18 || (!cell.text().isBlank()
                         && regular.getStringWidth(cell.text())*10/1000f>cell.width()-8))
                     throw new IllegalArgumentException("Tablo hücresi taşıyor: "+cell.text());
             }
@@ -475,7 +475,7 @@ public final class PdfExporter {
                     stream.setLineWidth(.7f);
                     stream.addRect(left+cell.x(),cellTop-cell.height(),cell.width(),cell.height());
                     stream.stroke();
-                    if(!cell.text().isEmpty()) {
+                    if(!cell.text().isBlank()) {
                         stream.beginText();
                         stream.setNonStrokingColor(Color.BLACK);
                         stream.setFont(regular,10);
