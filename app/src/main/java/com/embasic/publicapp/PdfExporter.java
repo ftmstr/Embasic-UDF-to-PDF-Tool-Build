@@ -185,7 +185,8 @@ public final class PdfExporter {
         }
         PDDocument pdf = new PDDocument();
         try {
-            // Load only fonts used by measured text. Border-only tables (including\n            // space-padded empty cells) and images
+            // Load only fonts used by measured text. Border-only tables (including
+            // space-padded empty cells) and images
             // need neither font; bold-only paragraphs must not require a
             // regular font that is never used. Tables with text use regular.
             PDType0Font regular = requiresFont(docs)
@@ -448,7 +449,8 @@ public final class PdfExporter {
             float totalWidth=0;
             for(float width:geometry.widths())totalWidth+=width;
             if(totalWidth>right-left)throw new IllegalArgumentException("Tablo sayfa genişliğini aşıyor");
-            // Validate all visible cell text and vertical constraints before writing any cell.\n            // Spaces-only cells draw borders but no glyphs or text advances.
+            // Validate all visible cell text and vertical constraints before writing any cell.
+            // Spaces-only cells draw borders but no glyphs or text advances.
             for(TableLayout.CellPosition cell:geometry.cells()) {
                 if(cell.height()<18 || (!cell.text().isBlank()
                         && regular.getStringWidth(cell.text())*10/1000f>cell.width()-8))
