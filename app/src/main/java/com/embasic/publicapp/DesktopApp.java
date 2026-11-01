@@ -251,9 +251,13 @@ public final class DesktopApp extends JFrame {
         });
         action.put("selectAll", new javax.swing.AbstractAction() {
             @Override public void actionPerformed(java.awt.event.ActionEvent e) {
-                // Ctrl+A must replace any earlier disjoint insertion order.
+                // Preserve Explorer-style keyboard focus when selecting all
+                // logical cards, including those outside the visible viewport.
+                var all = GridKeyboardSelection.selectAll(items, focused);
                 selected.clear();
-                selected.addAll(items);
+                selected.addAll(all.selected());
+                anchor = all.anchor();
+                focused = all.focused();
                 rebuild();
             }
         });
