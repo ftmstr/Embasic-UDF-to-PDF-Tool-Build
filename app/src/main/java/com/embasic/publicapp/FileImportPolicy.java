@@ -15,6 +15,27 @@ public final class FileImportPolicy {
                             int unsupportedCount, int duplicateCount) {
         public Selection { accepted = List.copyOf(accepted); }
     }
+    /**
+     * CLI merges must never silently repeat a file or omit an unsupported
+     * argument. Validate the entire batch before reading any archive.
+     * Unlike the interactive grid, command-line use cannot display skipped
+     * cards or ask the user to correct an incomplete selection.
+     */
+    public static List<Path> requireCompleteMerge(List<Path> candidates) {
+        if (candidates == null || candidates.isEmpty())
+            throw new IllegalArgumentException("PDF için en az bir UDF gerekli");
+        if (candidates.size() > MAX_CARDS)
+            throw new IllegalArgumentException("En fazla " + MAX_CARDS + " UDF dosyası birleştirilebilir");
+        Selection plan = plan(List.of(), candidates);
+        if (plan.unsupportedCount() > 0)
+            throw new IllegalArgumentException("Birleştirme yalnızca .udf dosyalarını kabul eder");
+        if (plan.duplicateCount() > 0)
+            throw new IllegalArgumentException("Birleştirme yinelenen UDF dosyası içeriyor");
+        if (plan.limitReached())
+            throw new IllegalArgumentException("En fazla " + MAX_CARDS + " UDF dosyası birleştirilebilir");
+        return plan.accepted();
+    }
+
     public static Selection plan(List<Path> current, List<Path> candidates) {
         if (current == null || candidates == null) throw new IllegalArgumentException("Dosya listesi eksik");
         Set<Path> known = new HashSet<>();
