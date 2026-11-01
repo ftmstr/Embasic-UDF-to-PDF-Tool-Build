@@ -22,7 +22,7 @@ public final class GridKeyboardSelection {
     public static <T> Result<T> selectAll(List<T> files, T focused) {
         if (files == null) throw new IllegalArgumentException("Dosya listesi eksik");
         if (files.isEmpty()) return new Result<>(List.of(), null, null);
-        T current = files.contains(focused) ? focused : files.get(0);
+        T current = focused != null && files.contains(focused) ? focused : files.get(0);
         return new Result<>(files, current, current);
     }
 
@@ -35,7 +35,7 @@ public final class GridKeyboardSelection {
             int delta, boolean shift, boolean ctrl) {
         if (files == null || selected == null) throw new IllegalArgumentException("Dosya seçimi eksik");
         if (files.isEmpty()) return new Result<>(List.of(), null, null);
-        int oldIndex = files.indexOf(focused);
+        int oldIndex = focused == null ? -1 : files.indexOf(focused);
         if (oldIndex < 0) {
             for (T value : selected) {
                 oldIndex = files.indexOf(value);
@@ -47,7 +47,7 @@ public final class GridKeyboardSelection {
         T nextFile = files.get(next);
         LinkedHashSet<T> nextSelection = new LinkedHashSet<>();
         for (T item : files) if (selected.contains(item)) nextSelection.add(item);
-        T nextAnchor = files.contains(anchor) ? anchor : files.get(oldIndex);
+        T nextAnchor = anchor != null && files.contains(anchor) ? anchor : files.get(oldIndex);
         if (shift) {
             int start = files.indexOf(nextAnchor);
             if (!ctrl) nextSelection.clear();
