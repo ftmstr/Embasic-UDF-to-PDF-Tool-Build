@@ -249,6 +249,24 @@ final class PdfTrailingPageTest {
             assertThrows(IllegalArgumentException.class,
                     () -> { try (PDDocument ignored = PdfExporter.render(List.of(lateBold))) {} },
                     "Full export must still require the bold font on later pages");
+            // A large run can force a new page solely because its glyph height
+            // exceeds the remaining vertical space. Preview must break before
+            // probing a font that is needed only on page two.
+            List<DocumentElements.Block> edgeBlocks = new ArrayList<>(paragraphs(32).blocks());
+            edgeBlocks.add(new DocumentElements.ParagraphBlock(new UdfReader.Paragraph(
+                    List.of(new UdfReader.Run("NEXT_BOLD",
+                            new UdfReader.Style(72f, true, Color.BLACK))))));
+            var edgeBold = new UdfReader.DocumentSpec("edge-bold.udf", "1.0",
+                    List.of(), edgeBlocks, DocumentElements.PageSpec.a4());
+            try (PDDocument preview = PdfExporter.renderPreview(edgeBold)) {
+                assertEquals(1, preview.getNumberOfPages());
+                String text = new PDFTextStripper().getText(preview);
+                assertTrue(text.contains("LINE0"));
+                assertFalse(text.contains("NEXT_BOLD"));
+            }
+            assertThrows(IllegalArgumentException.class,
+                    () -> { try (PDDocument ignored = PdfExporter.render(List.of(edgeBold))) {} },
+                    "Full export must still reject the missing second-page bold font");
             // Interior bold spaces still require their own font for width.
             var measuredBoldSpace = new UdfReader.DocumentSpec("bold-space.udf", "1.0",
                     List.of(new UdfReader.Paragraph(List.of(
