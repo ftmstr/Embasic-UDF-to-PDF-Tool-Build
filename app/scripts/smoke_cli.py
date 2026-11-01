@@ -44,9 +44,12 @@ with tempfile.TemporaryDirectory(prefix="embasic-public-smoke-") as folder:
         ["java", "-Djava.awt.headless=true", "-jar", str(jar),
          "--merge", str(invalid_folder), str(corrupt)],
         capture_output=True, text=True, timeout=90)
-    if (early_folder.returncode == 0 or "Çıktı klasörü bulunamadı" not in early_folder.stderr
-            or invalid_folder.exists()):
-        raise AssertionError("Missing output directory was not rejected before UDF parsing")
+    # Windows Java/Python consoles may replace Turkish glyphs with '?'. Match
+    # the stable ASCII error stem, not a locale-dependent decoded sentence.
+    if (early_folder.returncode == 0 or "bulunamad" not in early_folder.stderr
+            or "ZIP" in early_folder.stderr or invalid_folder.exists()):
+        raise AssertionError(
+            f"Missing output directory was not rejected before UDF parsing: {early_folder.stderr!r}")
     # The CLI must reject an incomplete batch before parsing or publishing a
     # PDF. Otherwise duplicate arguments silently repeat pages in the merge.
     for invalid, reason in (
