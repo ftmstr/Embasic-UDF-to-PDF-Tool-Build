@@ -387,6 +387,38 @@ final class PdfTrailingPageTest {
             assertEquals(17f, baselines.get("F") - baselines.get("E"), 1f,
                     "Same-run CRLF must continue to advance exactly one line");
         }
+
+        // The space-width cache must preserve PDF coordinates when identical
+        // indentation is split into many UDF runs instead of one text run.
+        var spaceStyle = new UdfReader.Style(11f, false, Color.BLACK);
+        List<UdfReader.Run> splitSpaces = new ArrayList<>();
+        splitSpaces.add(new UdfReader.Run("A", spaceStyle));
+        for (int i = 0; i < 40; i++)
+            splitSpaces.add(new UdfReader.Run(" ", spaceStyle));
+        splitSpaces.add(new UdfReader.Run("B", spaceStyle));
+        List<List<UdfReader.Run>> variants = List.of(
+                List.of(new UdfReader.Run("A" + " ".repeat(40) + "B", spaceStyle)),
+                splitSpaces);
+        float[] bOffsets = new float[variants.size()];
+        for (int i = 0; i < variants.size(); i++) {
+            var source = new UdfReader.DocumentSpec("spaces.udf", "1.0",
+                    List.of(new UdfReader.Paragraph(variants.get(i))));
+            final float[] found = {Float.NaN};
+            try (PDDocument pdf = PdfExporter.render(List.of(source))) {
+                var reader = new PDFTextStripper() {
+                    @Override protected void processTextPosition(TextPosition position) {
+                        if ("B".equals(position.getUnicode()))
+                            found[0] = position.getXDirAdj();
+                        super.processTextPosition(position);
+                    }
+                };
+                assertTrue(reader.getText(pdf).contains("B"));
+            }
+            assertTrue(Float.isFinite(found[0]), "Trailing glyph must be visible");
+            bOffsets[i] = found[0];
+        }
+        assertEquals(bOffsets[0], bOffsets[1], 0.01f,
+                "Repeated spaces must preserve the same glyph position across run boundaries");
     }
 
     @Test void unicodeWhitespaceCannotSilentlyCollapseToAsciiSpace() {
