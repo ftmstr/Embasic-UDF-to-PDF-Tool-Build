@@ -2,11 +2,14 @@ package com.embasic.publicapp;
 
 import static org.junit.jupiter.api.Assertions.*;
 import java.awt.Color;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import javax.imageio.ImageIO;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.apache.pdfbox.text.TextPosition;
@@ -168,6 +171,25 @@ final class PdfTrailingPageTest {
             assertFalse(actual.contains("LINE99"), "Later pages must not enter the thumbnail");
             var allPages = new PDFTextStripper().getText(exported);
             assertTrue(allPages.contains("LINE99"), "Full export must retain the final paragraph");
+        }
+
+        // An image positioned after a nearly full first page belongs only to
+        // page two. Preview must not embed it, while full export must retain it.
+        var pixels = new BufferedImage(2, 2, BufferedImage.TYPE_INT_RGB);
+        var png = new ByteArrayOutputStream();
+        assertTrue(ImageIO.write(pixels, "png", png));
+        List<DocumentElements.Block> imageBlocks = new ArrayList<>(paragraphs(33).blocks());
+        imageBlocks.add(new DocumentElements.ImageBlock(png.toByteArray(), 120f, 120f));
+        var laterImage = new UdfReader.DocumentSpec("later-image.udf", "1.0",
+                List.of(), imageBlocks, DocumentElements.PageSpec.a4());
+        try (PDDocument preview = PdfExporter.renderPreview(laterImage);
+             PDDocument exported = PdfExporter.render(List.of(laterImage))) {
+            assertEquals(1, preview.getNumberOfPages());
+            assertEquals(2, exported.getNumberOfPages());
+            assertFalse(preview.getPage(0).getResources().getXObjectNames().iterator().hasNext(),
+                    "First-page thumbnail must not embed a later-page PNG");
+            assertTrue(exported.getPage(1).getResources().getXObjectNames().iterator().hasNext(),
+                    "Full PDF must embed the PNG on page two");
         }
     }
 
