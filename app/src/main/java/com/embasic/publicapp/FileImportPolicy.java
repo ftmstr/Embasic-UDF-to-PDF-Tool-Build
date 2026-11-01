@@ -1,5 +1,6 @@
 package com.embasic.publicapp;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -34,6 +35,19 @@ public final class FileImportPolicy {
         if (plan.limitReached())
             throw new IllegalArgumentException("En fazla " + MAX_CARDS + " UDF dosyası birleştirilebilir");
         return plan.accepted();
+    }
+
+    /**
+     * Validate the entire CLI merge set before opening the first ZIP. A missing
+     * or unreadable last file must not waste parsing 159 earlier documents.
+     * The interactive grid retains its existing per-card error handling.
+     */
+    static void preflightReadableMergeFiles(List<Path> validated) {
+        for (Path path : validated) {
+            if (!Files.isRegularFile(path) || !Files.isReadable(path))
+                throw new IllegalArgumentException("Geçerli, okunabilir bir .udf dosyası seçin: "
+                        + path.getFileName());
+        }
     }
 
     public static Selection plan(List<Path> current, List<Path> candidates) {
