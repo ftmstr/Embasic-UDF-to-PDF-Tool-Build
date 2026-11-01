@@ -60,6 +60,16 @@ final class PdfTrailingPageTest {
             try (PDDocument pdf = PdfExporter.render(List.of(tableDoc))) {
                 assertEquals(1, pdf.getNumberOfPages());
             }
+            // CR/LF/tab-only editor runs do not measure glyphs. They must not
+            // force a system font scan when the visible content is a grid.
+            var breaks = new UdfReader.Paragraph(List.of(
+                    new UdfReader.Run("\r\n\t", style)));
+            var gridWithBreaks = new UdfReader.DocumentSpec("grid-breaks.udf", "1.0",
+                    List.of(breaks), List.of(new DocumentElements.ParagraphBlock(breaks), grid),
+                    DocumentElements.PageSpec.a4());
+            try (PDDocument pdf = PdfExporter.render(List.of(gridWithBreaks))) {
+                assertEquals(1, pdf.getNumberOfPages());
+            }
             // The optimization must not silently drop actual cell text.
             var textGrid = new DocumentElements.TableBlock(List.of(120f),
                     List.of(new DocumentElements.Row(
@@ -185,6 +195,31 @@ final class PdfTrailingPageTest {
                 assertEquals(1, pdf.getNumberOfPages());
                 assertTrue(new PDFTextStripper().getText(pdf).contains("LINE0"));
             }
+            var regularStyle = new UdfReader.Style(11f, false, Color.BLACK);
+            var boldStyle = new UdfReader.Style(11f, true, Color.BLACK);
+            // Empty and terminal whitespace-only bold runs are discarded by
+            // layout; they must not make an otherwise regular PDF fail.
+            var visible = new UdfReader.Paragraph(List.of(
+                    new UdfReader.Run("VISIBLE", regularStyle),
+                    new UdfReader.Run("", boldStyle),
+                    new UdfReader.Run(" \r\n\t", boldStyle)));
+            var trailing = new UdfReader.Paragraph(List.of(
+                    new UdfReader.Run("\r\n\t", boldStyle)));
+            var noBoldGlyphs = new UdfReader.DocumentSpec("unused-bold.udf", "1.0",
+                    List.of(visible, trailing));
+            try (PDDocument pdf = PdfExporter.render(List.of(noBoldGlyphs))) {
+                assertEquals(1, pdf.getNumberOfPages());
+                assertTrue(new PDFTextStripper().getText(pdf).contains("VISIBLE"));
+            }
+            // Interior bold spaces still require their own font for width.
+            var measuredBoldSpace = new UdfReader.DocumentSpec("bold-space.udf", "1.0",
+                    List.of(new UdfReader.Paragraph(List.of(
+                            new UdfReader.Run("A", regularStyle),
+                            new UdfReader.Run(" ", boldStyle),
+                            new UdfReader.Run("B", regularStyle)))));
+            assertThrows(IllegalArgumentException.class,
+                    () -> PdfExporter.render(List.of(measuredBoldSpace)),
+                    "Measured bold whitespace must never silently use the regular font");
             var bold = new UdfReader.DocumentSpec("bold.udf", "1.0", List.of(
                     new UdfReader.Paragraph(List.of(
                             new UdfReader.Run("BOLD", new UdfReader.Style(11f, true, Color.BLACK))))));
