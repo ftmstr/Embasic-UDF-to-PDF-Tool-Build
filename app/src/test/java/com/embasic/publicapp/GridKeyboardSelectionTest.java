@@ -85,6 +85,16 @@ final class GridKeyboardSelectionTest {
                 all.anchor(), all.focused(), 1, false, false);
         assertEquals(List.of("G"), afterAll.selected());
         assertEquals("G", afterAll.focused());
+        // Immutable List.of() throws on contains(null)/indexOf(null). An
+        // uninitialized keyboard focus must not crash the real grid.
+        var firstArrow = GridKeyboardSelection.move(FILES, List.of(),
+                null, null, 1, false, false);
+        assertEquals(List.of("A"), firstArrow.selected());
+        assertEquals("A", firstArrow.focused());
+        var reverseFirst = GridKeyboardSelection.move(FILES, List.of(),
+                null, null, -1, false, false);
+        assertEquals(List.of("I"), reverseFirst.selected());
+        assertEquals("I", reverseFirst.focused());
         var noFocus = GridKeyboardSelection.selectAll(FILES, null);
         assertEquals("A", noFocus.focused());
         assertEquals("A", noFocus.anchor());
