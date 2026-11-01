@@ -291,6 +291,24 @@ final class PdfTrailingPageTest {
             assertThrows(IllegalArgumentException.class,
                     () -> { try (PDDocument ignored = PdfExporter.render(List.of(mixed))) {} },
                     "A mixed-style PDF must not silently omit its regular font");
+            // A table can span multiple pages with only border-only cells on
+            // page one. Its late text must not force font discovery during
+            // thumbnail generation, but must still fail closed on full export.
+            List<DocumentElements.Row> lateRows = new ArrayList<>();
+            for (int row = 0; row < 40; row++)
+                lateRows.add(new DocumentElements.Row(List.of(
+                        new DocumentElements.Cell(row == 39 ? "LATE_TABLE_TEXT" : "", 1, 1)), 24f));
+            var lateTable = new UdfReader.DocumentSpec("late-table.udf", "1.0",
+                    List.of(), List.of(new DocumentElements.TableBlock(List.of(160f), lateRows)),
+                    DocumentElements.PageSpec.a4());
+            try (PDDocument preview = PdfExporter.renderPreview(lateTable)) {
+                assertEquals(1, preview.getNumberOfPages());
+                assertTrue(new PDFTextStripper().getText(preview).isBlank(),
+                        "First table page contains only borders, no text or font");
+            }
+            assertThrows(IllegalArgumentException.class,
+                    () -> { try (PDDocument ignored = PdfExporter.render(List.of(lateTable))) {} },
+                    "Full export must require the font used by a later table page");
         } finally {
             if (priorRegular == null) System.clearProperty(regularProperty);
             else System.setProperty(regularProperty, priorRegular);
