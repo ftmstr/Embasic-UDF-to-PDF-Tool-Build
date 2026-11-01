@@ -571,6 +571,11 @@ public final class DesktopApp extends JFrame {
         return SwingUtilities.isLeftMouseButton(event);
     }
 
+    /** Ignore synthetic/secondary drags that no longer hold the primary button. */
+    static boolean isPrimaryCardDrag(MouseEvent event) {
+        return (event.getModifiersEx() & InputEvent.BUTTON1_DOWN_MASK) != 0;
+    }
+
     private JPanel card(Item item) {
         JPanel card = new JPanel(new BorderLayout(3, 5));
         ThumbnailSizing.Size size=ThumbnailSizing.at(thumbnailZoom.getValue());
@@ -605,7 +610,7 @@ public final class DesktopApp extends JFrame {
             @Override public void mousePressed(MouseEvent e) {
                 // A Windows right-click or middle-button gesture must never
                 // capture the card and accidentally reorder selected UDFs.
-                if (!isPrimaryCardPress(e)) return;
+                if (converting || !isPrimaryCardPress(e)) return;
                 pressed = SwingUtilities.convertPoint((Component) e.getSource(), e.getPoint(), grid);
                 capturedCard=card;
                 capturedItem=item;
@@ -629,7 +634,7 @@ public final class DesktopApp extends JFrame {
                 card.setBorder(BorderFactory.createLineBorder(accent(), 2, true));
             }
             @Override public void mouseDragged(MouseEvent e) {
-                if (!pointerHeld || converting || pressed == null) return;
+                if (!pointerHeld || converting || pressed == null || !isPrimaryCardDrag(e)) return;
                 Point position=SwingUtilities.convertPoint((Component)e.getSource(),e.getPoint(),grid);
                 if (pressed.distance(position) > 12) pointerDragging=true;
                 pointerViewport=SwingUtilities.convertPoint(
