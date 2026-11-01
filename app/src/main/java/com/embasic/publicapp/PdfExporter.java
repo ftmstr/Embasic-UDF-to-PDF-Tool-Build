@@ -69,62 +69,6 @@ public final class PdfExporter {
         }
     }
 
-    /**
-     * PDFBox fonts belong to the destination PDDocument. Only load a font when
-     * the actual rendered subset measures or draws text with it. Trailing
-     * editor-only paragraphs/runs and CR/LF/tab-only runs never use a font.
-     * A regular space is different: Layout.spaces() measures its advance.
-     */
-    private static boolean hasMeasuredText(String text) {
-        for (int i = 0; i < text.length();) {
-            int cp = text.codePointAt(i);
-            i += Character.charCount(cp);
-            if (cp != '\r' && cp != '\n' && cp != '\t') return true;
-        }
-        return false;
-    }
-
-    private static boolean needsFont(List<UdfReader.DocumentSpec> docs, boolean boldOnly) {
-        for (UdfReader.DocumentSpec document : docs) {
-            List<DocumentElements.Block> blocks = document.blocks();
-            int lastBlock = blocks.size() - 1;
-            // Match renderInternal's trailing-editor-paragraph pruning.
-            while (lastBlock > 0 && blocks.get(lastBlock) instanceof DocumentElements.ParagraphBlock p
-                    && p.paragraph().runs().stream().allMatch(run -> run.text().isBlank()))
-                lastBlock--;
-            for (int index = 0; index <= lastBlock; index++) {
-                DocumentElements.Block block = blocks.get(index);
-                if (block instanceof DocumentElements.TableBlock table) {
-                    if (!boldOnly)
-                        for (DocumentElements.Row row : table.rows())
-                            for (DocumentElements.Cell cell : row.cells())
-                                if (!cell.text().isBlank()) return true;
-                } else if (block instanceof DocumentElements.ParagraphBlock paragraph) {
-                    List<UdfReader.Run> runs = paragraph.paragraph().runs();
-                    int lastRun = runs.size() - 1;
-                    if (index == lastBlock)
-                        while (lastRun >= 0 && runs.get(lastRun).text().isBlank()) lastRun--;
-                    for (int runIndex = 0; runIndex <= lastRun; runIndex++) {
-                        UdfReader.Run run = runs.get(runIndex);
-                        if (run.style().bold() != boldOnly) continue;
-                        String text = run.text();
-                        if (index == lastBlock && runIndex == lastRun) text = text.stripTrailing();
-                        if (hasMeasuredText(text)) return true;
-                    }
-                }
-            }
-        }
-        return false;
-    }
-
-    private static boolean usesBold(List<UdfReader.DocumentSpec> docs) {
-        return needsFont(docs, true);
-    }
-
-    private static boolean requiresFont(List<UdfReader.DocumentSpec> docs) {
-        return needsFont(docs, false);
-    }
-
     public static PDDocument render(List<UdfReader.DocumentSpec> docs) throws Exception {
         return renderInternal(docs, false);
     }
@@ -223,17 +167,13 @@ public final class PdfExporter {
         }
         PDDocument pdf = new PDDocument();
         try {
-            // Load only fonts used by measured text. Border-only tables (including
-            // space-padded empty cells) and images
-            // need neither font; bold-only paragraphs must not require a
-            // regular font that is never used. Tables with text use regular.
-            PDType0Font regular = requiresFont(docs)
-                    ? PDType0Font.load(pdf, systemFont(false).toFile()) : null;
-            PDType0Font bold = usesBold(docs)
-                    ? PDType0Font.load(pdf, systemFont(true).toFile()) : null;
+            // Load each style only on first actual use, sharing embedded fonts
+            // across all pages/documents. A first-page thumbnail must not wait
+            // for a bold font used exclusively on a later page.
+            FontSet fonts = new FontSet(pdf);
             try {
                 for (UdfReader.DocumentSpec document : docs) {
-                try (Layout layout = new Layout(pdf, regular, bold, document.page(), previewOnly)) {
+                try (Layout layout = new Layout(pdf, fonts, document.page(), previewOnly)) {
                     layout.newPage();
                     List<DocumentElements.Block> blocks = document.blocks();
                     // Trailing empty editor paragraphs must not allocate an otherwise blank page.
@@ -354,9 +294,24 @@ public final class PdfExporter {
         }
     }
 
+    /** One font pair per PDF, resolved lazily at the first measured or drawn glyph. */
+    private static final class FontSet {
+        private final PDDocument pdf;
+        private PDType0Font regular, bold;
+        FontSet(PDDocument pdf) { this.pdf = pdf; }
+        PDType0Font get(boolean useBold) throws IOException {
+            if (useBold) {
+                if (bold == null) bold = PDType0Font.load(pdf, systemFont(true).toFile());
+                return bold;
+            }
+            if (regular == null) regular = PDType0Font.load(pdf, systemFont(false).toFile());
+            return regular;
+        }
+    }
+
     private static final class Layout implements AutoCloseable {
         private final PDDocument pdf;
-        private final PDType0Font regular, bold;
+        private final FontSet fonts;
         private final boolean previewOnly;
         private final DocumentElements.PageSpec page;
         private final float left, right, top, bottom;
@@ -364,9 +319,9 @@ public final class PdfExporter {
         private float x, y, lineHeight = 17f;
         // A CRLF pair can be split across differently styled text runs.
         private boolean previousWasCR;
-        private Layout(PDDocument pdf, PDType0Font regular, PDType0Font bold,
+        private Layout(PDDocument pdf, FontSet fonts,
                        DocumentElements.PageSpec page, boolean previewOnly) {
-            this.pdf = pdf; this.regular = regular; this.bold = bold; this.page = page;
+            this.pdf = pdf; this.fonts = fonts; this.page = page;
             this.previewOnly = previewOnly;
             left = page.margin(); right = page.width() - page.margin();
             top = page.height() - page.margin(); bottom = page.margin();
@@ -401,7 +356,7 @@ public final class PdfExporter {
         }
         private void word(String text, UdfReader.Style style) throws IOException {
             if (text.isEmpty()) return;
-            PDType0Font font = style.bold() ? bold : regular;
+            PDType0Font font = fonts.get(style.bold());
             float size = style.size();
             float length = width(text, font, size);
             if (length > right - left)
@@ -427,7 +382,7 @@ public final class PdfExporter {
             x += length;
         }
         private void spaces(int count, UdfReader.Style style) throws IOException {
-            float length = width(" ", style.bold() ? bold : regular, style.size()) * count;
+            float length = width(" ", fonts.get(style.bold()), style.size()) * count;
             // Preserve explicit leading spaces (including paragraph indentation).
             // Only discard a separator when it itself causes a soft line wrap;
             // otherwise the next word would silently lose its left offset.
@@ -491,7 +446,7 @@ public final class PdfExporter {
             // Spaces-only cells draw borders but no glyphs or text advances.
             for(TableLayout.CellPosition cell:geometry.cells()) {
                 if(cell.height()<18 || (!cell.text().isBlank()
-                        && regular.getStringWidth(cell.text())*10/1000f>cell.width()-8))
+                        && fonts.get(false).getStringWidth(cell.text())*10/1000f>cell.width()-8))
                     throw new IllegalArgumentException("Tablo hücresi taşıyor: "+cell.text());
             }
             List<int[]> groups=TableLayout.pageGroups(geometry);
@@ -518,7 +473,7 @@ public final class PdfExporter {
                     if(!cell.text().isBlank()) {
                         stream.beginText();
                         stream.setNonStrokingColor(Color.BLACK);
-                        stream.setFont(regular,10);
+                        stream.setFont(fonts.get(false),10);
                         stream.newLineAtOffset(left+cell.x()+4,cellTop-14);
                         stream.showText(cell.text());
                         stream.endText();
