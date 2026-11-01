@@ -202,7 +202,7 @@ final class StructuredUdfRegressionTest {
         }
     }
 
-    @Test void unsupportedStructuresAndBadGeometryFailClosed() throws Exception {
+    @Test void unsupportedStructuresAndBadGeometryFailClosed(@TempDir Path folder) throws Exception {
         var noTableWidth="<table><row height='25'><cell>A</cell></row></table>";
         assertThrows(IllegalArgumentException.class,()->parse(container(noTableWidth,"")));
         var badSpan="<table widths='80,100'><row height='25'><cell colspan='3'>X</cell></row></table>";
@@ -211,6 +211,27 @@ final class StructuredUdfRegressionTest {
         var partial=parse(container(missingCell,"")
                 .replace("<content>ÖN SON</content>", "<content/>"));
         assertThrows(IllegalArgumentException.class,()->PdfExporter.render(List.of(partial)));
+        // Broken geometry must be rejected before PDFBox looks for a font.
+        // This matters when a Windows machine needs a slow first font scan.
+        String previousFont = System.getProperty("embasic.font.regular");
+        try {
+            System.setProperty("embasic.font.regular",
+                    folder.resolve("deliberately-missing-font.ttf").toString());
+            var missingColumn = assertThrows(IllegalArgumentException.class,
+                    () -> { try (PDDocument ignored = PdfExporter.render(List.of(partial))) {} });
+            assertTrue(missingColumn.getMessage().contains("Eksik tablo sütunu"),
+                    missingColumn.getMessage());
+            var tooWide = parse(container(
+                    "<table widths='550'><row height='25'><cell>WIDE</cell></row></table>", "")
+                    .replace("<content>ÖN SON</content>", "<content/>"));
+            var oversized = assertThrows(IllegalArgumentException.class,
+                    () -> { try (PDDocument ignored = PdfExporter.render(List.of(tooWide))) {} });
+            assertTrue(oversized.getMessage().contains("Tablo sayfa genişliğini aşıyor"),
+                    oversized.getMessage());
+        } finally {
+            if (previousFont == null) System.clearProperty("embasic.font.regular");
+            else System.setProperty("embasic.font.regular", previousFont);
+        }
         assertThrows(IllegalArgumentException.class,()->parse(container(para(0,2),
             "<properties pageSize='A3'/>")));
         assertThrows(IllegalArgumentException.class,()->parse(container(para(0,2),
