@@ -69,37 +69,60 @@ public final class PdfExporter {
         }
     }
 
-    private static boolean usesBold(List<UdfReader.DocumentSpec> docs) {
-        for (UdfReader.DocumentSpec document : docs)
-            for (DocumentElements.Block block : document.blocks())
-                if (block instanceof DocumentElements.ParagraphBlock paragraph)
-                    for (UdfReader.Run run : paragraph.paragraph().runs())
-                        if (run.style().bold()) return true;
+    /**
+     * PDFBox fonts belong to the destination PDDocument. Only load a font when
+     * the actual rendered subset measures or draws text with it. Trailing
+     * editor-only paragraphs/runs and CR/LF/tab-only runs never use a font.
+     * A regular space is different: Layout.spaces() measures its advance.
+     */
+    private static boolean hasMeasuredText(String text) {
+        for (int i = 0; i < text.length();) {
+            int cp = text.codePointAt(i);
+            i += Character.charCount(cp);
+            if (cp != '\r' && cp != '\n' && cp != '\t') return true;
+        }
         return false;
     }
 
-    /**
-     * Image-only synthetic documents have no text to encode. Loading a system
-     * Unicode font for them can trigger expensive PDFBox font discovery on
-     * first launch, despite the PDF never referencing that font.
-     */
-    private static boolean requiresFont(List<UdfReader.DocumentSpec> docs) {
-        for (UdfReader.DocumentSpec document : docs)
-            for (DocumentElements.Block block : document.blocks()) {
-                // An empty editor run emits no glyph and needs no font. Keep
-                // whitespace runs: layout measures their advance widths.
-                if (block instanceof DocumentElements.ParagraphBlock paragraph) {
-                    for (UdfReader.Run run : paragraph.paragraph().runs())
-                        if (!run.text().isEmpty()) return true;
-                } else if (block instanceof DocumentElements.TableBlock table) {
-                    // Empty cells still draw borders, but emit no text. Avoid
-                    // triggering first-use system font discovery for grid-only UDFs.
-                    for (DocumentElements.Row row : table.rows())
-                        for (DocumentElements.Cell cell : row.cells())
-                            if (!cell.text().isEmpty()) return true;
+    private static boolean needsFont(List<UdfReader.DocumentSpec> docs, boolean boldOnly) {
+        for (UdfReader.DocumentSpec document : docs) {
+            List<DocumentElements.Block> blocks = document.blocks();
+            int lastBlock = blocks.size() - 1;
+            // Match renderInternal's trailing-editor-paragraph pruning.
+            while (lastBlock > 0 && blocks.get(lastBlock) instanceof DocumentElements.ParagraphBlock p
+                    && p.paragraph().runs().stream().allMatch(run -> run.text().isBlank()))
+                lastBlock--;
+            for (int index = 0; index <= lastBlock; index++) {
+                DocumentElements.Block block = blocks.get(index);
+                if (block instanceof DocumentElements.TableBlock table) {
+                    if (!boldOnly)
+                        for (DocumentElements.Row row : table.rows())
+                            for (DocumentElements.Cell cell : row.cells())
+                                if (!cell.text().isEmpty()) return true;
+                } else if (block instanceof DocumentElements.ParagraphBlock paragraph) {
+                    List<UdfReader.Run> runs = paragraph.paragraph().runs();
+                    int lastRun = runs.size() - 1;
+                    if (index == lastBlock)
+                        while (lastRun >= 0 && runs.get(lastRun).text().isBlank()) lastRun--;
+                    for (int runIndex = 0; runIndex <= lastRun; runIndex++) {
+                        UdfReader.Run run = runs.get(runIndex);
+                        if (boldOnly && !run.style().bold()) continue;
+                        String text = run.text();
+                        if (index == lastBlock && runIndex == lastRun) text = text.stripTrailing();
+                        if (hasMeasuredText(text)) return true;
+                    }
                 }
             }
+        }
         return false;
+    }
+
+    private static boolean usesBold(List<UdfReader.DocumentSpec> docs) {
+        return needsFont(docs, true);
+    }
+
+    private static boolean requiresFont(List<UdfReader.DocumentSpec> docs) {
+        return needsFont(docs, false);
     }
 
     public static PDDocument render(List<UdfReader.DocumentSpec> docs) throws Exception {
