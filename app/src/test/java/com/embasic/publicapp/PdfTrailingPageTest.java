@@ -51,8 +51,27 @@ final class PdfTrailingPageTest {
                         List.of(new DocumentElements.Cell("", 1, 1)), 24f)));
         var tableDoc = new UdfReader.DocumentSpec("grid.udf", "1.0", List.of(),
                 List.of(grid), DocumentElements.PageSpec.a4());
-        try (PDDocument pdf = PdfExporter.render(List.of(tableDoc))) {
-            assertEquals(1, pdf.getNumberOfPages());
+        // A border-only table needs no font glyphs. An unavailable system
+        // font must not delay or block rendering its visible cell geometry.
+        String fontProperty = "embasic.font.regular";
+        String previousFont = System.getProperty(fontProperty);
+        System.setProperty(fontProperty, "__embasic_missing_grid_font_test__.ttf");
+        try {
+            try (PDDocument pdf = PdfExporter.render(List.of(tableDoc))) {
+                assertEquals(1, pdf.getNumberOfPages());
+            }
+            // The optimization must not silently drop actual cell text.
+            var textGrid = new DocumentElements.TableBlock(List.of(120f),
+                    List.of(new DocumentElements.Row(
+                            List.of(new DocumentElements.Cell("TEXT", 1, 1)), 24f)));
+            var textDoc = new UdfReader.DocumentSpec("text-grid.udf", "1.0",
+                    List.of(), List.of(textGrid), DocumentElements.PageSpec.a4());
+            assertThrows(IllegalArgumentException.class,
+                    () -> { try (PDDocument ignored = PdfExporter.render(List.of(textDoc))) {} },
+                    "A table with text must still require a usable Unicode font");
+        } finally {
+            if (previousFont == null) System.clearProperty(fontProperty);
+            else System.setProperty(fontProperty, previousFont);
         }
     }
 
