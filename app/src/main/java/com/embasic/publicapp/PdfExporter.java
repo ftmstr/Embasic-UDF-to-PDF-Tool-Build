@@ -13,6 +13,8 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.HashMap;
+import java.util.Map;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
@@ -321,6 +323,9 @@ public final class PdfExporter {
         private final DocumentElements.PageSpec page;
         private final float left, right, top, bottom;
         private PDPageContentStream stream;
+        // ASCII-space glyph metrics are constant for each font/style. Repeated
+        // indentation must not ask PDFBox to measure the same glyph per space.
+        private final Map<UdfReader.Style, Float> spaceWidths = new HashMap<>();
         private float x, y, lineHeight = 17f;
         // A CRLF pair can be split across differently styled text runs.
         private boolean previousWasCR;
@@ -391,7 +396,14 @@ public final class PdfExporter {
             x += length;
         }
         private void spaces(int count, UdfReader.Style style) throws IOException {
-            float length = width(" ", fonts.get(style.bold()), style.size()) * count;
+            Float spaceWidth = spaceWidths.get(style);
+            if (spaceWidth == null) {
+                // Still fail closed if the requested font is unavailable: a
+                // measured interior space cannot silently use another style.
+                spaceWidth = width(" ", fonts.get(style.bold()), style.size());
+                spaceWidths.put(style, spaceWidth);
+            }
+            float length = spaceWidth * count;
             // Preserve explicit leading spaces (including paragraph indentation).
             // Only discard a separator when it itself causes a soft line wrap;
             // otherwise the next word would silently lose its left offset.
