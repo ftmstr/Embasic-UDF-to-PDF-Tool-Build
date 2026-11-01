@@ -496,10 +496,13 @@ public final class PdfExporter {
         void image(DocumentElements.ImageBlock block) throws Exception {
             if(block.width()>right-left || block.height()>top-bottom)
                 throw new IllegalArgumentException("PNG sayfaya sığmıyor");
-            var image=ImageIO.read(new ByteArrayInputStream(block.png()));
-            if(image==null)throw new IllegalArgumentException("Geçersiz PNG");
+            // Position the image before decoding its pixels. A first-page
+            // thumbnail stops at the page break, so images that occur only on
+            // later pages must not be decoded or embedded during preview.
             if(x>left)newLine();
             if(y-block.height()<bottom)newPage();
+            var image=ImageIO.read(new ByteArrayInputStream(block.png()));
+            if(image==null)throw new IllegalArgumentException("Geçersiz PNG");
             PDImageXObject xobject=LosslessFactory.createFromImage(pdf,image);
             stream.drawImage(xobject,left,y-block.height(),block.width(),block.height());
             y-=block.height()+8;
