@@ -27,4 +27,19 @@ with tempfile.TemporaryDirectory(prefix="embasic-public-smoke-") as folder:
     failed = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
     if failed.returncode == 0 or target.read_bytes() != pdf:
         raise AssertionError("Existing PDF overwrite guard failed")
-    print("PASS public synthetic CLI smoke: 2 UDF inputs, PDF header, non-overwrite")
+    # The CLI must reject an incomplete batch before parsing or publishing a
+    # PDF. Otherwise duplicate arguments silently repeat pages in the merge.
+    for invalid, reason in (
+        ([str(root / "1.udf"), str(root / "1.udf")], "yinelenen"),
+        ([str(root / "1.udf"), str(root / "notes.txt")], ".udf"),
+    ):
+        rejected = root / "rejected.pdf"
+        attempt = subprocess.run(
+            ["java", "-Djava.awt.headless=true", "-jar", str(jar),
+             "--merge", str(rejected), *invalid],
+            capture_output=True, text=True, timeout=90)
+        if attempt.returncode == 0 or rejected.exists() or reason not in attempt.stderr:
+            raise AssertionError(
+                f"Invalid CLI batch was not rejected before output: {attempt.stderr}")
+    print("PASS public synthetic CLI smoke: 2 UDF inputs, PDF header, "
+          "non-overwrite, duplicate/unsupported batch rejection")
