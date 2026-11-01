@@ -14,6 +14,19 @@ public final class GridKeyboardSelection {
     }
 
     /**
+     * Explorer-style Ctrl+A must select the complete logical queue while
+     * retaining the current keyboard focus. Without a focused item, the next
+     * arrow starts from an unrelated stale anchor or an arbitrary selection.
+     * This works even when the focused card is outside the virtual viewport.
+     */
+    public static <T> Result<T> selectAll(List<T> files, T focused) {
+        if (files == null) throw new IllegalArgumentException("Dosya listesi eksik");
+        if (files.isEmpty()) return new Result<>(List.of(), null, null);
+        T current = files.contains(focused) ? focused : files.get(0);
+        return new Result<>(files, current, current);
+    }
+
+    /**
      * Navigates a flattened grid by signed delta (+/-1, +/-column count).
      * Ctrl-only moves the focus without changing selection; Shift extends a contiguous range.
      */
