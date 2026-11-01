@@ -50,7 +50,7 @@ final class PdfOutputCommitTest {
         var doc = new UdfReader.DocumentSpec("synthetic.udf", "1.0", List.of(paragraph));
         Path target = folder.resolve("too-many.pdf");
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
-                () -> PdfExporter.save(List.nCopies(FileImportPolicy.MAX_CARDS + 1, doc),
+                () -> PdfExporter.save(java.util.Collections.nCopies(FileImportPolicy.MAX_CARDS + 1, doc),
                         target, false));
         assertTrue(error.getMessage().contains("160"));
         assertFalse(Files.exists(target));
