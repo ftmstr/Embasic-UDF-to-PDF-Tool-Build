@@ -18,6 +18,17 @@ final class FileImportPolicyTest {
         assertFalse(plan.limitReached());
         assertEquals(1, plan.unsupportedCount(), "Non-UDF imports must be disclosed");
         assertEquals(2, plan.duplicateCount(), "Existing and repeated UDFs must be disclosed");
+        // CLI cannot silently skip entries like the interactive grid does.
+        assertThrows(IllegalArgumentException.class, () ->
+                FileImportPolicy.requireCompleteMerge(List.of(Path.of("next.udf"),
+                        Path.of("notes.txt"))));
+        assertThrows(IllegalArgumentException.class, () ->
+                FileImportPolicy.requireCompleteMerge(List.of(Path.of("next.udf"),
+                        Path.of("./next.udf"))));
+        assertEquals(List.of(Path.of("next.udf").toAbsolutePath().normalize(),
+                        Path.of("Üçüncü.UDF").toAbsolutePath().normalize()),
+                FileImportPolicy.requireCompleteMerge(List.of(Path.of("next.udf"),
+                        Path.of("Üçüncü.UDF"))));
     }
     @Test void capsHugeFileBatchesWithoutDroppingAcceptedOrder() {
         List<Path> files=new ArrayList<>();
@@ -29,6 +40,10 @@ final class FileImportPolicyTest {
         assertEquals(0, plan.duplicateCount());
         assertEquals("fixture-0.udf",plan.accepted().get(0).getFileName().toString());
         assertEquals("fixture-159.udf",plan.accepted().get(159).getFileName().toString());
+        assertThrows(IllegalArgumentException.class, () -> FileImportPolicy.requireCompleteMerge(files),
+                "CLI must reject all 2,500 arguments before parsing the first archive");
+        assertEquals(160, FileImportPolicy.requireCompleteMerge(
+                files.subList(0, FileImportPolicy.MAX_CARDS)).size());
     }
     @Test void existingLimitAndRepeatedBatchAreSafe() {
         List<Path> existing=new ArrayList<>();
@@ -39,5 +54,7 @@ final class FileImportPolicyTest {
         assertEquals(1, plan.duplicateCount());
         assertEquals(0, plan.unsupportedCount());
         assertThrows(IllegalArgumentException.class,()->FileImportPolicy.plan(null,List.of()));
+        assertThrows(IllegalArgumentException.class, () -> FileImportPolicy.requireCompleteMerge(null));
+        assertThrows(IllegalArgumentException.class, () -> FileImportPolicy.requireCompleteMerge(List.of()));
     }
 }
