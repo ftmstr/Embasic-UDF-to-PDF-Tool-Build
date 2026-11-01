@@ -243,8 +243,12 @@ public final class DesktopApp extends JFrame {
                     // A native Explorer drop is successful only if at least one
                     // new UDF card was actually accepted. All-duplicate, invalid
                     // or full-grid drops must not report a phantom import.
-                    return addFiles(paths);
-                } catch (Exception ex) { showError(ex); return false; }
+                    return addFiles(paths, support.isDrop());
+                } catch (Exception ex) {
+                    // Native DnD must return to Explorer before displaying a modal error.
+                    presentImportFeedback(support.isDrop(), () -> showError(ex));
+                    return false;
+                }
             }
         };
         installWorkspaceFileDrop(scroll, grid, fileDrop);
@@ -440,6 +444,10 @@ public final class DesktopApp extends JFrame {
     }
 
     private boolean addFiles(List<Path> paths) {
+        return addFiles(paths, false);
+    }
+
+    private boolean addFiles(List<Path> paths, boolean nativeDrop) {
         if (converting) return false;
         FileImportPolicy.Selection plan = FileImportPolicy.plan(
                 items.stream().map(item -> item.path).toList(), paths);
@@ -480,11 +488,24 @@ public final class DesktopApp extends JFrame {
             warnings.add(plan.unsupportedCount() + " dosya .udf uzantılı olmadığı için atlandı.");
         if (plan.duplicateCount() > 0)
             warnings.add(plan.duplicateCount() + " yinelenen UDF dosyası atlandı.");
-        if (!warnings.isEmpty())
-            JOptionPane.showMessageDialog(this,
-                    String.join("\n", warnings) + "\nAtlanan dosyalar PDF'ye eklenmedi.",
-                    "İçe aktarma uyarısı", JOptionPane.WARNING_MESSAGE);
+        if (!warnings.isEmpty()) {
+            String message = String.join("\n", warnings) + "\nAtlanan dosyalar PDF'ye eklenmedi.";
+            // A synchronous JOptionPane inside TransferHandler.importData can hold
+            // the Windows Explorer drag transaction open until the user dismisses it.
+            presentImportFeedback(nativeDrop, () -> JOptionPane.showMessageDialog(this,
+                    message, "İçe aktarma uyarısı", JOptionPane.WARNING_MESSAGE));
+        }
         return !plan.accepted().isEmpty();
+    }
+
+    /**
+     * Explorer owns the native drag transaction until importData returns.
+     * Keep chooser feedback immediate, but show native-drop warnings/errors on
+     * the next EDT event so a modal dialog cannot hold Explorer's drop open.
+     */
+    static void presentImportFeedback(boolean nativeDrop, Runnable feedback) {
+        if (nativeDrop) SwingUtilities.invokeLater(feedback);
+        else feedback.run();
     }
 
     /**
