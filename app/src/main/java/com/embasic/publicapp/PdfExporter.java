@@ -280,6 +280,10 @@ public final class PdfExporter {
         Path abs = target.toAbsolutePath().normalize();
         Path folder = abs.getParent();
         if (!Files.isDirectory(folder)) throw new IllegalArgumentException("Çıktı klasörü bulunamadı");
+        // A directory named *.pdf is not an overwriteable PDF. Reject it before
+        // staging or reading a large batch, instead of failing after rendering.
+        if (Files.exists(abs) && !Files.isRegularFile(abs))
+            throw new IllegalArgumentException("Çıktı yolu normal bir PDF dosyası olmalıdır");
         if (Files.exists(abs) && !overwrite)
             throw new IllegalArgumentException("PDF zaten var, üzerine yazma onayı gerekli");
         return abs;
