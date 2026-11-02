@@ -1173,6 +1173,9 @@ public final class DesktopApp extends JFrame {
                 || sources.isEmpty() || sources.size() != docs.size()
                 || sources.size() != sourceFingerprints.size())
             throw new IllegalArgumentException("PDF kaynak listesi tutarsız");
+        // Check the destination before hashing up to 160 source files. A wrong
+        // extension, missing folder or non-file target must fail immediately.
+        PdfExporter.preflightTarget(output, overwrite);
         verifySourceFingerprints(sources, sourceFingerprints);
         // A large PDF render can take time after the first fingerprint check.
         // Recheck immediately before the staged PDF is published, including
