@@ -3,8 +3,6 @@ package com.embasic.publicapp;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
-import java.io.ByteArrayInputStream;
-import javax.imageio.ImageIO;
 import java.io.IOException;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
@@ -651,8 +649,9 @@ public final class PdfExporter {
             // later pages must not be decoded or embedded during preview.
             if(x>left)newLine();
             if(y-block.height()<bottom)newPage();
-            var image=ImageIO.read(new ByteArrayInputStream(block.png()));
-            if(image==null)throw new IllegalArgumentException("Geçersiz PNG");
+            // Directly constructed ImageBlocks bypass the XML reader. Apply
+            // the same bounded PNG decode before allocating a PDF image.
+            var image=DocumentElements.decodeBoundedPng(block.png());
             PDImageXObject xobject=LosslessFactory.createFromImage(pdf,image);
             stream.drawImage(xobject,left,y-block.height(),block.width(),block.height());
             y-=block.height()+8;

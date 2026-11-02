@@ -185,11 +185,22 @@ public final class DocumentElements {
         return validatePng(data,w,h);
     }
     private static ImageBlock validatePng(byte[] bytes,float w,float h) throws Exception {
+        decodeBoundedPng(bytes);
+        return new ImageBlock(bytes,w,h);
+    }
+
+    /**
+     * Apply the same byte, format and decoded-pixel budgets at PDF export.
+     * ImageBlock is a public record and can be constructed without XML parsing;
+     * a tiny compressed PNG must never allocate an unbounded raster there.
+     */
+    static BufferedImage decodeBoundedPng(byte[] bytes) throws java.io.IOException {
         if (bytes == null || bytes.length < 24 || bytes.length > 1_048_576
                 || (bytes[0] & 0xff) != 0x89 || bytes[1] != 'P'
                 || bytes[2] != 'N' || bytes[3] != 'G')
             throw new IllegalArgumentException("PNG biçimi veya boyutu geçersiz");
         try (var input = ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))) {
+            if (input == null) throw new IllegalArgumentException("PNG akışı açılamadı");
             var readers = ImageIO.getImageReaders(input);
             if (!readers.hasNext()) throw new IllegalArgumentException("PNG çözücü bulunamadı");
             var reader = readers.next();
@@ -200,11 +211,11 @@ public final class DocumentElements {
                 int width = reader.getWidth(0), height = reader.getHeight(0);
                 if (width < 1 || height < 1 || (long) width * height > 4_000_000L)
                     throw new IllegalArgumentException("PNG piksel sınırı aşıldı");
-                if (reader.read(0) == null)
-                    throw new IllegalArgumentException("PNG çözümlenemedi");
+                BufferedImage decoded = reader.read(0);
+                if (decoded == null) throw new IllegalArgumentException("PNG çözümlenemedi");
+                return decoded;
             } finally { reader.dispose(); }
         }
-        return new ImageBlock(bytes,w,h);
     }
     public static ImageBlock image(Element image) throws Exception {
         onlyAttributes(image, "mime", "encoding", "width", "height");
