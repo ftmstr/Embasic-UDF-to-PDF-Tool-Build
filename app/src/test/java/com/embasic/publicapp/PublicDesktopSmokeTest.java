@@ -211,7 +211,11 @@ final class PublicDesktopSmokeTest {
     }
 
     @Test void singleAndOrderedMerge() throws Exception {
-        var first = UdfReader.read(udf("first.udf", "SMOKE-A İzmir ğüş"));
+        Path firstFile = udf("first.udf", "SMOKE-A İzmir ğüş");
+        var firstSnapshot = DesktopApp.parseSource(firstFile);
+        assertEquals(FileImportPolicy.sourceSha256(firstFile), firstSnapshot.fingerprint(),
+                "GUI source fingerprint must match the successfully parsed UDF");
+        var first = firstSnapshot.document();
         var second = UdfReader.read(udf("second.udf", "SMOKE-B"));
         assertEquals("1.0", first.formatId());
         assertTrue(first.paragraphs().get(0).runs().get(0).text().contains("İzmir"));
