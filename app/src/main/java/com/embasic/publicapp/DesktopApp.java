@@ -482,6 +482,11 @@ public final class DesktopApp extends JFrame {
         if (converting) return false;
         FileImportPolicy.Selection plan = FileImportPolicy.plan(
                 items.stream().map(item -> item.path).toList(), paths);
+        // An Explorer multi-file drop is one user action: never accept a
+        // partial set (duplicates, unsupported files or the 160-card limit).
+        // Reject before adding any card; importData reports the error after
+        // returning control to Explorer's native drag transaction.
+        if (nativeDrop) requireCompleteNativeDrop(plan);
         for (Path normalized : plan.accepted()) {
             // Snapshot earlier cards before inserting this one. The parser worker
             // checks their physical identity without touching Swing state.
@@ -537,6 +542,19 @@ public final class DesktopApp extends JFrame {
                     message, "İçe aktarma uyarısı", JOptionPane.WARNING_MESSAGE));
         }
         return !plan.accepted().isEmpty();
+    }
+
+    /** Fail closed on an incomplete native drop; chooser imports retain their warnings. */
+    static void requireCompleteNativeDrop(FileImportPolicy.Selection plan) {
+        if (plan == null) throw new IllegalArgumentException("Explorer dosya seçimi eksik");
+        if (plan.limitReached())
+            throw new IllegalArgumentException("Explorer bırakması 160 UDF kartı sınırını aşıyor; hiçbir dosya eklenmedi");
+        if (plan.unsupportedCount() > 0)
+            throw new IllegalArgumentException("Explorer bırakmasında .udf olmayan dosya var; hiçbir dosya eklenmedi");
+        if (plan.duplicateCount() > 0)
+            throw new IllegalArgumentException("Explorer bırakmasında yinelenen UDF var; hiçbir dosya eklenmedi");
+        if (plan.accepted().isEmpty())
+            throw new IllegalArgumentException("Explorer bırakmasında eklenecek UDF yok");
     }
 
     /**
