@@ -278,6 +278,10 @@ public final class PdfExporter {
                 || !target.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".pdf"))
             throw new IllegalArgumentException("Çıktı dosyası .pdf uzantılı olmalıdır");
         Path abs = target.toAbsolutePath().normalize();
+        // Never follow an output-file symlink: replacing it would update the
+        // link itself, not necessarily the PDF the user inspected/approved.
+        if (Files.isSymbolicLink(abs))
+            throw new IllegalArgumentException("PDF hedefi sembolik bağlantı olamaz; gerçek dosyayı seçin");
         Path folder = abs.getParent();
         if (!Files.isDirectory(folder)) throw new IllegalArgumentException("Çıktı klasörü bulunamadı");
         // A directory named *.pdf is not an overwriteable PDF. Reject it before
@@ -340,6 +344,8 @@ public final class PdfExporter {
      */
     private record TargetSnapshot(Object fileKey, String sha256) {
         static TargetSnapshot capture(Path target) throws IOException {
+            if (Files.isSymbolicLink(target))
+                throw new IllegalArgumentException("PDF hedefi sembolik bağlantı olamaz; gerçek dosyayı seçin");
             if (!Files.exists(target)) return null;
             if (!Files.isRegularFile(target))
                 throw new IllegalArgumentException("Çıktı yolu normal bir PDF dosyası olmalıdır");
@@ -349,6 +355,10 @@ public final class PdfExporter {
         }
 
         static void verifyUnchanged(Path target, TargetSnapshot original) throws IOException {
+            // A target switched to a symlink during rendering must never be
+            // treated as the originally approved regular output file.
+            if (Files.isSymbolicLink(target))
+                throw new IllegalArgumentException("PDF hedefi işlem sırasında bağlantıya dönüştü; yeniden onaylayın");
             if (original == null) {
                 if (Files.exists(target))
                     throw new IllegalArgumentException(
@@ -389,6 +399,10 @@ public final class PdfExporter {
      * provider-specific replacement behavior with ATOMIC_MOVE.
      */
     static void publishValidated(Path staging, Path target, boolean overwrite) throws IOException {
+        // Defense in depth for direct callers and a late target-type change.
+        // This check is advisory, not an atomic defense against hostile races.
+        if (Files.isSymbolicLink(target))
+            throw new IllegalArgumentException("PDF hedefi sembolik bağlantı olamaz; gerçek dosyayı seçin");
         if (!overwrite) {
             try {
                 Files.move(staging, target);
