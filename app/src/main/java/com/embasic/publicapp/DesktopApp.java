@@ -1339,9 +1339,18 @@ public final class DesktopApp extends JFrame {
                 // Check every input first: a missing final file must not trigger
                 // expensive parsing of up to 159 earlier ZIP/XML documents.
                 FileImportPolicy.preflightReadableMergeFiles(validated);
+                // CLI and GUI must enforce the same source-integrity contract.
+                // Hash each synthetic UDF around parsing, then recheck every
+                // source before rendering and immediately before PDF publication.
+                // A changed source must not yield a stale merged PDF.
                 List<UdfReader.DocumentSpec> parsed = new ArrayList<>();
-                for (Path input : validated) parsed.add(UdfReader.read(input));
-                int count = PdfExporter.save(parsed, output, false);
+                List<String> fingerprints = new ArrayList<>();
+                for (Path input : validated) {
+                    ParsedSource source = parseSource(input);
+                    parsed.add(source.document());
+                    fingerprints.add(source.fingerprint());
+                }
+                int count = saveWorkspace(validated, parsed, fingerprints, output, false);
                 System.out.println("OK " + count + " page(s): " + output.getFileName());
             } catch (Exception e) {
                 System.err.println("ERROR: " + friendly(e));
