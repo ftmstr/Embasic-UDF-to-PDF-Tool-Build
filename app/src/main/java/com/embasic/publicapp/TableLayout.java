@@ -12,7 +12,27 @@ public final class TableLayout {
         public Geometry { cells=List.copyOf(cells); rowHeights=List.copyOf(rowHeights); widths=List.copyOf(widths); }
     }
     public static Geometry calculate(DocumentElements.TableBlock table) {
+        // Public TableBlock/Row/Cell constructors bypass the synthetic XML
+        // reader's geometry limits. Reject invalid dimensions before creating
+        // a PDF page, resolving fonts or drawing a misleading table.
+        if (table == null) throw new IllegalArgumentException("Boş tablo");
         int columns=table.widths().size(), rowCount=table.rows().size();
+        if (columns < 1 || columns > 32 || rowCount < 1 || rowCount > 500)
+            throw new IllegalArgumentException("Tablo satır veya sütun sınırı aşıldı");
+        for (float width : table.widths())
+            if (!Float.isFinite(width) || width <= 0 || width > 1000)
+                throw new IllegalArgumentException("Geçersiz tablo sütun genişliği");
+        for (DocumentElements.Row row : table.rows()) {
+            if (!Float.isFinite(row.height()) || row.height() < 18 || row.height() > 180)
+                throw new IllegalArgumentException("Geçersiz tablo satır yüksekliği");
+            if (row.cells().isEmpty() || row.cells().size() > columns)
+                throw new IllegalArgumentException("Geçersiz tablo hücre sayısı");
+            for (DocumentElements.Cell cell : row.cells())
+                if (cell.colspan() < 1 || cell.colspan() > columns
+                        || cell.rowspan() < 1 || cell.rowspan() > rowCount
+                        || cell.text() == null || cell.text().length() > 400)
+                    throw new IllegalArgumentException("Geçersiz tablo hücre geometrisi");
+        }
         int[] occupiedUntil=new int[columns];
         List<CellPosition> result=new ArrayList<>();
         float y=0;
