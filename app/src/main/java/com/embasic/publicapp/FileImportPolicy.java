@@ -16,6 +16,9 @@ import java.util.Set;
 /** Bounded selection planning without disk IO; avoids duplicate cards and huge UI import bursts. */
 public final class FileImportPolicy {
     public static final int MAX_CARDS = 160;
+    // The documented synthetic ZIP subset permits at most 32 MiB of decoded
+    // entries. Bound compressed archives too, before hashing or opening ZIPs.
+    public static final long MAX_ARCHIVE_BYTES = 64L * 1024 * 1024;
     private FileImportPolicy() {}
     public record Selection(List<Path> accepted, boolean limitReached,
                             int unsupportedCount, int duplicateCount) {
@@ -58,6 +61,7 @@ public final class FileImportPolicy {
             if (!Files.isRegularFile(path) || !Files.isReadable(path))
                 throw new IllegalArgumentException("Geçerli, okunabilir bir .udf dosyası seçin: "
                         + path.getFileName());
+            requireBoundedArchive(path);
             try {
                 Object identity = Files.readAttributes(path, BasicFileAttributes.class).fileKey();
                 if (identity != null) {
@@ -94,6 +98,7 @@ public final class FileImportPolicy {
         if (!Files.isRegularFile(candidate) || !Files.isReadable(candidate))
             throw new IllegalArgumentException("Geçerli, okunabilir bir .udf dosyası seçin: "
                     + candidate.getFileName());
+        requireBoundedArchive(candidate);
         for (Path previous : earlier) {
             if (previous == null || !Files.exists(previous)) continue;
             try {
@@ -113,14 +118,34 @@ public final class FileImportPolicy {
      * The GUI compares this at import and before export so a changed source
      * cannot silently produce a PDF from an obsolete parsed preview.
      */
+    static void requireBoundedArchive(Path source) {
+        try {
+            if (Files.size(source) > MAX_ARCHIVE_BYTES)
+                throw new IllegalArgumentException("UDF sıkıştırılmış dosya boyutu sınırı aşıldı: "
+                        + source.getFileName());
+        } catch (IOException ex) {
+            throw new IllegalArgumentException("UDF dosya boyutu okunamadı: "
+                    + source.getFileName(), ex);
+        }
+    }
+
     static String sourceSha256(Path source) {
+        requireBoundedArchive(source);
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             try (InputStream in = Files.newInputStream(source)) {
                 byte[] buffer = new byte[64 * 1024];
                 int read;
-                while ((read = in.read(buffer)) != -1)
+                long total = 0;
+                while ((read = in.read(buffer)) != -1) {
+                    total += read;
+                    // Files.size() is advisory: reject a source that grows
+                    // while being hashed, rather than reading without limit.
+                    if (total > MAX_ARCHIVE_BYTES)
+                        throw new IllegalArgumentException("UDF sıkıştırılmış dosya boyutu sınırı aşıldı: "
+                                + source.getFileName());
                     digest.update(buffer, 0, read);
+                }
             }
             return java.util.HexFormat.of().formatHex(digest.digest());
         } catch (IOException ex) {
