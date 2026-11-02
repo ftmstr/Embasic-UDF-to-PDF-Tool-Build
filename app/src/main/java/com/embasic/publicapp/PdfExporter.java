@@ -304,6 +304,10 @@ public final class PdfExporter {
         if (beforePublish == null)
             throw new IllegalArgumentException("PDF son kaynak doğrulaması eksik");
         Path abs = preflightTarget(target, overwrite);
+        // Overwrite consent applies to the PDF the user actually inspected.
+        // Do not silently replace a newer file written by another application
+        // while a large UDF merge is rendering.
+        TargetSnapshot originalTarget = overwrite ? TargetSnapshot.capture(abs) : null;
         Path folder = abs.getParent();
         Path staging = Files.createTempFile(folder, ".embasic-pending-", ".pdf");
         try {
@@ -320,10 +324,61 @@ public final class PdfExporter {
             // validated PDF private until the caller confirms the same bytes
             // still back its parsed documents; finally always cleans staging.
             beforePublish.verify();
+            if (overwrite) TargetSnapshot.verifyUnchanged(abs, originalTarget);
             publishValidated(staging, abs, overwrite);
             return pages;
         } finally {
             Files.deleteIfExists(staging);
+        }
+    }
+
+    /**
+     * Advisory optimistic-concurrency guard for approved PDF overwrites.
+     * SHA-256 catches edits that preserve size/timestamps; fileKey also catches
+     * same-byte atomic replacement when the provider exposes an identity.
+     * This does not make the final check-and-move atomic against hostile races.
+     */
+    private record TargetSnapshot(Object fileKey, String sha256) {
+        static TargetSnapshot capture(Path target) throws IOException {
+            if (!Files.exists(target)) return null;
+            if (!Files.isRegularFile(target))
+                throw new IllegalArgumentException("Çıktı yolu normal bir PDF dosyası olmalıdır");
+            Object key = Files.readAttributes(target,
+                    java.nio.file.attribute.BasicFileAttributes.class).fileKey();
+            return new TargetSnapshot(key, fingerprint(target));
+        }
+
+        static void verifyUnchanged(Path target, TargetSnapshot original) throws IOException {
+            if (original == null) {
+                if (Files.exists(target))
+                    throw new IllegalArgumentException(
+                            "PDF hedefi işlem sırasında oluşturuldu; yeniden onaylayın");
+                return;
+            }
+            if (!Files.isRegularFile(target))
+                throw new IllegalArgumentException(
+                        "Mevcut PDF işlem sırasında kaldırıldı veya değiştirildi; yeniden onaylayın");
+            Object currentKey = Files.readAttributes(target,
+                    java.nio.file.attribute.BasicFileAttributes.class).fileKey();
+            if ((original.fileKey != null && currentKey != null
+                    && !original.fileKey.equals(currentKey))
+                    || !original.sha256.equals(fingerprint(target)))
+                throw new IllegalArgumentException(
+                        "Mevcut PDF işlem sırasında değiştirildi; yeniden onaylayın");
+        }
+
+        private static String fingerprint(Path target) throws IOException {
+            try {
+                java.security.MessageDigest digest =
+                        java.security.MessageDigest.getInstance("SHA-256");
+                try (java.security.DigestInputStream stream =
+                             new java.security.DigestInputStream(Files.newInputStream(target), digest)) {
+                    stream.transferTo(java.io.OutputStream.nullOutputStream());
+                }
+                return java.util.HexFormat.of().formatHex(digest.digest());
+            } catch (java.security.NoSuchAlgorithmException ex) {
+                throw new IllegalStateException("SHA-256 kullanılamıyor", ex);
+            }
         }
     }
 
