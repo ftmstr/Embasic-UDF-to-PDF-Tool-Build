@@ -286,6 +286,19 @@ public final class PdfExporter {
     }
 
     public static int save(List<UdfReader.DocumentSpec> docs, Path target, boolean overwrite) throws Exception {
+        return save(docs, target, overwrite, () -> {});
+    }
+
+    /** Validate mutable GUI sources after PDF staging but before publishing any output. */
+    @FunctionalInterface
+    interface BeforePublishCheck {
+        void verify() throws Exception;
+    }
+
+    static int save(List<UdfReader.DocumentSpec> docs, Path target, boolean overwrite,
+                    BeforePublishCheck beforePublish) throws Exception {
+        if (beforePublish == null)
+            throw new IllegalArgumentException("PDF son kaynak doğrulaması eksik");
         Path abs = preflightTarget(target, overwrite);
         Path folder = abs.getParent();
         Path staging = Files.createTempFile(folder, ".embasic-pending-", ".pdf");
@@ -299,6 +312,10 @@ public final class PdfExporter {
                 if (reloaded.getNumberOfPages() != pages || pages < 1)
                     throw new IOException("PDF sayfa doğrulaması başarısız");
             }
+            // A source may change during a long 160-document render. Keep the
+            // validated PDF private until the caller confirms the same bytes
+            // still back its parsed documents; finally always cleans staging.
+            beforePublish.verify();
             publishValidated(staging, abs, overwrite);
             return pages;
         } finally {
