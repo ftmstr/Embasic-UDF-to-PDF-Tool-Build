@@ -602,6 +602,19 @@ final class PublicDesktopSmokeTest {
             assertSame(drop, target.getTransferHandler(),
                     "All full-window controls must accept safe Explorer file drops");
 
+        // An OS file-list provider must not silently drop an unknown entry
+        // and import a partial set. Keep the full valid Explorer list intact.
+        java.io.File firstFile = root.resolve("first.udf").toFile();
+        java.io.File secondFile = root.resolve("second.udf").toFile();
+        assertEquals(List.of(firstFile.toPath(), secondFile.toPath()),
+                DesktopApp.extractDroppedPaths(List.of(firstFile, secondFile)));
+        assertThrows(IllegalArgumentException.class,
+                () -> DesktopApp.extractDroppedPaths(List.of(firstFile, "unexpected")));
+        assertThrows(IllegalArgumentException.class,
+                () -> DesktopApp.extractDroppedPaths(List.of()));
+        assertThrows(IllegalArgumentException.class,
+                () -> DesktopApp.extractDroppedPaths(null));
+
         // A secondary/middle press must not capture a selected card for
         // reordering. Modifier-assisted primary selection remains available.
         for (int modifiers : new int[]{0, java.awt.event.InputEvent.CTRL_DOWN_MASK,
