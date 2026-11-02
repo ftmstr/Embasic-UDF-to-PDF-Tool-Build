@@ -177,5 +177,41 @@ final class ReferencedMediaRegressionTest {
         var failure = assertThrows(IllegalArgumentException.class,
                 () -> { try (PDDocument ignored = PdfExporter.render(List.of(tooManyPixels))) {} });
         assertTrue(failure.getMessage().contains("piksel"), failure.getMessage());
+
+        // Direct public records do not pass through the XML geometry parser.
+        // Negative, zero and non-finite placement must fail before a PDF is
+        // staged, even when the PNG bytes themselves are valid.
+        for (float invalid : List.of(0f, -1f, Float.NaN, Float.POSITIVE_INFINITY)) {
+            for (boolean invalidWidth : List.of(true, false)) {
+                var block = new DocumentElements.ImageBlock(png(),
+                        invalidWidth ? invalid : 40f, invalidWidth ? 40f : invalid);
+                var spec = new UdfReader.DocumentSpec("bad-image-geometry.udf", "1.0",
+                        List.of(), List.of(block), DocumentElements.PageSpec.a4());
+                var error = assertThrows(IllegalArgumentException.class,
+                        () -> { try (PDDocument ignored = PdfExporter.render(List.of(spec))) {} });
+                assertTrue(error.getMessage().contains("geometrisi"), error.getMessage());
+            }
+        }
+        for (float invalid : List.of(0f, -1f, Float.NaN, Float.POSITIVE_INFINITY)) {
+            for (int component = 0; component < 3; component++) {
+                var pageSpec = new DocumentElements.PageSpec(
+                        component == 0 ? invalid : 595.28f,
+                        component == 1 ? invalid : 841.89f,
+                        component == 2 ? invalid : 48f);
+                var spec = new UdfReader.DocumentSpec("bad-page-geometry.udf", "1.0",
+                        List.of(), List.of(new DocumentElements.ImageBlock(png(), 40f, 40f)),
+                        pageSpec);
+                var error = assertThrows(IllegalArgumentException.class,
+                        () -> { try (PDDocument ignored = PdfExporter.render(List.of(spec))) {} });
+                assertTrue(error.getMessage().contains("sayfa geometrisi"), error.getMessage());
+            }
+        }
+        Path invalidTarget = folder.resolve("invalid-geometry.pdf");
+        var invalidSpec = new UdfReader.DocumentSpec("invalid.udf", "1.0", List.of(),
+                List.of(new DocumentElements.ImageBlock(png(), Float.NaN, 40f)),
+                DocumentElements.PageSpec.a4());
+        assertThrows(IllegalArgumentException.class,
+                () -> PdfExporter.save(List.of(invalidSpec), invalidTarget, false));
+        assertFalse(Files.exists(invalidTarget));
     }
 }
