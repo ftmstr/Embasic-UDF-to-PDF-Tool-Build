@@ -84,6 +84,18 @@ public final class VirtualGridLayout {
         return (int) Math.max(0L, Math.min((long) maxScroll, requested));
     }
 
+    /**
+     * Preserve the first visible logical UDF row when a responsive window
+     * resize changes the number of grid columns. Pixel-only Y retention can
+     * jump to unrelated documents even though thumbnail zoom is unchanged.
+     * Clamp near the final row so a shorter layout never overscrolls.
+     */
+    int reflowScrollY(VirtualGridLayout next, int viewportY, int viewportHeight) {
+        if (next == null) throw new IllegalArgumentException("Yeni grid geometrisi eksik");
+        return next.anchoredScrollY(topRowAnchor(viewportY),
+                topRowOffset(viewportY), viewportHeight);
+    }
+
     /** Horizontal midpoint used for before/after Explorer-style drops. */
     public boolean insertAfter(int index, int x) {
         Rectangle rectangle=bounds(index);
