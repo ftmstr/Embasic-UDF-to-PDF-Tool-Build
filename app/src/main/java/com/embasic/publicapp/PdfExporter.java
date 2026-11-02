@@ -59,6 +59,20 @@ public final class PdfExporter {
             // the synthetic PDF subset. Reject them before font loading rather
             // than silently dropping, reordering, or hiding visible text.
             int category = Character.getType(cp);
+            // PDFBox showText() does not perform Arabic/Indic shaping or
+            // bidirectional paragraph layout. Combining marks need tested
+            // mark placement. Reject these before any PDF is staged, rather
+            // than publishing misleading, apparently successful output.
+            int direction=Character.getDirectionality(cp);
+            Character.UnicodeScript script=Character.UnicodeScript.of(cp);
+            if (direction == Character.DIRECTIONALITY_RIGHT_TO_LEFT
+                    || direction == Character.DIRECTIONALITY_RIGHT_TO_LEFT_ARABIC
+                    || category == Character.NON_SPACING_MARK
+                    || category == Character.COMBINING_SPACING_MARK
+                    || category == Character.ENCLOSING_MARK
+                    || requiresComplexShaping(script))
+                throw new IllegalArgumentException("PDF için biçimlendirmesi doğrulanmamış Unicode: U+"
+                        + Integer.toHexString(cp).toUpperCase(Locale.ROOT));
             // Layout.add() maps Character.isWhitespace to a single ASCII space.
             // Reject non-ASCII whitespace instead of silently shrinking em/en
             // and ideographic spaces (including at the end of a document).
@@ -69,6 +83,22 @@ public final class PdfExporter {
                 throw new IllegalArgumentException("Desteklenmeyen metin kontrol veya ayırıcı karakteri: U+"
                         + Integer.toHexString(cp).toUpperCase(Locale.ROOT));
         }
+    }
+
+    /**
+     * Conservative explicit subset; not a claim that other writing systems
+     * are impossible to render. They need a separately validated shaping
+     * engine before being considered safe for pixel-faithful UDF export.
+     */
+    private static boolean requiresComplexShaping(Character.UnicodeScript script) {
+        return switch (script) {
+            case ARABIC, HEBREW, SYRIAC, THAANA, NKO, MANDAIC,
+                    SAMARITAN, DEVANAGARI, BENGALI, GURMUKHI, GUJARATI,
+                    ORIYA, TAMIL, TELUGU, KANNADA, MALAYALAM, SINHALA,
+                    THAI, LAO, TIBETAN, MYANMAR, KHMER, JAVANESE,
+                    BALINESE -> true;
+            default -> false;
+        };
     }
 
     public static PDDocument render(List<UdfReader.DocumentSpec> docs) throws Exception {
