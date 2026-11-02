@@ -54,6 +54,23 @@ final class VirtualGridLayoutTest {
                     "Zoom must keep the same logical UDF row visible");
             assertEquals(23, resized.topRowOffset(y));
         }
+        // Resizing the window at fixed zoom must keep the same logical
+        // document near the viewport top, just like changing thumbnail zoom.
+        // A 160-file queue otherwise jumps when the column count changes.
+        for (int width : new int[]{680, 1430}) {
+            var reflowed = new VirtualGridLayout(161, width, 188);
+            assertNotEquals(grid.columns(), reflowed.columns());
+            int y = grid.reflowScrollY(reflowed, oldY, 650);
+            int row = reflowed.topRowAnchor(y);
+            assertTrue(row <= anchor && anchor < row + reflowed.columns(),
+                    "Window resize must retain the current logical UDF");
+            assertEquals(23, reflowed.topRowOffset(y));
+        }
+        var shortGrid = new VirtualGridLayout(2, 680, 188);
+        assertEquals(0, grid.reflowScrollY(shortGrid, oldY, 650),
+                "Shrinking the content must clamp the scroll position");
+        assertThrows(IllegalArgumentException.class,
+                () -> grid.reflowScrollY(null, oldY, 650));
         assertEquals(0, grid.topRowAnchor(0));
         assertEquals(0, grid.topRowOffset(0));
         int gap = grid.bounds(80).y + grid.bounds(80).height + 2;
