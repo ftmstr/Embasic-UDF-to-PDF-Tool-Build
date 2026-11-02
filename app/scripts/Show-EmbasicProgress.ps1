@@ -19,15 +19,16 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $today = [DateTimeOffset]::UtcNow.ToOffset([TimeSpan]::FromHours(3))
-$reviewDate = '2026-10-31'
-$forecastBase = [DateTime]::ParseExact($reviewDate, 'yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture)
+$reviewDate = '2026-11-02'
+# Do not drift conditional release dates forward just because an hourly tour ran.
+$forecastBase = [DateTime]::ParseExact('2026-10-31', 'yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture)
 # Weight totals are exactly 100. Completion is engineering judgement, not telemetry.
 $milestones = @(
     [pscustomobject]@{ Name='Public kod tabani / Maven'; Weight=12; Complete=100; Evidence='Public kaynak + Linux/Windows Maven CI' }
-    [pscustomobject]@{ Name='Windows launcher / smoke'; Weight=12; Complete=100; Evidence='jpackage EXE smoke 40919356940' }
+    [pscustomobject]@{ Name='Windows launcher / smoke'; Weight=12; Complete=100; Evidence='jpackage EXE smoke 41380878867 (Public HEAD on 02.11)' }
     [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=73; Evidence='Erisilebilir hedef+Esc iptal testleri; Robot GUI yalniz opt-in, fiziksel kabul HENUZ YOK' }
     [pscustomobject]@{ Name='UDF turleri ve surumleri'; Weight=26; Complete=12; Evidence='Sentetik ZIP PNG referans, A5/LEGAL; gercek UYAP schema dogrulanmadi' }
-    [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Sentetik PDFBox var; resmî golden yok' }
+    [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Fail-closed RTL/combining testleri; native UYAP golden/parity YOK' }
     [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Sentetik gate var; binary dagitim onayi yok' }
     [pscustomobject]@{ Name='Beta kabul / dagitim'; Weight=8; Complete=10; Evidence='Paket CI ici; indirme paketi yayinlanmadi' }
 )
