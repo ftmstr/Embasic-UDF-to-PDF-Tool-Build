@@ -124,6 +124,13 @@ public final class PdfExporter {
      */
     private static void preflightPageGeometry(UdfReader.DocumentSpec document) {
         DocumentElements.PageSpec page = document.page();
+        // Public DocumentSpec/PageSpec constructors bypass XML's positive,
+        // finite geometry checks. Never publish a PDF with negative margins,
+        // NaN coordinates or infinite page dimensions.
+        if (!Float.isFinite(page.width()) || !Float.isFinite(page.height())
+                || !Float.isFinite(page.margin()) || page.width() <= 0
+                || page.height() <= 0 || page.margin() <= 0)
+            throw new IllegalArgumentException("Geçersiz sayfa geometrisi");
         float usableWidth = page.width() - 2 * page.margin();
         float usableHeight = page.height() - 2 * page.margin();
         if (!Float.isFinite(usableWidth) || !Float.isFinite(usableHeight)
@@ -147,6 +154,11 @@ public final class PdfExporter {
                         throw new IllegalArgumentException("Rowspan grubu tek sayfaya sığmıyor");
                 }
             } else if (block instanceof DocumentElements.ImageBlock image) {
+                // Direct ImageBlock records also bypass XML's positive/finite
+                // image dimensions. Reject before PNG decoding or PDF staging.
+                if (!Float.isFinite(image.width()) || !Float.isFinite(image.height())
+                        || image.width() <= 0 || image.height() <= 0)
+                    throw new IllegalArgumentException("Geçersiz PNG yerleşim geometrisi");
                 if (image.width() > usableWidth || image.height() > usableHeight)
                     throw new IllegalArgumentException("PNG sayfaya sığmıyor");
             }
