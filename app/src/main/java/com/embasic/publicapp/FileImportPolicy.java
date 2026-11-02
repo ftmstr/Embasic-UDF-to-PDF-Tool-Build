@@ -78,6 +78,33 @@ public final class FileImportPolicy {
         }
     }
 
+    /**
+     * Reject a physical alias before parsing a newly imported GUI card. This
+     * filesystem work runs on the parser worker, never the Swing EDT. Earlier
+     * cards may have been removed while the worker was queued; missing paths
+     * are ignored here, while the export preflight still validates every
+     * remaining source.
+     */
+    static void preflightDistinctImport(Path candidate, List<Path> earlier) {
+        if (candidate == null || earlier == null)
+            throw new IllegalArgumentException("UDF kaynak listesi eksik");
+        if (!Files.isRegularFile(candidate) || !Files.isReadable(candidate))
+            throw new IllegalArgumentException("Geçerli, okunabilir bir .udf dosyası seçin: "
+                    + candidate.getFileName());
+        for (Path previous : earlier) {
+            if (previous == null || !Files.exists(previous)) continue;
+            try {
+                if (Files.isSameFile(candidate, previous))
+                    throw new IllegalArgumentException(
+                            "Bu UDF dosyası zaten çalışma alanında (fiziksel yinelenen bağlantı): "
+                                    + candidate.getFileName());
+            } catch (IOException ex) {
+                throw new IllegalArgumentException(
+                        "UDF bağlantısı doğrulanamadı: " + candidate.getFileName(), ex);
+            }
+        }
+    }
+
     public static Selection plan(List<Path> current, List<Path> candidates) {
         if (current == null || candidates == null) throw new IllegalArgumentException("Dosya listesi eksik");
         Set<Path> known = new HashSet<>();
