@@ -217,6 +217,40 @@ final class PublicDesktopSmokeTest {
         });
     }
 
+    @Test void altArrowsReorderSelectedPdfCardsWithoutMouseOrViewport() throws Exception {
+        // Bindings work on a headless JRootPane: no physical Windows Robot or
+        // offscreen Swing card instance is needed to move logical PDF order.
+        javax.swing.SwingUtilities.invokeAndWait(() -> {
+            javax.swing.JRootPane rootPane = new javax.swing.JRootPane();
+            List<String> selectedCards = List.of("B", "D");
+            java.util.concurrent.atomic.AtomicReference<List<String>> order =
+                    new java.util.concurrent.atomic.AtomicReference<>(
+                            List.of("A", "B", "C", "D"));
+            DesktopApp.installReorderShortcuts(rootPane,
+                    direction -> order.set(GridReorder.step(
+                            order.get(), selectedCards, direction)));
+            var input = rootPane.getInputMap(javax.swing.JComponent.WHEN_IN_FOCUSED_WINDOW);
+            var actions = rootPane.getActionMap();
+            Object previous = input.get(javax.swing.KeyStroke.getKeyStroke(
+                    java.awt.event.KeyEvent.VK_UP, java.awt.event.InputEvent.ALT_DOWN_MASK));
+            Object next = input.get(javax.swing.KeyStroke.getKeyStroke(
+                    java.awt.event.KeyEvent.VK_DOWN, java.awt.event.InputEvent.ALT_DOWN_MASK));
+            assertNotNull(previous, "Alt+Up must be available to keyboard-only users");
+            assertNotNull(next, "Alt+Down must be available to keyboard-only users");
+            assertNull(input.get(javax.swing.KeyStroke.getKeyStroke(
+                    java.awt.event.KeyEvent.VK_UP, java.awt.event.InputEvent.CTRL_DOWN_MASK)),
+                    "Reordering must not steal Explorer Ctrl+arrow selection");
+            actions.get(previous).actionPerformed(new java.awt.event.ActionEvent(
+                    rootPane, java.awt.event.ActionEvent.ACTION_PERFORMED, "previous"));
+            assertEquals(List.of("B", "A", "D", "C"), order.get());
+            actions.get(next).actionPerformed(new java.awt.event.ActionEvent(
+                    rootPane, java.awt.event.ActionEvent.ACTION_PERFORMED, "next"));
+            assertEquals(List.of("A", "B", "C", "D"), order.get());
+            assertEquals(List.of("B", "D"), selectedCards,
+                    "Reordering must preserve the multi-selection and its PDF order");
+        });
+    }
+
     @Test void singleAndOrderedMerge() throws Exception {
         Path firstFile = udf("first.udf", "SMOKE-A İzmir ğüş");
         var firstSnapshot = DesktopApp.parseSource(firstFile);
