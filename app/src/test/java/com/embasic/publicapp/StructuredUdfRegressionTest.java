@@ -318,6 +318,10 @@ final class StructuredUdfRegressionTest {
                                 new UdfReader.Style(11f, false, null))))));
         assertThrows(IllegalArgumentException.class,
                 () -> { try (PDDocument ignored = PdfExporter.render(List.of(noColor))) {} });
+        // First-page preview must reject an invalid style that it would draw,
+        // without scanning styles on later pages that it never renders.
+        assertThrows(IllegalArgumentException.class,
+                () -> { try (PDDocument ignored = PdfExporter.renderPreview(noColor)) {} });
         Path output = folder.resolve("invalid-direct-style.pdf");
         assertThrows(IllegalArgumentException.class,
                 () -> PdfExporter.save(List.of(noColor), output, false));
