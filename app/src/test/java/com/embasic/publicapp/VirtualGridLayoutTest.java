@@ -40,6 +40,27 @@ final class VirtualGridLayoutTest {
         assertTrue(smaller.columns()>grid.columns());
         var larger=new VirtualGridLayout(161,1000,272);
         assertTrue(larger.columns()<grid.columns());
+
+        // Zoom must retain the logical UDF near the top instead of keeping a
+        // stale pixel offset, even when the new grid has fewer columns.
+        int oldY = grid.bounds(80).y + 23;
+        int anchor = grid.topRowAnchor(oldY);
+        assertEquals((80 / grid.columns()) * grid.columns(), anchor);
+        assertEquals(23, grid.topRowOffset(oldY));
+        for (var resized : new VirtualGridLayout[]{smaller, larger}) {
+            int y = resized.anchoredScrollY(anchor, grid.topRowOffset(oldY), 650);
+            int newRow = resized.topRowAnchor(y);
+            assertTrue(newRow <= anchor && anchor < newRow + resized.columns(),
+                    "Zoom must keep the same logical UDF row visible");
+            assertEquals(23, resized.topRowOffset(y));
+        }
+        assertEquals(0, grid.topRowAnchor(0));
+        assertEquals(0, grid.topRowOffset(0));
+        int gap = grid.bounds(80).y + grid.bounds(80).height + 2;
+        assertEquals(anchor, grid.topRowAnchor(gap),
+                "Vertical card gaps belong to the preceding logical row");
+        assertEquals(0, grid.anchoredScrollY(160, 0, Integer.MAX_VALUE),
+                "A viewport taller than the grid must never scroll past its content");
     }
     @Test void emptyAndInvalidViewportsAreSafe() {
         var grid=new VirtualGridLayout(0,0,188);
