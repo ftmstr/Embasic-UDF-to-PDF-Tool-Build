@@ -59,6 +59,33 @@ final class PdfOutputCommitTest {
         }
     }
 
+    @Test void invalidDestinationFailsBeforeSourceHashingOrPdfStaging() throws Exception {
+        // A failed output choice must not read 160 sources or wait for font
+        // discovery. The source deliberately does not exist: output validation
+        // must be the first filesystem operation in the GUI save worker.
+        Path missing = folder.resolve("missing.udf");
+        var style = new UdfReader.Style(11, false, Color.BLACK);
+        var paragraph = new UdfReader.Paragraph(List.of(new UdfReader.Run("Synthetic", style)));
+        var doc = new UdfReader.DocumentSpec("missing.udf", "1.0", List.of(paragraph));
+        IllegalArgumentException extension = assertThrows(IllegalArgumentException.class,
+                () -> DesktopApp.saveWorkspace(List.of(missing), List.of(doc),
+                        List.of("not-a-fingerprint"), folder.resolve("invalid.txt"), false));
+        assertTrue(extension.getMessage().contains(".pdf"));
+
+        // The save dialog may select an existing directory whose name ends in
+        // .pdf. Even with overwrite consent, never stage a PDF against it.
+        Path directory = Files.createDirectory(folder.resolve("directory.pdf"));
+        IllegalArgumentException nonFile = assertThrows(IllegalArgumentException.class,
+                () -> DesktopApp.saveWorkspace(List.of(missing), List.of(doc),
+                        List.of("not-a-fingerprint"), directory, true));
+        assertTrue(nonFile.getMessage().contains("normal bir PDF"));
+        assertTrue(Files.isDirectory(directory));
+        try (var entries = Files.list(folder)) {
+            assertEquals(0, entries.filter(path -> path.getFileName().toString()
+                    .startsWith(".embasic-pending-")).count());
+        }
+    }
+
     @Test void latePhysicalAliasCannotOverwriteExistingOutput() throws Exception {
         // Two independent, byte-identical sources pass the initial fingerprint
         // gate. Replacing the second path with a hard link during rendering
