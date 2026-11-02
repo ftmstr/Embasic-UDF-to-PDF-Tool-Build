@@ -243,6 +243,53 @@ final class StructuredUdfRegressionTest {
         String nested="<table widths='100'><row height='30'><cell><paragraph/></cell></row></table>";
         assertThrows(IllegalArgumentException.class,()->parse(container(nested,"")));
     }
+    @Test void directTableGeometryCannotBypassSyntheticBounds(@TempDir Path folder) throws Exception {
+        // XML limits must also apply to public records built in memory.
+        // Fail before PDFBox font discovery or output publication.
+        List<DocumentElements.TableBlock> invalid = new ArrayList<>();
+        for (float width : List.of(0f, -1f, Float.NaN, Float.POSITIVE_INFINITY, 1001f))
+            invalid.add(new DocumentElements.TableBlock(List.of(width),
+                    List.of(new DocumentElements.Row(
+                            List.of(new DocumentElements.Cell("A", 1, 1)), 28f))));
+        for (float height : List.of(0f, 17f, -1f, Float.NaN,
+                Float.POSITIVE_INFINITY, 181f))
+            invalid.add(new DocumentElements.TableBlock(List.of(100f),
+                    List.of(new DocumentElements.Row(
+                            List.of(new DocumentElements.Cell("A", 1, 1)), height))));
+        for (int span : List.of(0, -1, 2)) {
+            invalid.add(new DocumentElements.TableBlock(List.of(100f),
+                    List.of(new DocumentElements.Row(
+                            List.of(new DocumentElements.Cell("A", span, 1)), 28f))));
+            invalid.add(new DocumentElements.TableBlock(List.of(100f),
+                    List.of(new DocumentElements.Row(
+                            List.of(new DocumentElements.Cell("A", 1, span)), 28f))));
+        }
+        invalid.add(new DocumentElements.TableBlock(List.of(100f),
+                List.of(new DocumentElements.Row(
+                        List.of(new DocumentElements.Cell("A".repeat(401), 1, 1)), 28f))));
+        invalid.add(new DocumentElements.TableBlock(
+                java.util.Collections.nCopies(33, 20f),
+                List.of(new DocumentElements.Row(
+                        List.of(new DocumentElements.Cell("A", 33, 1)), 28f))));
+        invalid.add(new DocumentElements.TableBlock(List.of(100f),
+                java.util.Collections.nCopies(501, new DocumentElements.Row(
+                        List.of(new DocumentElements.Cell("A", 1, 1)), 28f))));
+
+        Path output = folder.resolve("invalid-direct-table.pdf");
+        for (var table : invalid) {
+            var doc = new UdfReader.DocumentSpec("direct-table.udf", "1.0",
+                    List.of(), List.of(table), DocumentElements.PageSpec.a4());
+            assertThrows(IllegalArgumentException.class,
+                    () -> { try (PDDocument ignored = PdfExporter.render(List.of(doc))) {} });
+            assertFalse(Files.exists(output), "No invalid table may publish a PDF");
+        }
+        var bad = new UdfReader.DocumentSpec("direct-table.udf", "1.0",
+                List.of(), List.of(invalid.get(0)), DocumentElements.PageSpec.a4());
+        assertThrows(IllegalArgumentException.class,
+                () -> PdfExporter.save(List.of(bad), output, false));
+        assertFalse(Files.exists(output));
+    }
+
     @Test void unknownFormatVersionsCannotBeRenderedAsSyntheticOneZero() throws Exception {
         String valid = "<template format_id='1.0'><content>ABC</content>"
                 + "<elements><paragraph><content startOffset='0' length='3'/>"
