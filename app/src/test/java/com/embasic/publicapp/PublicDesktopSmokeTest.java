@@ -177,6 +177,41 @@ final class PublicDesktopSmokeTest {
             }
         });
         assertEquals(2, activations.get(), "Both keys must invoke the same add-file action");
+        // The 160th card fills the workspace: the + tile must not launch a
+        // chooser that cannot accept another file, including via stale bindings.
+        javax.swing.SwingUtilities.invokeAndWait(() -> {
+            JPanel tile = new JPanel();
+            JLabel caption = new JLabel("+");
+            tile.add(caption);
+            DesktopApp.installAddCardKeyboard(tile, activations::incrementAndGet);
+            DesktopApp.installAddCardMouse(tile, caption, activations::incrementAndGet);
+            Object key = tile.getInputMap(javax.swing.JComponent.WHEN_FOCUSED)
+                    .get(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ENTER, 0));
+            javax.swing.Action action = tile.getActionMap().get(key);
+            java.awt.event.ActionEvent enter = new java.awt.event.ActionEvent(tile,
+                    java.awt.event.ActionEvent.ACTION_PERFORMED, "add");
+            java.awt.event.MouseEvent click = new java.awt.event.MouseEvent(caption,
+                    java.awt.event.MouseEvent.MOUSE_CLICKED, 0L, 0,
+                    8, 8, 1, false, java.awt.event.MouseEvent.BUTTON1);
+            DesktopApp.updateAddCardAvailability(tile, 160, false);
+            assertFalse(tile.isEnabled());
+            assertFalse(tile.isFocusable(), "Full-grid + tile must leave the Tab order");
+            assertTrue(tile.getAccessibleContext().getAccessibleName().contains("160"));
+            assertTrue(caption.getText().contains("sınırı dolu"));
+            action.actionPerformed(enter);
+            for (var listener : caption.getMouseListeners()) listener.mouseClicked(click);
+            assertEquals(2, activations.get(), "Full grid must not open the file chooser");
+            DesktopApp.updateAddCardAvailability(tile, 159, true);
+            assertFalse(tile.isEnabled(), "PDF export must lock the + tile");
+            action.actionPerformed(enter);
+            assertEquals(2, activations.get());
+            DesktopApp.updateAddCardAvailability(tile, 159, false);
+            assertTrue(tile.isEnabled());
+            assertTrue(tile.isFocusable());
+            assertEquals("+ UDF ekle", tile.getAccessibleContext().getAccessibleName());
+            action.actionPerformed(enter);
+            assertEquals(3, activations.get(), "Removing a card must restore the + tile");
+        });
     }
 
     @Test void addTileKeepsIdentityAndKeyboardBindingsAcrossVirtualRefresh() throws Exception {
