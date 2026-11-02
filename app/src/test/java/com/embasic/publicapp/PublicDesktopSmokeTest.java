@@ -579,6 +579,28 @@ final class PublicDesktopSmokeTest {
         assertSame(drop, workspace.getTransferHandler());
         assertSame(drop, workspace.getViewport().getTransferHandler());
         assertSame(drop, card.getTransferHandler());
+        // Native Explorer file drops may hit the toolbar, slider, status or
+        // scrollbar. The complete frame hierarchy must share the same safe
+        // COPY-only handler; a drop must not depend on a visible card target.
+        JPanel frameContent = new JPanel(new java.awt.BorderLayout());
+        JPanel toolbar = new JPanel();
+        javax.swing.JButton save = new javax.swing.JButton("PDF olarak kaydet");
+        javax.swing.JSlider zoom = new javax.swing.JSlider();
+        toolbar.add(save);
+        toolbar.add(zoom);
+        JPanel footer = new JPanel();
+        JLabel status = new JLabel("Hazır");
+        footer.add(status);
+        frameContent.add(toolbar, java.awt.BorderLayout.NORTH);
+        frameContent.add(workspace, java.awt.BorderLayout.CENTER);
+        frameContent.add(footer, java.awt.BorderLayout.SOUTH);
+        DesktopApp.installFileDrop(frameContent, drop);
+        for (javax.swing.JComponent target : new javax.swing.JComponent[]{
+                frameContent, toolbar, save, zoom, workspace,
+                workspace.getViewport(), workspace.getVerticalScrollBar(),
+                card, preview, caption, filename, footer, status})
+            assertSame(drop, target.getTransferHandler(),
+                    "All full-window controls must accept safe Explorer file drops");
 
         // A secondary/middle press must not capture a selected card for
         // reordering. Modifier-assisted primary selection remains available.
