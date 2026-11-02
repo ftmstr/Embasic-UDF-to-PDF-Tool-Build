@@ -72,6 +72,11 @@ final class GuiRobotSmokeTest {
         catch(AWTException ex) { throw new AssertionError(
                 "Interactive Windows Robot unavailable; GUI acceptance inconclusive",ex); }
         robot.setAutoDelay(15);
+        // Distinguish an unusable/locked desktop from a successful GUI test.
+        Rectangle desktop=GraphicsEnvironment.getLocalGraphicsEnvironment()
+                .getMaximumWindowBounds();
+        assertTrue(desktop.width>=900 && desktop.height>=650,
+                "Physical Windows GUI acceptance requires a usable, unlocked >=900x650 desktop");
         List<Path> source=new ArrayList<>();
         for(int i=0;i<40;i++)source.add(makeFixture(i));
         AtomicReference<DesktopApp> appRef=new AtomicReference<>();
@@ -118,7 +123,9 @@ final class GuiRobotSmokeTest {
                 robot.delay(32);
             }
             robot.delay(900);
-            robot.waitForIdle();
+            // Repeating autoscroll timer keeps posting EDT events. Robot.waitForIdle
+            // is not reliable while it is running; use a bounded EDT barrier.
+            edt(() -> {});
             final int[] scrolled={0};
             edt(()-> scrolled[0]=scroll.getVerticalScrollBar().getValue());
             assertTrue(scrolled[0]>0,"Drag near bottom did not auto-scroll real JFrame");
@@ -141,7 +148,9 @@ final class GuiRobotSmokeTest {
             robot.mouseMove(viewportScreen.x+destInViewport.x,
                     viewportScreen.y+destInViewport.y);
             robot.delay(200);
-            robot.waitForIdle();
+            // The drag timer may still be active; never wait for a permanently
+            // empty event queue while the mouse is held down.
+            edt(() -> {});
             final int[] indicated={-1};
             edt(()->{
                 try { indicated[0]=(Integer)field(app,"dropTargetIndex"); }
