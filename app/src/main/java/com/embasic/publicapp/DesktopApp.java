@@ -586,14 +586,20 @@ public final class DesktopApp extends JFrame {
         }
     }
 
+    /** A failed import must remain visually distinct from a pending or preview-only card. */
+    static boolean isFailedImport(boolean parsed, String info) {
+        return !parsed && !"Okunuyor...".equals(info);
+    }
+
     private void updateFileStatus() {
         if (converting) return;
         long ready = items.stream().filter(item -> item.document != null).count();
         long pending = items.stream().filter(item -> item.document == null &&
                 "Okunuyor...".equals(item.info)).count();
-        long errors = items.size() - ready - pending;
+        long errors = items.stream().filter(item ->
+                isFailedImport(item.document != null, item.info)).count();
         status.setText("UDF: " + items.size() + "  |  Hazır: " + ready +
-                "  |  İşleniyor: " + pending + "  |  Desteklenmeyen: " + errors +
+                "  |  İşleniyor: " + pending + "  |  Hatalı: " + errors +
                 (errors > 0 ? "  — Hatalı kartları kaldırmadan PDF kaydedilemez" : ""));
         status.setToolTipText(errors > 0
                 ? "Kırmızı durumlu kartlardaki nedenleri kontrol edin; içerik kaybı önleniyor."
@@ -648,14 +654,23 @@ public final class DesktopApp extends JFrame {
         ThumbnailSizing.Size size=ThumbnailSizing.at(thumbnailZoom.getValue());
         card.setPreferredSize(new Dimension(size.cardWidth(), size.cardHeight()));
         card.setBackground(cardColor());
+        boolean failedImport = isFailedImport(item.document != null, item.info);
+        Color borderColor = selected.contains(item) || focused == item ? accent()
+                : failedImport ? new Color(210, 75, 66) : cardColor();
         card.setBorder(BorderFactory.createCompoundBorder(
-            BorderFactory.createLineBorder(selected.contains(item) || focused == item ? accent() : cardColor(),
-                selected.contains(item) ? 2 : 1, true),
+            BorderFactory.createLineBorder(borderColor,
+                selected.contains(item) || failedImport ? 2 : 1, true),
             BorderFactory.createEmptyBorder(8, 7, 8, 7)));
-        JLabel preview = new JLabel(item.thumbnail == null ? "UDF" : "",
+        if (failedImport) {
+            card.getAccessibleContext().setAccessibleDescription(
+                    "Hatalı UDF: " + item.path.getFileName() + ". " + item.info);
+            card.setToolTipText(item.info);
+        }
+        JLabel preview = new JLabel(item.thumbnail == null ? (failedImport ? "HATA" : "UDF") : "",
                 thumbnailIcon(item, size), SwingConstants.CENTER);
         preview.setPreferredSize(new Dimension(size.imageWidth(), size.imageHeight()));
-        preview.setForeground(foreground());
+        preview.setForeground(failedImport ? new Color(228, 115, 100) : foreground());
+        if (failedImport) preview.setToolTipText(item.info);
         card.add(preview, BorderLayout.CENTER);
         JPanel labels = new JPanel(new BorderLayout());
         labels.setOpaque(false);
