@@ -452,11 +452,20 @@ public final class DesktopApp extends JFrame {
         FileImportPolicy.Selection plan = FileImportPolicy.plan(
                 items.stream().map(item -> item.path).toList(), paths);
         for (Path normalized : plan.accepted()) {
+            // Snapshot earlier cards before inserting this one. The parser worker
+            // checks their physical identity without touching Swing state.
+            List<Item> earlier = List.copyOf(items);
             Item item = new Item(normalized);
             items.add(item);
             try {
                 item.parseTask = parseWithoutBlockingPreview(parsers,
-                        () -> item.cancelled ? null : UdfReader.read(item.path),
+                        () -> {
+                            if (item.cancelled) return null;
+                            FileImportPolicy.preflightDistinctImport(item.path,
+                                    earlier.stream().filter(previous -> !previous.cancelled)
+                                            .map(previous -> previous.path).toList());
+                            return item.cancelled ? null : UdfReader.read(item.path);
+                        },
                         parsed -> {
                             if (parsed == null || item.cancelled || !items.contains(item)) return;
                             // Export eligibility depends on parsing, never on PDFBox
