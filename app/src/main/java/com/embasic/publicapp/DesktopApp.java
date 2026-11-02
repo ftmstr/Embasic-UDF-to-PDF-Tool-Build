@@ -125,9 +125,12 @@ public final class DesktopApp extends JFrame {
     private Item focused;
     private int lastColumns = 0;
 
+    static record ParsedSource(UdfReader.DocumentSpec document, String fingerprint) {}
+
     private static final class Item {
         final Path path;
         volatile UdfReader.DocumentSpec document;
+        volatile String sourceFingerprint;
         volatile ImageIcon thumbnail;
         volatile String info = "Okunuyor...";
         volatile boolean cancelled;
@@ -464,13 +467,14 @@ public final class DesktopApp extends JFrame {
                             FileImportPolicy.preflightDistinctImport(item.path,
                                     earlier.stream().filter(previous -> !previous.cancelled)
                                             .map(previous -> previous.path).toList());
-                            return item.cancelled ? null : UdfReader.read(item.path);
+                            return item.cancelled ? null : parseSource(item.path);
                         },
                         parsed -> {
                             if (parsed == null || item.cancelled || !items.contains(item)) return;
-                            // Export eligibility depends on parsing, never on PDFBox
-                            // thumbnail rendering or first-use system font discovery.
-                            item.document = parsed;
+                            // The fingerprint belongs to exactly the parsed source.
+                            // Never enable export with an incomplete source snapshot.
+                            item.sourceFingerprint = parsed.fingerprint();
+                            item.document = parsed.document();
                             // Do not render every offscreen PDF when importing 160 files.
                             // A visible card requests its thumbnail in refreshViewport().
                             item.info = DEFERRED_PREVIEW;
@@ -531,6 +535,21 @@ public final class DesktopApp extends JFrame {
                 SwingUtilities.invokeLater(() -> onError.accept(ex));
             }
         });
+    }
+
+    /**
+     * Detect ordinary source replacement during parsing, then retain the hash
+     * of the bytes represented by the parsed document. SHA checks do not
+     * establish authentic UYAP format or protect against adversarial races.
+     */
+    static ParsedSource parseSource(Path path) throws Exception {
+        String before = FileImportPolicy.sourceSha256(path);
+        UdfReader.DocumentSpec parsed = UdfReader.read(path);
+        String after = FileImportPolicy.sourceSha256(path);
+        if (!before.equals(after))
+            throw new IllegalArgumentException("UDF okunurken kaynak dosya değişti: "
+                    + path.getFileName());
+        return new ParsedSource(parsed, after);
     }
 
     private void renderThumbnail(Item item, UdfReader.DocumentSpec parsed) {
@@ -1023,7 +1042,8 @@ public final class DesktopApp extends JFrame {
         getContentPane().setBackground(bg);
         grid.setBackground(bg);
         saveButton.setEnabled(!converting && !items.isEmpty()
-                && items.stream().allMatch(item -> item.document!=null));
+                && items.stream().allMatch(item ->
+                        item.document != null && item.sourceFingerprint != null));
         status.setForeground(fg);
         dragFeedback.setForeground(fg);
         for (Component cmp : getContentPane().getComponents())
@@ -1132,15 +1152,25 @@ public final class DesktopApp extends JFrame {
      * duplicate pages. Also fail closed if a source vanished after import.
      */
     static int saveWorkspace(List<Path> sources, List<UdfReader.DocumentSpec> docs,
-                             Path output, boolean overwrite) throws Exception {
-        if (sources == null || docs == null || sources.isEmpty() || sources.size() != docs.size())
+                             List<String> sourceFingerprints, Path output,
+                             boolean overwrite) throws Exception {
+        if (sources == null || docs == null || sourceFingerprints == null
+                || sources.isEmpty() || sources.size() != docs.size()
+                || sources.size() != sourceFingerprints.size())
             throw new IllegalArgumentException("PDF kaynak listesi tutarsız");
         FileImportPolicy.preflightReadableMergeFiles(sources);
+        for (int i = 0; i < sources.size(); i++) {
+            String original = sourceFingerprints.get(i);
+            if (original == null || !original.equals(FileImportPolicy.sourceSha256(sources.get(i))))
+                throw new IllegalArgumentException("UDF içe aktarıldıktan sonra değiştirildi; "
+                        + "güncel dosyayı yeniden ekleyin: " + sources.get(i).getFileName());
+        }
         return PdfExporter.save(docs, output, overwrite);
     }
 
     private void save() {
-        if (converting || items.isEmpty() || items.stream().anyMatch(x -> x.document == null)) return;
+        if (converting || items.isEmpty() || items.stream().anyMatch(
+                x -> x.document == null || x.sourceFingerprint == null)) return;
         JFileChooser picker = new JFileChooser();
         picker.setDialogTitle("PDF olarak kaydet");
         picker.setSelectedFile(new java.io.File("Embasic-Birlesik.pdf"));
@@ -1157,13 +1187,14 @@ public final class DesktopApp extends JFrame {
         // reject that merge before allocating a PDF, just as the CLI does.
         List<Path> sources = items.stream().map(x -> x.path).toList();
         List<UdfReader.DocumentSpec> docs = items.stream().map(x -> x.document).toList();
+        List<String> fingerprints = items.stream().map(x -> x.sourceFingerprint).toList();
         converting = true;
         setQueueEditingEnabled(false);
         saveButton.setEnabled(false);
         status.setText("PDF oluşturuluyor...");
         new SwingWorker<Integer, Void>() {
             @Override protected Integer doInBackground() throws Exception {
-                return saveWorkspace(sources, docs, output, overwrite);
+                return saveWorkspace(sources, docs, fingerprints, output, overwrite);
             }
             @Override protected void done() {
                 converting = false;
