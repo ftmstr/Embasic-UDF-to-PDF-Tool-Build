@@ -290,6 +290,40 @@ final class StructuredUdfRegressionTest {
         assertFalse(Files.exists(output));
     }
 
+    @Test void directDocumentFormatsAndRunStylesMustObeySyntheticSchema(@TempDir Path folder) throws Exception {
+        // Public record constructors do not invoke the XML reader. Rendering
+        // must enforce the same explicit schema and style bounds before fonts.
+        var normal = new UdfReader.Style(11f, false, Color.BLACK);
+        var paragraph = new UdfReader.Paragraph(
+                List.of(new UdfReader.Run("SENTETIK", normal)));
+        for (String format : List.of("1.1", "2.0", "1.0 ", "unknown", "")) {
+            var doc = new UdfReader.DocumentSpec("direct.udf", format, List.of(paragraph));
+            var failure = assertThrows(IllegalArgumentException.class,
+                    () -> { try (PDDocument ignored = PdfExporter.render(List.of(doc))) {} });
+            assertTrue(failure.getMessage().contains("format_id"), failure.getMessage());
+        }
+        for (float size : List.of(0f, -1f, 5.9f, 48.1f,
+                Float.NaN, Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY)) {
+            var invalid = new UdfReader.Paragraph(List.of(
+                    new UdfReader.Run("SENTETIK",
+                            new UdfReader.Style(size, false, Color.BLACK))));
+            var doc = new UdfReader.DocumentSpec("direct.udf", "1.0", List.of(invalid));
+            var failure = assertThrows(IllegalArgumentException.class,
+                    () -> { try (PDDocument ignored = PdfExporter.render(List.of(doc))) {} });
+            assertTrue(failure.getMessage().contains("metin stili"), failure.getMessage());
+        }
+        var noColor = new UdfReader.DocumentSpec("direct.udf", "1.0",
+                List.of(new UdfReader.Paragraph(List.of(
+                        new UdfReader.Run("SENTETIK",
+                                new UdfReader.Style(11f, false, null))))));
+        assertThrows(IllegalArgumentException.class,
+                () -> { try (PDDocument ignored = PdfExporter.render(List.of(noColor))) {} });
+        Path output = folder.resolve("invalid-direct-style.pdf");
+        assertThrows(IllegalArgumentException.class,
+                () -> PdfExporter.save(List.of(noColor), output, false));
+        assertFalse(Files.exists(output), "Invalid direct styles must not publish a PDF");
+    }
+
     @Test void unknownFormatVersionsCannotBeRenderedAsSyntheticOneZero() throws Exception {
         String valid = "<template format_id='1.0'><content>ABC</content>"
                 + "<elements><paragraph><content startOffset='0' length='3'/>"
