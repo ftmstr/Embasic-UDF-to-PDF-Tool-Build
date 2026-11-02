@@ -59,6 +59,9 @@ public final class UdfReader {
         if (file == null || !Files.isRegularFile(file) || !Files.isReadable(file)
                 || !file.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".udf"))
             throw new IllegalArgumentException("Geçerli, okunabilir bir .udf dosyası seçin");
+        // Direct reader callers must share the GUI/CLI compressed-size limit.
+        // Reject oversized archives before ZIP central-directory processing.
+        FileImportPolicy.requireBoundedArchive(file);
         byte[] data = null;
         long total = 0;
         int mediaTotal = 0;
