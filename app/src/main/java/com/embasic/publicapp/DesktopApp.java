@@ -106,7 +106,7 @@ public final class DesktopApp extends JFrame {
     private final JSlider thumbnailZoom = new JSlider(ThumbnailSizing.MIN_WIDTH,
             ThumbnailSizing.MAX_WIDTH, ThumbnailSizing.DEFAULT_WIDTH);
     private final JLabel zoomLabel = new JLabel();
-    private final Timer zoomRefresh = new Timer(90, e -> rebuild());
+    private final Timer zoomRefresh = new Timer(90, e -> rebuildAfterZoom());
     private final Timer previewRefresh = new Timer(110, e -> { rebuild(); updateFileStatus(); });
     private final Timer viewportRefresh = new Timer(16, e -> refreshViewport(false));
     private final Timer dragScroll = new Timer(45, e -> scrollWhileDragging());
@@ -124,6 +124,8 @@ public final class DesktopApp extends JFrame {
     private Item anchor;
     private Item focused;
     private int lastColumns = 0;
+    private int zoomAnchorIndex = -1;
+    private int zoomAnchorOffset;
 
     static record ParsedSource(UdfReader.DocumentSpec document, String fingerprint) {}
 
@@ -166,6 +168,13 @@ public final class DesktopApp extends JFrame {
         zoomRefresh.setRepeats(false);
         previewRefresh.setRepeats(false);
         thumbnailZoom.addChangeListener(e -> {
+            // Capture the old logical row once per slider burst. Rebuilding from
+            // the same pixel Y after column count changes would jump to other UDFs.
+            if (!zoomRefresh.isRunning() && virtualGrid != null && !items.isEmpty()) {
+                int y = scroll.getViewport().getViewRect().y;
+                zoomAnchorIndex = virtualGrid.topRowAnchor(y);
+                zoomAnchorOffset = virtualGrid.topRowOffset(y);
+            }
             updateZoomLabel();
             zoomRefresh.restart(); // Collapse a fast slider drag into a single grid rebuild.
         });
@@ -1137,6 +1146,26 @@ public final class DesktopApp extends JFrame {
         // geometry-derived and remains outside the Swing component hierarchy.
         if(pointerDragging) updateDropIndicatorFromViewport();
         grid.repaint();
+    }
+
+    private void rebuildAfterZoom() {
+        int anchor = zoomAnchorIndex;
+        int offset = zoomAnchorOffset;
+        zoomAnchorIndex = -1;
+        if (anchor >= 0) {
+            int width = Math.max(1, scroll.getViewport().getWidth());
+            VirtualGridLayout target = new VirtualGridLayout(items.size() + 1,
+                    width, thumbnailZoom.getValue());
+            // Give the viewport the new content extent before restoring the
+            // anchored scroll position, including when zooming into the last row.
+            Dimension size = target.preferredSize();
+            grid.setPreferredSize(size);
+            grid.setSize(size);
+            int y = target.anchoredScrollY(anchor, offset,
+                    scroll.getViewport().getHeight());
+            scroll.getViewport().setViewPosition(new Point(0, y));
+        }
+        rebuild();
     }
 
     private void rebuild() {
