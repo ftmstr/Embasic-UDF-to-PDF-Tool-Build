@@ -133,6 +133,13 @@ final class PublicDesktopSmokeTest {
                 assertNull(statusTip.getClientProperty(
                         javax.swing.plaf.basic.BasicHTML.propertyKey));
             }
+            // A rejected card is a genuine import failure, not a pending
+            // thumbnail or a successfully parsed document with preview trouble.
+            assertFalse(DesktopApp.isFailedImport(false, "Okunuyor..."));
+            assertTrue(DesktopApp.isFailedImport(false, "Desteklenmiyor: geçersiz ZIP"));
+            assertTrue(DesktopApp.isFailedImport(false, "UDF okuma kuyruğu dolu"));
+            assertFalse(DesktopApp.isFailedImport(true, "Önizleme yok: font eksik"));
+            assertFalse(DesktopApp.isFailedImport(true, "Hazır"));
         });
     }
 
