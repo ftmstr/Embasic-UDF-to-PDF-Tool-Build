@@ -80,6 +80,32 @@ final class PdfOutputCommitTest {
                         List.of("not-a-fingerprint"), directory, true));
         assertTrue(nonFile.getMessage().contains("normal bir PDF"));
         assertTrue(Files.isDirectory(directory));
+        // A PDF-looking symlink is not a regular output destination. Windows
+        // runners without symlink privileges skip only this filesystem branch;
+        // Linux still exercises it without touching any real user documents.
+        Path actual = Files.writeString(folder.resolve("actual.pdf"), "KEEP-LINK-TARGET");
+        Path linked = folder.resolve("linked.pdf");
+        boolean symlinkAvailable;
+        try {
+            Files.createSymbolicLink(linked, actual.getFileName());
+            symlinkAvailable = true;
+        } catch (java.io.IOException | UnsupportedOperationException | SecurityException unavailable) {
+            symlinkAvailable = false;
+        }
+        if (symlinkAvailable) {
+            for (boolean overwrite : new boolean[]{false, true}) {
+                IllegalArgumentException rejected = assertThrows(IllegalArgumentException.class,
+                        () -> DesktopApp.saveWorkspace(List.of(missing), List.of(doc),
+                                List.of("not-a-fingerprint"), linked, overwrite));
+                assertTrue(rejected.getMessage().contains("sembolik bağlantı"));
+            }
+            Path staging = Files.writeString(folder.resolve("validated-stage.pdf"), "VALIDATED");
+            assertThrows(IllegalArgumentException.class,
+                    () -> PdfExporter.publishValidated(staging, linked, true));
+            assertEquals("VALIDATED", Files.readString(staging));
+            assertEquals("KEEP-LINK-TARGET", Files.readString(actual));
+            assertTrue(Files.isSymbolicLink(linked));
+        }
         try (var entries = Files.list(folder)) {
             assertEquals(0, entries.filter(path -> path.getFileName().toString()
                     .startsWith(".embasic-pending-")).count());
