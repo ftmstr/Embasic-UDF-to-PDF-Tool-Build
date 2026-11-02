@@ -130,6 +130,11 @@ final class PdfOutputCommitTest {
                 }));
         assertTrue(changed.getMessage().contains("yeniden onaylayın"));
         assertEquals("EXTERNAL-NEWER-PDF", Files.readString(target));
+        // A new, explicit overwrite attempt against the now-current target
+        // must still succeed: the guard is optimistic, not a permanent lock.
+        assertEquals(1, PdfExporter.save(List.of(doc), target, true));
+        byte[] pdfBytes = Files.readAllBytes(target);
+        assertEquals("%PDF", new String(pdfBytes, 0, 4, StandardCharsets.US_ASCII));
         try (var entries = Files.list(folder)) {
             assertEquals(0, entries.filter(path -> path.getFileName().toString()
                     .startsWith(".embasic-pending-")).count(),
