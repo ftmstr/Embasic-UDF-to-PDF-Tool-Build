@@ -1,6 +1,9 @@
 package com.embasic.publicapp;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.nio.file.Files;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.Path;
@@ -102,6 +105,28 @@ public final class FileImportPolicy {
                 throw new IllegalArgumentException(
                         "UDF bağlantısı doğrulanamadı: " + candidate.getFileName(), ex);
             }
+        }
+    }
+
+    /**
+     * Stream a SHA-256 fingerprint without retaining the archive in memory.
+     * The GUI compares this at import and before export so a changed source
+     * cannot silently produce a PDF from an obsolete parsed preview.
+     */
+    static String sourceSha256(Path source) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            try (InputStream in = Files.newInputStream(source)) {
+                byte[] buffer = new byte[64 * 1024];
+                int read;
+                while ((read = in.read(buffer)) != -1)
+                    digest.update(buffer, 0, read);
+            }
+            return java.util.HexFormat.of().formatHex(digest.digest());
+        } catch (IOException ex) {
+            throw new IllegalArgumentException("UDF kaynağı okunamadı: " + source.getFileName(), ex);
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 kullanılamıyor", ex);
         }
     }
 
