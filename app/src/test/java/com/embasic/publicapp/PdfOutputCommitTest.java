@@ -116,6 +116,27 @@ final class PdfOutputCommitTest {
         }
     }
 
+    @Test void externalPdfEditDuringRenderCannotBeSilentlyOverwritten() throws Exception {
+        Path target = Files.writeString(folder.resolve("existing.pdf"), "USER-APPROVED-OLD");
+        var style = new UdfReader.Style(11, false, Color.BLACK);
+        var paragraph = new UdfReader.Paragraph(List.of(
+                new UdfReader.Run("Synthetic public document", style)));
+        var doc = new UdfReader.DocumentSpec("synthetic.udf", "1.0", List.of(paragraph));
+
+        IllegalArgumentException changed = assertThrows(IllegalArgumentException.class,
+                () -> PdfExporter.save(List.of(doc), target, true, () -> {
+                    // Deterministic external edit after PDF staging and validation.
+                    Files.writeString(target, "EXTERNAL-NEWER-PDF");
+                }));
+        assertTrue(changed.getMessage().contains("yeniden onaylayın"));
+        assertEquals("EXTERNAL-NEWER-PDF", Files.readString(target));
+        try (var entries = Files.list(folder)) {
+            assertEquals(0, entries.filter(path -> path.getFileName().toString()
+                    .startsWith(".embasic-pending-")).count(),
+                    "Rejected overwrite must remove its staged PDF");
+        }
+    }
+
     @Test void sourceMutationDuringPdfRenderCannotOverwriteExistingOutput() throws Exception {
         // Deterministic late mutation: this callback runs only after PDFBox
         // staged and re-opened a valid PDF, immediately before publication.
