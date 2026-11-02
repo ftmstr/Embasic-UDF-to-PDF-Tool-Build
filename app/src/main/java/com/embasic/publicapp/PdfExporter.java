@@ -165,6 +165,12 @@ public final class PdfExporter {
         }
     }
 
+    private static void validateRunStyle(UdfReader.Style style) {
+        if (style == null || !Float.isFinite(style.size())
+                || style.size() < 6f || style.size() > 48f || style.color() == null)
+            throw new IllegalArgumentException("Geçersiz sentetik metin stili");
+    }
+
     private static PDDocument renderInternal(List<UdfReader.DocumentSpec> docs,
                                              boolean previewOnly) throws Exception {
         if (docs == null || docs.isEmpty()) throw new IllegalArgumentException("PDF için en az bir UDF gerekli");
@@ -187,11 +193,11 @@ public final class PdfExporter {
                     for (UdfReader.Run run : paragraph.paragraph().runs()) {
                         // Direct Run/Style records bypass XML's 6..48 pt bounds.
                         // Invalid sizes can corrupt PDF geometry or trigger late font errors.
-                        if (run == null || run.text() == null || run.style() == null
-                                || !Float.isFinite(run.style().size())
-                                || run.style().size() < 6f || run.style().size() > 48f
-                                || run.style().color() == null)
+                        if (run == null || run.text() == null)
                             throw new IllegalArgumentException("Geçersiz sentetik metin stili");
+                        // A preview must not inspect the style of a glyph that
+                        // belongs exclusively to page two (lazy-font contract).
+                        if (!previewOnly) validateRunStyle(run.style());
                         validateSupportedText(run.text());
                         if (!run.text().isBlank()) hasVisibleContent = true;
                     }
@@ -525,6 +531,8 @@ public final class PdfExporter {
             // next page. In a first-page preview, stop before resolving a font
             // used only by that later page (potentially expensive on Windows).
             if (y - size < bottom) newPage();
+            // For previews validate only the glyphs actually placed on page one.
+            validateRunStyle(style);
             PDType0Font font = fonts.get(style.bold());
             float length = width(text, font, size);
             if (length > right - left)
@@ -550,6 +558,7 @@ public final class PdfExporter {
             x += length;
         }
         private void spaces(int count, UdfReader.Style style) throws IOException {
+            validateRunStyle(style);
             Float spaceWidth = spaceWidths.get(style);
             if (spaceWidth == null) {
                 // Still fail closed if the requested font is unavailable: a
