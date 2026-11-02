@@ -1174,13 +1174,22 @@ public final class DesktopApp extends JFrame {
                 || sources.size() != sourceFingerprints.size())
             throw new IllegalArgumentException("PDF kaynak listesi tutarsız");
         FileImportPolicy.preflightReadableMergeFiles(sources);
+        verifySourceFingerprints(sources, sourceFingerprints);
+        // A large PDF render can take time after the first fingerprint check.
+        // Recheck immediately before the staged PDF is published, including
+        // overwrite cases; a failure preserves the existing destination.
+        return PdfExporter.save(docs, output, overwrite,
+                () -> verifySourceFingerprints(sources, sourceFingerprints));
+    }
+
+    /** Shared by both pre-render and pre-publication source integrity gates. */
+    static void verifySourceFingerprints(List<Path> sources, List<String> sourceFingerprints) {
         for (int i = 0; i < sources.size(); i++) {
             String original = sourceFingerprints.get(i);
             if (original == null || !original.equals(FileImportPolicy.sourceSha256(sources.get(i))))
                 throw new IllegalArgumentException("UDF içe aktarıldıktan sonra değiştirildi; "
                         + "güncel dosyayı yeniden ekleyin: " + sources.get(i).getFileName());
         }
-        return PdfExporter.save(docs, output, overwrite);
     }
 
     private void save() {
