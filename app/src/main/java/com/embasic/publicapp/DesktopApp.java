@@ -241,10 +241,9 @@ public final class DesktopApp extends JFrame {
                 try {
                     if (!canImport(support)) return false;
                     Object data = support.getTransferable().getTransferData(DataFlavor.javaFileListFlavor);
-                    if (!(data instanceof List<?> list)) return false;
-                    List<Path> paths = new ArrayList<>();
-                    for (Object file : list)
-                        if (file instanceof java.io.File f) paths.add(f.toPath());
+                    // A malformed native payload must not silently omit entries
+                    // while importing the rest of a supposed multi-file drop.
+                    List<Path> paths = extractDroppedPaths(data);
                     // A native Explorer drop is successful only if at least one
                     // new UDF card was actually accepted. All-duplicate, invalid
                     // or full-grid drops must not report a phantom import.
@@ -538,6 +537,25 @@ public final class DesktopApp extends JFrame {
                     message, "İçe aktarma uyarısı", JOptionPane.WARNING_MESSAGE));
         }
         return !plan.accepted().isEmpty();
+    }
+
+    /**
+     * javaFileListFlavor promises java.io.File entries. Reject the entire
+     * payload if a provider violates that contract; silently skipping an
+     * unknown entry could produce an incomplete merged PDF without warning.
+     * Path/extension filtering remains in FileImportPolicy.plan().
+     */
+    static List<Path> extractDroppedPaths(Object payload) {
+        if (!(payload instanceof List<?> files) || files.isEmpty())
+            throw new IllegalArgumentException("Explorer dosya listesi boş veya geçersiz");
+        List<Path> paths = new ArrayList<>(files.size());
+        for (Object entry : files) {
+            if (!(entry instanceof java.io.File file))
+                throw new IllegalArgumentException(
+                        "Explorer dosya listesinde desteklenmeyen öğe var; hiçbir dosya eklenmedi");
+            paths.add(file.toPath());
+        }
+        return List.copyOf(paths);
     }
 
     /**
