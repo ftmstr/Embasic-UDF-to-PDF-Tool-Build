@@ -158,6 +158,7 @@ public final class DesktopApp extends JFrame {
         top.add(title, BorderLayout.NORTH);
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         addButton.addActionListener(e -> chooseFiles());
+        addButton.setToolTipText("UDF dosyalarını seç (Ctrl+O)");
         actions.add(addButton);
         themeButton.addActionListener(e -> { dark = !dark; themeButton.setText(dark ? "Aydınlık tema" : "Karanlık tema"); rebuild(); });
         actions.add(themeButton);
@@ -181,6 +182,7 @@ public final class DesktopApp extends JFrame {
         actions.add(zoomLabel);
         actions.add(thumbnailZoom);
         saveButton.addActionListener(e -> save());
+        saveButton.setToolTipText("PDF olarak kaydet (Ctrl+S)");
         actions.add(saveButton);
         top.add(actions, BorderLayout.SOUTH);
         add(top, BorderLayout.NORTH);
@@ -273,6 +275,7 @@ public final class DesktopApp extends JFrame {
         getRootPane().setTransferHandler(fileDrop);
         var input = getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
         var action = getRootPane().getActionMap();
+        installFileShortcuts(getRootPane(), this::chooseFiles, this::save);
         input.put(KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.CTRL_DOWN_MASK), "selectAll");
         bindZoomShortcut(KeyEvent.VK_EQUALS, 1);
         bindZoomShortcut(KeyEvent.VK_ADD, 1);
@@ -469,6 +472,24 @@ public final class DesktopApp extends JFrame {
             grid.scrollRectToVisible(virtualGrid.bounds(index));
             viewportRefresh.restart();
         }
+    }
+
+    /** Windows-style file shortcuts share the toolbar's guarded chooser/save paths. */
+    static void installFileShortcuts(JComponent root, Runnable openFiles, Runnable savePdf) {
+        var input = root.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
+        var actions = root.getActionMap();
+        input.put(KeyStroke.getKeyStroke(KeyEvent.VK_O, InputEvent.CTRL_DOWN_MASK), "openUdfFiles");
+        actions.put("openUdfFiles", new javax.swing.AbstractAction() {
+            @Override public void actionPerformed(java.awt.event.ActionEvent event) {
+                openFiles.run();
+            }
+        });
+        input.put(KeyStroke.getKeyStroke(KeyEvent.VK_S, InputEvent.CTRL_DOWN_MASK), "saveUdfPdf");
+        actions.put("saveUdfPdf", new javax.swing.AbstractAction() {
+            @Override public void actionPerformed(java.awt.event.ActionEvent event) {
+                savePdf.run();
+            }
+        });
     }
 
     private void chooseFiles() {
