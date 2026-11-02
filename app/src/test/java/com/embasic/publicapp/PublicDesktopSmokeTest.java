@@ -689,6 +689,27 @@ final class PublicDesktopSmokeTest {
                         fullGrid, List.of(secondPath))))
                 .getMessage().contains("160"));
 
+        // JFileChooser multi-selection must be all-or-nothing too. Previously
+        // duplicates/overflow were silently skipped while other cards entered
+        // the PDF queue, even though the user selected the complete batch.
+        assertDoesNotThrow(() -> DesktopApp.requireCompleteChooserSelection(
+                FileImportPolicy.plan(List.of(), List.of(firstPath, secondPath))));
+        assertTrue(assertThrows(IllegalArgumentException.class,
+                () -> DesktopApp.requireCompleteChooserSelection(FileImportPolicy.plan(
+                        List.of(), List.of(firstPath, root.resolve("notes.txt")))))
+                .getMessage().contains("hiçbir dosya eklenmedi"));
+        assertTrue(assertThrows(IllegalArgumentException.class,
+                () -> DesktopApp.requireCompleteChooserSelection(FileImportPolicy.plan(
+                        List.of(firstPath), List.of(firstPath, secondPath))))
+                .getMessage().contains("yinelenen"));
+        assertTrue(assertThrows(IllegalArgumentException.class,
+                () -> DesktopApp.requireCompleteChooserSelection(FileImportPolicy.plan(
+                        fullGrid, List.of(secondPath))))
+                .getMessage().contains("160"));
+        assertThrows(IllegalArgumentException.class,
+                () -> DesktopApp.requireCompleteChooserSelection(
+                        FileImportPolicy.plan(List.of(), List.of())));
+
         // A secondary/middle press must not capture a selected card for
         // reordering. Modifier-assisted primary selection remains available.
         for (int modifiers : new int[]{0, java.awt.event.InputEvent.CTRL_DOWN_MASK,
