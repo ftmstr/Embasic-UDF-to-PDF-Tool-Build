@@ -41,7 +41,7 @@ public final class GridKeyboardSelection {
         List<T> survivors = new ArrayList<>();
         int firstRemoved = -1;
         int survivingBeforeFocus = 0;
-        int focusedIndex = files.indexOf(focused);
+        int focusedIndex = focused == null ? -1 : files.indexOf(focused);
         for (int i = 0; i < files.size(); i++) {
             T item = files.get(i);
             if (removed.contains(item)) {
