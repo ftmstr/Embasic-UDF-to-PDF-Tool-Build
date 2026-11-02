@@ -93,7 +93,7 @@ final class FileImportPolicyTest {
         assertNotEquals(fingerprint, FileImportPolicy.sourceSha256(source));
     }
 
-    @Test void capsHugeFileBatchesWithoutDroppingAcceptedOrder() {
+    @Test void capsHugeFileBatchesWithoutDroppingAcceptedOrder(@TempDir Path folder) throws Exception {
         List<Path> files=new ArrayList<>();
         for(int i=0;i<2_500;i++)files.add(Path.of("fixture-"+i+".udf"));
         var plan=FileImportPolicy.plan(List.of(),files);
@@ -111,6 +111,24 @@ final class FileImportPolicyTest {
         assertThrows(IllegalArgumentException.class,
                 () -> FileImportPolicy.preflightReadableMergeFiles(accepted),
                 "A missing input must fail before opening any ZIP");
+        // A sparse, rights-clean synthetic file must be rejected by size
+        // metadata before hashing 64 MiB or parsing an oversized ZIP.
+        Path oversized = folder.resolve("oversized.udf");
+        try (var channel = java.nio.channels.FileChannel.open(oversized,
+                java.nio.file.StandardOpenOption.CREATE_NEW,
+                java.nio.file.StandardOpenOption.WRITE)) {
+            channel.position(FileImportPolicy.MAX_ARCHIVE_BYTES);
+            channel.write(java.nio.ByteBuffer.wrap(new byte[]{0}));
+        }
+        assertTrue(Files.size(oversized) > FileImportPolicy.MAX_ARCHIVE_BYTES);
+        assertThrows(IllegalArgumentException.class,
+                () -> FileImportPolicy.sourceSha256(oversized));
+        assertThrows(IllegalArgumentException.class,
+                () -> FileImportPolicy.preflightReadableMergeFiles(List.of(oversized)));
+        assertThrows(IllegalArgumentException.class,
+                () -> FileImportPolicy.preflightDistinctImport(oversized, List.of()));
+        assertThrows(IllegalArgumentException.class,
+                () -> UdfReader.read(oversized));
     }
     @Test void existingLimitAndRepeatedBatchAreSafe() {
         List<Path> existing=new ArrayList<>();
