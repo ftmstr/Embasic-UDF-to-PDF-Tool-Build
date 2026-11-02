@@ -27,6 +27,46 @@ public final class GridKeyboardSelection {
     }
 
     /**
+     * After Delete, keep Explorer keyboard navigation beside the removed cards
+     * instead of retaining a stale focus that makes the next arrow jump to the
+     * first card. The nearest surviving slot is selected; removing the last
+     * cards focuses the previous survivor. Works with offscreen logical cards.
+     */
+    public static <T> Result<T> afterRemoval(
+            List<T> files, Collection<T> removed, T focused) {
+        if (files == null || removed == null)
+            throw new IllegalArgumentException("Dosya seçimi eksik");
+        if (files.isEmpty() || removed.isEmpty())
+            return new Result<>(List.of(), null, null);
+        List<T> survivors = new ArrayList<>();
+        int firstRemoved = -1;
+        int survivingBeforeFocus = 0;
+        int focusedIndex = files.indexOf(focused);
+        for (int i = 0; i < files.size(); i++) {
+            T item = files.get(i);
+            if (removed.contains(item)) {
+                if (firstRemoved < 0) firstRemoved = i;
+            } else {
+                survivors.add(item);
+                if (focusedIndex >= 0 && i < focusedIndex) survivingBeforeFocus++;
+            }
+        }
+        if (survivors.isEmpty()) return new Result<>(List.of(), null, null);
+        // Ctrl+arrow may have left focus on an unselected card. Preserve its
+        // surviving position; otherwise use the first deleted slot.
+        int position;
+        if (focusedIndex >= 0) {
+            position = survivingBeforeFocus;
+        } else {
+            position = 0;
+            for (int i = 0; i < firstRemoved; i++)
+                if (!removed.contains(files.get(i))) position++;
+        }
+        T next = survivors.get(Math.min(position, survivors.size() - 1));
+        return new Result<>(List.of(next), next, next);
+    }
+
+    /**
      * Navigates a flattened grid by signed delta (+/-1, +/-column count).
      * Ctrl-only moves the focus without changing selection; Shift extends a contiguous range.
      */
