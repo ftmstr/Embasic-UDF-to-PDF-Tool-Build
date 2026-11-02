@@ -59,6 +59,36 @@ final class PdfOutputCommitTest {
         }
     }
 
+    @Test void latePhysicalAliasCannotOverwriteExistingOutput() throws Exception {
+        // Two independent, byte-identical sources pass the initial fingerprint
+        // gate. Replacing the second path with a hard link during rendering
+        // must fail the final physical-identity check even though SHA stays equal.
+        Path first = Files.writeString(folder.resolve("first.udf"), "synthetic shared bytes");
+        Path second = Files.writeString(folder.resolve("second.udf"), "synthetic shared bytes");
+        List<Path> sources = List.of(first, second);
+        String fingerprint = FileImportPolicy.sourceSha256(first);
+        List<String> fingerprints = List.of(fingerprint, fingerprint);
+        assertDoesNotThrow(() -> DesktopApp.verifySourceFingerprints(sources, fingerprints));
+        Path target = Files.writeString(folder.resolve("existing.pdf"), "KEEP-ORIGINAL");
+        var style = new UdfReader.Style(11, false, Color.BLACK);
+        var paragraph = new UdfReader.Paragraph(List.of(new UdfReader.Run("Public synthetic", style)));
+        var doc = new UdfReader.DocumentSpec("first.udf", "1.0", List.of(paragraph));
+
+        IllegalArgumentException duplicate = assertThrows(IllegalArgumentException.class,
+                () -> PdfExporter.save(List.of(doc, doc), target, true, () -> {
+                    Files.delete(second);
+                    Files.createLink(second, first);
+                    assertEquals(fingerprint, FileImportPolicy.sourceSha256(second));
+                    DesktopApp.verifySourceFingerprints(sources, fingerprints);
+                }));
+        assertTrue(duplicate.getMessage().contains("yinelenen"));
+        assertEquals("KEEP-ORIGINAL", Files.readString(target));
+        try (var entries = Files.list(folder)) {
+            assertEquals(0, entries.filter(path -> path.getFileName().toString()
+                    .startsWith(".embasic-pending-")).count());
+        }
+    }
+
     @Test void sourceMutationDuringPdfRenderCannotOverwriteExistingOutput() throws Exception {
         // Deterministic late mutation: this callback runs only after PDFBox
         // staged and re-opened a valid PDF, immediately before publication.
