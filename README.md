@@ -130,3 +130,12 @@ The opt-in `GuiRobotSmokeTest` opens the actual DesktopApp, imports 40 synthetic
 
 `GridDropAccessibilityTest` runs under default CI and verifies Turkish before/after/end and invalid-target announcements. Physical Windows acceptance, full screen-reader compatibility, real UYAP PDF parity and redistribution rights remain **unverified** until explicitly tested and approved. Source approval/SHA/NOTICE gates remain intact.
 
+
+
+## Tur 44 — GUI Robot wait reliability and PDF script-fidelity fail-closed (2026-11-02)
+
+The opt-in `GuiRobotSmokeTest` no longer invokes `Robot.waitForIdle()` while the virtual-grid edge-autoscroll timer is continuously posting EDT events. It uses explicit Swing EDT barriers instead and rejects desktops that are too small for a meaningful interactive run. **The physical Windows Robot test has not been executed or accepted**: it remains explicit `-AllowGui` opt-in and does not count as passing when regular CI skips it.
+
+`PdfExporter` rejects RTL, shaping-dependent script families and unpositioned combining marks before font loading or PDF staging. PDFBox's basic `showText` does not establish complex text shaping, visual order or mark placement. The new, original `PdfComplexScriptGateTest` covers synthetic Arabic, Hebrew, Devanagari, Thai and Myanmar text, combining accents and table cells, while confirming ordinary Turkish Latin glyphs still export. Rejected input fails closed instead of quietly producing a visually misleading PDF. **This narrows the accepted synthetic subset; it does not claim broad UYAP version support, enhanced rendering fidelity or native pixel equivalence.** Real rights-cleared golden documents and physical Windows UI/screen-reader acceptance remain outstanding.
+
+The color PowerShell dashboard keeps the previous weighted **44.3% engineering estimate**, reports Robot GUI acceptance as `NOT_RUN` and retains the low-confidence forecast dates anchored to the 2026-10-31 evidence review (rather than shifting them on every hourly run). Release publication approval and source/license/SHA gates remain unchanged. No downloadable executable or binary release is published.
