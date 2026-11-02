@@ -36,6 +36,17 @@ final class FileImportPolicyTest {
         Path original = Files.writeString(folder.resolve("original.udf"), "synthetic");
         Path separate = Files.writeString(folder.resolve("separate.udf"), "synthetic");
         Path hardLink = Files.createLink(folder.resolve("alias.udf"), original);
+        // GUI import rejects physical aliases on a worker before UdfReader
+        // opens the archive; equal contents in separate files remain allowed.
+        FileImportPolicy.preflightDistinctImport(original, List.of());
+        FileImportPolicy.preflightDistinctImport(separate, List.of(original));
+        IllegalArgumentException earlyAlias = assertThrows(IllegalArgumentException.class,
+                () -> FileImportPolicy.preflightDistinctImport(hardLink, List.of(original)));
+        assertTrue(earlyAlias.getMessage().contains("yinelenen"));
+        Path removed = folder.resolve("removed.udf");
+        FileImportPolicy.preflightDistinctImport(separate, List.of(removed));
+        assertThrows(IllegalArgumentException.class,
+                () -> FileImportPolicy.preflightDistinctImport(removed, List.of(original)));
         FileImportPolicy.preflightReadableMergeFiles(
                 FileImportPolicy.requireCompleteMerge(List.of(original, separate)));
         IllegalArgumentException aliasError = assertThrows(IllegalArgumentException.class,
