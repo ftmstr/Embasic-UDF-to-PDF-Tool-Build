@@ -56,6 +56,34 @@ public final class VirtualGridLayout {
         return bounds((int)index).contains(x,y) ? (int)index : -1;
     }
 
+    /**
+     * Keep a logical card row at the top of the viewport when zoom changes the
+     * number of columns. A pixel-only scroll position would jump to different
+     * UDFs after the thumbnail size changes.
+     */
+    public int topRowAnchor(int viewportY) {
+        if (entries == 0) return -1;
+        long relative = (long) viewportY - PADDING;
+        int row = (int) Math.min(rows() - 1,
+                Math.max(0L, Math.floorDiv(relative, rowStride)));
+        return row * columns;
+    }
+
+    public int topRowOffset(int viewportY) {
+        int anchor = topRowAnchor(viewportY);
+        if (anchor < 0) return 0;
+        return Math.max(0, Math.min(rowStride - 1, viewportY - bounds(anchor).y));
+    }
+
+    public int anchoredScrollY(int anchor, int offset, int viewportHeight) {
+        if (entries == 0) return 0;
+        int index = Math.max(0, Math.min(entries - 1, anchor));
+        long requested = (long) bounds(index).y
+                + Math.max(0, Math.min(rowStride - 1, offset));
+        int maxScroll = Math.max(0, preferredSize().height - Math.max(1, viewportHeight));
+        return (int) Math.max(0L, Math.min((long) maxScroll, requested));
+    }
+
     /** Horizontal midpoint used for before/after Explorer-style drops. */
     public boolean insertAfter(int index, int x) {
         Rectangle rectangle=bounds(index);
