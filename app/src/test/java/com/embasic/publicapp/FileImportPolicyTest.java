@@ -66,16 +66,31 @@ final class FileImportPolicyTest {
                         11, false, java.awt.Color.BLACK))));
         var doc = new UdfReader.DocumentSpec("source.udf", "1.0", List.of(paragraph));
         var docs = List.of(doc, doc);
+        String fingerprint = FileImportPolicy.sourceSha256(source);
         IllegalArgumentException duplicate = assertThrows(IllegalArgumentException.class,
-                () -> DesktopApp.saveWorkspace(List.of(source, alias), docs, output, false));
+                () -> DesktopApp.saveWorkspace(List.of(source, alias), docs,
+                        List.of(fingerprint, fingerprint), output, false));
         assertTrue(duplicate.getMessage().contains("yinelenen"));
         assertFalse(Files.exists(output), "Rejected GUI merge must not stage or publish a PDF");
 
         Files.delete(alias);
         IllegalArgumentException missing = assertThrows(IllegalArgumentException.class,
-                () -> DesktopApp.saveWorkspace(List.of(source, alias), docs, output, false));
+                () -> DesktopApp.saveWorkspace(List.of(source, alias), docs,
+                        List.of(fingerprint, fingerprint), output, false));
         assertTrue(missing.getMessage().contains("okunabilir"));
         assertFalse(Files.exists(output));
+
+        // A source changed after import must not silently export the stale
+        // document cached by the GUI, even if it remains a readable .udf file.
+        Files.writeString(source, "changed synthetic fixture");
+        IllegalArgumentException stale = assertThrows(IllegalArgumentException.class,
+                () -> DesktopApp.saveWorkspace(List.of(source), List.of(doc),
+                        List.of(fingerprint), output, false));
+        assertTrue(stale.getMessage().contains("değiştirildi"));
+        assertFalse(Files.exists(output), "A changed source must never stage a PDF");
+        // Reimporting the current file permits the fresh snapshot to proceed
+        // to normal PDF validation rather than failing the fingerprint gate.
+        assertNotEquals(fingerprint, FileImportPolicy.sourceSha256(source));
     }
 
     @Test void capsHugeFileBatchesWithoutDroppingAcceptedOrder() {
