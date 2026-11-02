@@ -257,6 +257,11 @@ public final class DesktopApp extends JFrame {
             }
         };
         installWorkspaceFileDrop(scroll, grid, fileDrop);
+        // Explorer drops may land on the toolbar, zoom slider, status row or
+        // scrollbars instead of the thumbnail grid. Make the entire single
+        // window a COPY-only target, including nested Swing controls. This
+        // installs no mouse listeners and leaves their normal clicks intact.
+        installFileDrop((JComponent) getContentPane(), fileDrop);
         getRootPane().setTransferHandler(fileDrop);
         var input = getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
         var action = getRootPane().getActionMap();
