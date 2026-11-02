@@ -615,6 +615,27 @@ final class PublicDesktopSmokeTest {
         assertThrows(IllegalArgumentException.class,
                 () -> DesktopApp.extractDroppedPaths(null));
 
+        // Native multi-file drops are atomic: an invalid, duplicate or
+        // over-capacity entry must not leave a misleading partial PDF queue.
+        Path firstPath = firstFile.toPath();
+        Path secondPath = secondFile.toPath();
+        assertDoesNotThrow(() -> DesktopApp.requireCompleteNativeDrop(
+                FileImportPolicy.plan(List.of(), List.of(firstPath, secondPath))));
+        assertTrue(assertThrows(IllegalArgumentException.class,
+                () -> DesktopApp.requireCompleteNativeDrop(FileImportPolicy.plan(
+                        List.of(), List.of(firstPath, root.resolve("notes.txt")))))
+                .getMessage().contains("hiçbir dosya eklenmedi"));
+        assertTrue(assertThrows(IllegalArgumentException.class,
+                () -> DesktopApp.requireCompleteNativeDrop(FileImportPolicy.plan(
+                        List.of(firstPath), List.of(firstPath, secondPath))))
+                .getMessage().contains("yinelenen"));
+        List<Path> fullGrid = java.util.stream.IntStream.range(0, FileImportPolicy.MAX_CARDS)
+                .mapToObj(i -> root.resolve("existing-" + i + ".udf")).toList();
+        assertTrue(assertThrows(IllegalArgumentException.class,
+                () -> DesktopApp.requireCompleteNativeDrop(FileImportPolicy.plan(
+                        fullGrid, List.of(secondPath))))
+                .getMessage().contains("160"));
+
         // A secondary/middle press must not capture a selected card for
         // reordering. Modifier-assisted primary selection remains available.
         for (int modifiers : new int[]{0, java.awt.event.InputEvent.CTRL_DOWN_MASK,
