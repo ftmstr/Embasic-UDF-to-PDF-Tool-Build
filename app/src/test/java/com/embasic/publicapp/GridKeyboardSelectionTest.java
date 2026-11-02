@@ -131,6 +131,29 @@ final class GridKeyboardSelectionTest {
         assertEquals("F",reverseRange.anchor());
     }
 
+    // Deleting selected cards must not leave a stale keyboard anchor. The
+    // next arrow starts at the neighboring logical card, even offscreen.
+    @Test void deletingCardsKeepsNearestExplorerFocus() {
+        var middle = GridKeyboardSelection.afterRemoval(FILES, List.of("B", "C"), "C");
+        assertEquals(List.of("D"), middle.selected());
+        assertEquals("D", middle.anchor());
+        assertEquals("D", middle.focused());
+
+        var tail = GridKeyboardSelection.afterRemoval(FILES, List.of("H", "I"), "I");
+        assertEquals(List.of("G"), tail.selected());
+        assertEquals("G", tail.focused());
+
+        var withoutFocus = GridKeyboardSelection.afterRemoval(FILES, List.of("B", "C"), null);
+        assertEquals(List.of("D"), withoutFocus.selected());
+        var unselectedFocus = GridKeyboardSelection.afterRemoval(FILES, List.of("B"), "F");
+        assertEquals(List.of("F"), unselectedFocus.selected());
+
+        var all = GridKeyboardSelection.afterRemoval(FILES, FILES, "E");
+        assertTrue(all.selected().isEmpty());
+        assertNull(all.anchor());
+        assertNull(all.focused());
+    }
+
     @Test void emptyFilesReturnEmptySelection() {
         var result=GridKeyboardSelection.move(List.<String>of(),List.<String>of(),
                 "A","A",1,true,false);
