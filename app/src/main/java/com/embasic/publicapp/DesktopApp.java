@@ -1076,6 +1076,20 @@ public final class DesktopApp extends JFrame {
         int width=Math.max(1,scroll.getViewport().getWidth());
         int zoom=thumbnailZoom.getValue();
         VirtualGridLayout next=new VirtualGridLayout(items.size()+1,width,zoom);
+        // Responsive window resize can change columns without changing zoom.
+        // Preserve the old top UDF row, not its stale pixel Y. The zoom path
+        // restores its own anchor, and an active drag must not be repositioned.
+        if (virtualGrid != null && virtualGrid.count() == next.count()
+                && virtualGrid.columns() != next.columns()
+                && drawnZoom == zoom && !pointerHeld) {
+            int y = virtualGrid.reflowScrollY(next,
+                    scroll.getViewport().getViewRect().y,
+                    scroll.getViewport().getHeight());
+            Dimension size = next.preferredSize();
+            grid.setPreferredSize(size);
+            grid.setSize(size);
+            scroll.getViewport().setViewPosition(new Point(0, y));
+        }
         VirtualGridLayout.Visible window=next.visible(scroll.getViewport().getViewRect());
         // A fast scroll can leave many previously visible thumbnails queued.
         // Drop only NOT-YET-RUNNING offscreen work; keep active PDFBox renders
