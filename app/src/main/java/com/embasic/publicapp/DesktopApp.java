@@ -1173,7 +1173,6 @@ public final class DesktopApp extends JFrame {
                 || sources.isEmpty() || sources.size() != docs.size()
                 || sources.size() != sourceFingerprints.size())
             throw new IllegalArgumentException("PDF kaynak listesi tutarsız");
-        FileImportPolicy.preflightReadableMergeFiles(sources);
         verifySourceFingerprints(sources, sourceFingerprints);
         // A large PDF render can take time after the first fingerprint check.
         // Recheck immediately before the staged PDF is published, including
@@ -1182,8 +1181,13 @@ public final class DesktopApp extends JFrame {
                 () -> verifySourceFingerprints(sources, sourceFingerprints));
     }
 
-    /** Shared by both pre-render and pre-publication source integrity gates. */
+    /**
+     * Shared by pre-render and pre-publication gates. Recheck physical identity
+     * as well as bytes: a source path may be replaced with a hard/symbolic link
+     * to an earlier UDF while PDFBox is rendering, without changing its SHA-256.
+     */
     static void verifySourceFingerprints(List<Path> sources, List<String> sourceFingerprints) {
+        FileImportPolicy.preflightReadableMergeFiles(sources);
         for (int i = 0; i < sources.size(); i++) {
             String original = sourceFingerprints.get(i);
             if (original == null || !original.equals(FileImportPolicy.sourceSha256(sources.get(i))))
