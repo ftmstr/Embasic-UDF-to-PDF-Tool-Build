@@ -212,6 +212,24 @@ final class PublicDesktopSmokeTest {
             action.actionPerformed(enter);
             assertEquals(3, activations.get(), "Removing a card must restore the + tile");
         });
+        javax.swing.SwingUtilities.invokeAndWait(() -> {
+            JPanel root = new JPanel();
+            java.util.concurrent.atomic.AtomicInteger opened = new java.util.concurrent.atomic.AtomicInteger();
+            java.util.concurrent.atomic.AtomicInteger saved = new java.util.concurrent.atomic.AtomicInteger();
+            DesktopApp.installFileShortcuts(root, opened::incrementAndGet, saved::incrementAndGet);
+            for (int key : new int[]{java.awt.event.KeyEvent.VK_O, java.awt.event.KeyEvent.VK_S}) {
+                Object binding = root.getInputMap(javax.swing.JComponent.WHEN_IN_FOCUSED_WINDOW)
+                        .get(javax.swing.KeyStroke.getKeyStroke(key,
+                                java.awt.event.InputEvent.CTRL_DOWN_MASK));
+                assertNotNull(binding, "Ctrl+O and Ctrl+S must be registered for the workspace");
+                javax.swing.Action action = root.getActionMap().get(binding);
+                assertNotNull(action);
+                action.actionPerformed(new java.awt.event.ActionEvent(root,
+                        java.awt.event.ActionEvent.ACTION_PERFORMED, "file-action"));
+            }
+            assertEquals(1, opened.get(), "Ctrl+O must use the existing file chooser action");
+            assertEquals(1, saved.get(), "Ctrl+S must use the existing PDF save action");
+        });
     }
 
     @Test void addTileKeepsIdentityAndKeyboardBindingsAcrossVirtualRefresh() throws Exception {
