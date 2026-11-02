@@ -177,10 +177,21 @@ public final class PdfExporter {
         // pages. Validate the ORIGINAL text first: unsupported separators must
         // never disappear through stripTrailing(), isBlank(), or run skipping.
         for (UdfReader.DocumentSpec document : docs) {
+            // Direct DocumentSpec instances bypass the XML reader's schema gate.
+            // Never interpret an unknown format as the documented synthetic 1.0 subset.
+            if (document == null || !"1.0".equals(document.formatId()))
+                throw new IllegalArgumentException("Desteklenmeyen sentetik UDF format_id");
             boolean hasVisibleContent = false;
             for (DocumentElements.Block block : document.blocks()) {
                 if (block instanceof DocumentElements.ParagraphBlock paragraph) {
                     for (UdfReader.Run run : paragraph.paragraph().runs()) {
+                        // Direct Run/Style records bypass XML's 6..48 pt bounds.
+                        // Invalid sizes can corrupt PDF geometry or trigger late font errors.
+                        if (run == null || run.text() == null || run.style() == null
+                                || !Float.isFinite(run.style().size())
+                                || run.style().size() < 6f || run.style().size() > 48f
+                                || run.style().color() == null)
+                            throw new IllegalArgumentException("Geçersiz sentetik metin stili");
                         validateSupportedText(run.text());
                         if (!run.text().isBlank()) hasVisibleContent = true;
                     }
