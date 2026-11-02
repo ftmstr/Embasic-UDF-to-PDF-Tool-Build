@@ -463,7 +463,8 @@ public final class DesktopApp extends JFrame {
     }
 
     private void chooseFiles() {
-        if (converting) return;
+        // A full 160-card grid must not open a chooser that cannot add files.
+        if (!canAddMore(items.size(), converting)) return;
         JFileChooser chooser = new JFileChooser();
         chooser.setMultiSelectionEnabled(true);
         chooser.setAcceptAllFileFilterUsed(false);
@@ -908,7 +909,7 @@ public final class DesktopApp extends JFrame {
         plus.getInputMap(JComponent.WHEN_FOCUSED).put(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, 0), action);
         plus.getActionMap().put(action, new javax.swing.AbstractAction() {
             @Override public void actionPerformed(java.awt.event.ActionEvent event) {
-                chooseFiles.run();
+                if (plus.isEnabled()) chooseFiles.run();
             }
         });
     }
@@ -921,8 +922,35 @@ public final class DesktopApp extends JFrame {
                 : BorderFactory.createDashedBorder(ACCENT, 4f, 4f));
     }
 
+    /** Keep the virtual + tile informative but non-actionable at capacity or during export. */
+    static boolean canAddMore(int count, boolean converting) {
+        return !converting && count < FileImportPolicy.MAX_CARDS;
+    }
+
+    static void updateAddCardAvailability(JPanel plus, int count, boolean converting) {
+        boolean available = canAddMore(count, converting);
+        plus.setEnabled(available);
+        plus.setFocusable(available);
+        plus.getAccessibleContext().setAccessibleName(available ? "+ UDF ekle"
+                : converting ? "PDF oluşturuluyor; UDF ekleme kapalı"
+                : "160 UDF sınırı dolu; ekleme kapalı");
+        plus.getAccessibleContext().setAccessibleDescription(available
+                ? "UDF dosyası eklemek için Enter veya Boşluk tuşuna basın"
+                : "Yeni UDF eklemek için önce mevcut dosyalardan birini kaldırın veya PDF işlemini bekleyin");
+        plus.setToolTipText(available ? "UDF dosyası ekle"
+                : converting ? "PDF oluşturulurken dosya eklenemez"
+                : "160 UDF sınırı dolu; eklemek için bir dosyayı kaldırın");
+        for (Component child : plus.getComponents())
+            if (child instanceof JLabel label)
+                label.setText(available
+                        ? "<html><center><span style='font-size:24pt'>+</span><br>UDF dosyası seç</center></html>"
+                        : converting ? "<html><center>PDF oluşturuluyor<br>Lütfen bekleyin</center></html>"
+                        : "<html><center>160 UDF sınırı dolu<br>Eklemek için dosya kaldırın</center></html>");
+    }
+
     private void styleAddCard(JPanel plus) {
         plus.setBackground(cardColor());
+        updateAddCardAvailability(plus, items.size(), converting);
         updateAddCardFocus(plus, plus.isFocusOwner()
                 || Boolean.TRUE.equals(plus.getClientProperty("embasic-add-focus")));
         ThumbnailSizing.Size size = ThumbnailSizing.at(thumbnailZoom.getValue());
@@ -949,7 +977,7 @@ public final class DesktopApp extends JFrame {
     static void installAddCardMouse(JPanel plus, JLabel label, Runnable chooseFiles) {
         MouseAdapter click = new MouseAdapter() {
             @Override public void mouseClicked(MouseEvent event) {
-                if (isPrimaryCardPress(event)) chooseFiles.run();
+                if (plus.isEnabled() && isPrimaryCardPress(event)) chooseFiles.run();
             }
         };
         plus.addMouseListener(click);
@@ -1121,6 +1149,7 @@ public final class DesktopApp extends JFrame {
         Color bg=background(), fg=foreground();
         getContentPane().setBackground(bg);
         grid.setBackground(bg);
+        addButton.setEnabled(canAddMore(items.size(), converting));
         saveButton.setEnabled(!converting && !items.isEmpty()
                 && items.stream().allMatch(item ->
                         item.document != null && item.sourceFingerprint != null));
@@ -1142,7 +1171,7 @@ public final class DesktopApp extends JFrame {
     }
     /** Keep the visible queue identical to the document snapshot while a PDF is saving. */
     private void setQueueEditingEnabled(boolean enabled) {
-        addButton.setEnabled(enabled);
+        addButton.setEnabled(enabled && items.size() < FileImportPolicy.MAX_CARDS);
         moveLeftButton.setEnabled(enabled);
         moveRightButton.setEnabled(enabled);
         removeButton.setEnabled(enabled);
