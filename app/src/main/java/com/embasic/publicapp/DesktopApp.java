@@ -502,7 +502,13 @@ public final class DesktopApp extends JFrame {
         if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
         List<Path> paths = new ArrayList<>();
         for (java.io.File file : chooser.getSelectedFiles()) paths.add(file.toPath());
-        addFiles(paths);
+        try {
+            addFiles(paths);
+        } catch (IllegalArgumentException ex) {
+            // A multi-selection is one action. Never silently omit files from
+            // the PDF queue when the chooser exceeds capacity or has duplicates.
+            showError(ex);
+        }
     }
 
     private boolean addFiles(List<Path> paths) {
@@ -513,11 +519,11 @@ public final class DesktopApp extends JFrame {
         if (converting) return false;
         FileImportPolicy.Selection plan = FileImportPolicy.plan(
                 items.stream().map(item -> item.path).toList(), paths);
-        // An Explorer multi-file drop is one user action: never accept a
-        // partial set (duplicates, unsupported files or the 160-card limit).
-        // Reject before adding any card; importData reports the error after
-        // returning control to Explorer's native drag transaction.
+        // A chooser multi-selection and an Explorer drop both represent one
+        // complete user action. Never enqueue a partial set of UDF cards.
+        // Native drop errors are handled after the Explorer drag transaction.
         if (nativeDrop) requireCompleteNativeDrop(plan);
+        else requireCompleteChooserSelection(plan);
         for (Path normalized : plan.accepted()) {
             // Snapshot earlier cards before inserting this one. The parser worker
             // checks their physical identity without touching Swing state.
@@ -555,37 +561,28 @@ public final class DesktopApp extends JFrame {
         }
         rebuild();
         updateFileStatus();
-        // Skipped files must not disappear silently from the merged PDF.
-        // Summarize all rejection reasons once per import batch.
-        List<String> warnings = new ArrayList<>();
-        if (plan.limitReached())
-            warnings.add("En fazla " + FileImportPolicy.MAX_CARDS
-                    + " UDF kartı yüklenebilir; fazla dosyalar atlandı.");
-        if (plan.unsupportedCount() > 0)
-            warnings.add(plan.unsupportedCount() + " dosya .udf uzantılı olmadığı için atlandı.");
-        if (plan.duplicateCount() > 0)
-            warnings.add(plan.duplicateCount() + " yinelenen UDF dosyası atlandı.");
-        if (!warnings.isEmpty()) {
-            String message = String.join("\n", warnings) + "\nAtlanan dosyalar PDF'ye eklenmedi.";
-            // A synchronous JOptionPane inside TransferHandler.importData can hold
-            // the Windows Explorer drag transaction open until the user dismisses it.
-            presentImportFeedback(nativeDrop, () -> JOptionPane.showMessageDialog(this,
-                    message, "İçe aktarma uyarısı", JOptionPane.WARNING_MESSAGE));
-        }
         return !plan.accepted().isEmpty();
     }
 
-    /** Fail closed on an incomplete native drop; chooser imports retain their warnings. */
-    static void requireCompleteNativeDrop(FileImportPolicy.Selection plan) {
-        if (plan == null) throw new IllegalArgumentException("Explorer dosya seçimi eksik");
+    /** Reject incomplete batches before adding any card; parsing is still asynchronous. */
+    private static void requireCompleteSelection(FileImportPolicy.Selection plan, String source) {
+        if (plan == null) throw new IllegalArgumentException(source + " eksik");
         if (plan.limitReached())
-            throw new IllegalArgumentException("Explorer bırakması 160 UDF kartı sınırını aşıyor; hiçbir dosya eklenmedi");
+            throw new IllegalArgumentException(source + " 160 UDF kartı sınırını aşıyor; hiçbir dosya eklenmedi");
         if (plan.unsupportedCount() > 0)
-            throw new IllegalArgumentException("Explorer bırakmasında .udf olmayan dosya var; hiçbir dosya eklenmedi");
+            throw new IllegalArgumentException(source + " .udf olmayan dosya içeriyor; hiçbir dosya eklenmedi");
         if (plan.duplicateCount() > 0)
-            throw new IllegalArgumentException("Explorer bırakmasında yinelenen UDF var; hiçbir dosya eklenmedi");
+            throw new IllegalArgumentException(source + " yinelenen UDF içeriyor; hiçbir dosya eklenmedi");
         if (plan.accepted().isEmpty())
-            throw new IllegalArgumentException("Explorer bırakmasında eklenecek UDF yok");
+            throw new IllegalArgumentException(source + " eklenecek UDF içermiyor; hiçbir dosya eklenmedi");
+    }
+
+    static void requireCompleteNativeDrop(FileImportPolicy.Selection plan) {
+        requireCompleteSelection(plan, "Explorer bırakması");
+    }
+
+    static void requireCompleteChooserSelection(FileImportPolicy.Selection plan) {
+        requireCompleteSelection(plan, "Dosya seçimi");
     }
 
     /**
