@@ -137,4 +137,45 @@ final class ReferencedMediaRegressionTest {
         for(int i=0;i<65;i++) excessive.put("media/"+i+".png",png());
         assertThrows(IllegalArgumentException.class,()->UdfReader.read(archive("many.udf",excessive)));
     }
+
+    @Test void directImageBlocksObeyPngByteAndPixelBudgetsBeforePdfPublication() throws Exception {
+        // Public ImageBlock constructors bypass XML parsing. A valid direct
+        // PNG still renders, but oversized or dimension-forged PNGs must not
+        // allocate a huge raster or publish a misleading partial PDF.
+        var good = new UdfReader.DocumentSpec("direct-good.udf", "1.0", List.of(),
+                List.of(new DocumentElements.ImageBlock(png(), 40f, 40f)),
+                DocumentElements.PageSpec.a4());
+        try (PDDocument pdf = PdfExporter.render(List.of(good))) {
+            assertEquals(1, pdf.getNumberOfPages());
+            assertTrue(pdf.getPage(0).getResources().getXObjectNames().iterator().hasNext());
+        }
+
+        byte[] oversized = new byte[1_048_577];
+        oversized[0] = (byte) 0x89;
+        oversized[1] = 'P'; oversized[2] = 'N'; oversized[3] = 'G';
+        var tooManyBytes = new UdfReader.DocumentSpec("direct-large.udf", "1.0", List.of(),
+                List.of(new DocumentElements.ImageBlock(oversized, 40f, 40f)),
+                DocumentElements.PageSpec.a4());
+        assertThrows(IllegalArgumentException.class,
+                () -> { try (PDDocument ignored = PdfExporter.render(List.of(tooManyBytes))) {} });
+        Path rejected = folder.resolve("direct-large.pdf");
+        assertThrows(IllegalArgumentException.class,
+                () -> PdfExporter.save(List.of(tooManyBytes), rejected, false));
+        assertFalse(Files.exists(rejected));
+
+        // Forge an IHDR claiming 4,001,000 pixels while retaining a tiny PNG
+        // body. Update its CRC so metadata is parseable. The pixel guard must
+        // reject the image before ImageReader.read(0) can allocate its raster.
+        byte[] forged = png();
+        java.nio.ByteBuffer.wrap(forged).putInt(16, 4001).putInt(20, 1000);
+        var crc = new java.util.zip.CRC32();
+        crc.update(forged, 12, 17);
+        java.nio.ByteBuffer.wrap(forged).putInt(29, (int) crc.getValue());
+        var tooManyPixels = new UdfReader.DocumentSpec("direct-pixels.udf", "1.0", List.of(),
+                List.of(new DocumentElements.ImageBlock(forged, 40f, 40f)),
+                DocumentElements.PageSpec.a4());
+        var failure = assertThrows(IllegalArgumentException.class,
+                () -> { try (PDDocument ignored = PdfExporter.render(List.of(tooManyPixels))) {} });
+        assertTrue(failure.getMessage().contains("piksel"), failure.getMessage());
+    }
 }
