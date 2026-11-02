@@ -204,10 +204,12 @@ public final class DesktopApp extends JFrame {
         bottom.add(dragFeedback, BorderLayout.CENTER);
         grid.getAccessibleContext().setAccessibleName("UDF belge sıralama alanı");
         grid.getAccessibleContext().setAccessibleDescription(
-                "Dosyaları seçip sürükleyerek sıralayın; Esc ile sürüklemeyi iptal edin.");
+                "Dosyaları seçip sürükleyerek veya Alt + Yukarı/Aşağı ile sıralayın; Esc ile sürüklemeyi iptal edin.");
         JPanel ordered = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
         moveLeftButton.addActionListener(e -> shift(-1));
         moveRightButton.addActionListener(e -> shift(1));
+        moveLeftButton.setToolTipText("Seçili UDF kartlarını bir sıra önceye taşı (Alt + Yukarı)");
+        moveRightButton.setToolTipText("Seçili UDF kartlarını bir sıra sonraya taşı (Alt + Aşağı)");
         removeButton.addActionListener(e -> removeSelected());
         clearButton.addActionListener(e -> {
             if (converting || items.isEmpty() || JOptionPane.showConfirmDialog(this,
@@ -289,6 +291,9 @@ public final class DesktopApp extends JFrame {
         // cards outside the viewport. Shift extends, Ctrl only moves focus.
         bindArrow(KeyEvent.VK_HOME, -Integer.MAX_VALUE);
         bindArrow(KeyEvent.VK_END, Integer.MAX_VALUE);
+        // Keyboard-only users can reorder the same logical 160-card queue as
+        // the toolbar and drag/drop, without depending on rendered card widgets.
+        installReorderShortcuts(getRootPane(), this::shift);
         input.put(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.CTRL_DOWN_MASK), "toggleFocused");
         action.put("toggleFocused", new javax.swing.AbstractAction() {
             @Override public void actionPerformed(java.awt.event.ActionEvent e) {
@@ -418,6 +423,25 @@ public final class DesktopApp extends JFrame {
             });
         }
     }
+    /** Alt+Up/Down moves selected cards one PDF-order slot; Ctrl/Shift arrows remain selection-only. */
+    static void installReorderShortcuts(javax.swing.JRootPane root,
+                                        java.util.function.IntConsumer reorder) {
+        if (root == null || reorder == null)
+            throw new IllegalArgumentException("Klavye sıralama hedefi eksik");
+        var input = root.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
+        var actions = root.getActionMap();
+        for (int direction : new int[]{-1, 1}) {
+            int key = direction < 0 ? KeyEvent.VK_UP : KeyEvent.VK_DOWN;
+            String name = direction < 0 ? "reorderPrevious" : "reorderNext";
+            input.put(KeyStroke.getKeyStroke(key, InputEvent.ALT_DOWN_MASK), name);
+            actions.put(name, new javax.swing.AbstractAction() {
+                @Override public void actionPerformed(java.awt.event.ActionEvent event) {
+                    reorder.accept(direction);
+                }
+            });
+        }
+    }
+
     private void moveKeyboard(int step, boolean extend, boolean focusOnly) {
         if (items.isEmpty()) return;
         var next = GridKeyboardSelection.move(items,selected,anchor,focused,step,extend,focusOnly);
