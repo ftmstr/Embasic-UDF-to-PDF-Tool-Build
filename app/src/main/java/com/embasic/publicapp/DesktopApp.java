@@ -214,7 +214,7 @@ public final class DesktopApp extends JFrame {
                     "Tüm dosyalar kaldırılsın mı?", "Temizle",
                     JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) return;
             cancelPreviewTasks(items);
-            items.clear(); selected.clear(); rebuild(); updateFileStatus();
+            items.clear(); selected.clear(); anchor = null; focused = null; rebuild(); updateFileStatus();
         });
         ordered.add(moveLeftButton); ordered.add(moveRightButton);
         ordered.add(removeButton); ordered.add(clearButton);
@@ -1139,9 +1139,15 @@ public final class DesktopApp extends JFrame {
 
     private void removeSelected() {
         if (converting || selected.isEmpty()) return;
+        // Preserve the nearest logical card after deletion, including when
+        // the old focus was offscreen in the virtualized 160-card workspace.
+        var next = GridKeyboardSelection.afterRemoval(items, selected, focused);
         cancelPreviewTasks(selected);
         items.removeAll(selected);
         selected.clear();
+        selected.addAll(next.selected());
+        anchor = next.anchor();
+        focused = next.focused();
         rebuild();
         updateFileStatus();
     }
