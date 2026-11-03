@@ -80,10 +80,16 @@ public final class GridKeyboardSelection {
         if (files == null || selected == null) throw new IllegalArgumentException("Dosya seçimi eksik");
         if (files.isEmpty()) return new Result<>(List.of(), null, null);
         int oldIndex = focused == null ? -1 : files.indexOf(focused);
-        if (oldIndex < 0) {
-            for (T value : selected) {
-                oldIndex = files.indexOf(value);
-                if (oldIndex >= 0) break;
+        if (oldIndex < 0 && !selected.isEmpty()) {
+            // Selection collections may be unordered (e.g. HashSet). With no
+            // focused card, navigate from the first card in visual grid order,
+            // not whichever selected element the collection iterates first.
+            HashSet<T> selectedSet = new HashSet<>(selected);
+            for (int i = 0; i < files.size(); i++) {
+                if (selectedSet.contains(files.get(i))) {
+                    oldIndex = i;
+                    break;
+                }
             }
         }
         // Without focus or selection, the first key must land on the first
