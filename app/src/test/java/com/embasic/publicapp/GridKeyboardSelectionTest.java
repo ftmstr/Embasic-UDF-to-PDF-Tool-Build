@@ -154,6 +154,18 @@ final class GridKeyboardSelectionTest {
         assertNull(all.focused());
     }
 
+    @Test void unorderedSelectionWithoutFocusNavigatesFromFirstVisualCard() {
+        // HashSet iteration order must not decide the keyboard navigation origin.
+        var unordered = new java.util.HashSet<>(List.of("F", "B"));
+        var next = GridKeyboardSelection.move(FILES, unordered, null, null,
+                1, false, false);
+        assertEquals(List.of("C"), next.selected());
+        assertEquals("C", next.focused());
+        var previous = GridKeyboardSelection.move(FILES, unordered, null, null,
+                -1, false, false);
+        assertEquals(List.of("A"), previous.selected());
+    }
+
     @Test void emptyFilesReturnEmptySelection() {
         var result=GridKeyboardSelection.move(List.<String>of(),List.<String>of(),
                 "A","A",1,true,false);
