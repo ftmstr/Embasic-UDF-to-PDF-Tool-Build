@@ -206,6 +206,37 @@ final class ReferencedMediaRegressionTest {
                 assertTrue(error.getMessage().contains("sayfa geometrisi"), error.getMessage());
             }
         }
+        // Direct PageSpec bypasses the XML reader's A4/A5/Letter/Legal
+        // allowlist and 100-point margin ceiling. Reject unsupported
+        // geometry before staging any PDF, even for an image-only document.
+        for (var pageSpec : List.of(
+                new DocumentElements.PageSpec(14400f, 841.89f, 48f),
+                new DocumentElements.PageSpec(700f, 700f, 48f),
+                new DocumentElements.PageSpec(595.28f, 841.89f, 101f))) {
+            var spec = new UdfReader.DocumentSpec("unsupported-page.udf", "1.0",
+                    List.of(), List.of(new DocumentElements.ImageBlock(png(), 40f, 40f)),
+                    pageSpec);
+            var error = assertThrows(IllegalArgumentException.class,
+                    () -> { try (PDDocument ignored = PdfExporter.render(List.of(spec))) {} });
+            assertTrue(error.getMessage().contains("sayfa geometrisi"), error.getMessage());
+            Path rejected = folder.resolve("unsupported-page.pdf");
+            assertThrows(IllegalArgumentException.class,
+                    () -> PdfExporter.save(List.of(spec), rejected, false));
+            assertFalse(Files.exists(rejected), "Unsupported page must not publish a PDF");
+        }
+        // Valid XML-equivalent landscape sizes and margins remain accepted.
+        for (var pageSpec : List.of(
+                new DocumentElements.PageSpec(792f, 612f, 36f),
+                new DocumentElements.PageSpec(595.28f, 419.53f, 100f))) {
+            var spec = new UdfReader.DocumentSpec("landscape.udf", "1.0",
+                    List.of(), List.of(new DocumentElements.ImageBlock(png(), 40f, 40f)),
+                    pageSpec);
+            try (PDDocument pdf = PdfExporter.render(List.of(spec))) {
+                assertEquals(1, pdf.getNumberOfPages());
+                assertEquals(pageSpec.width(), pdf.getPage(0).getMediaBox().getWidth(), .01f);
+                assertEquals(pageSpec.height(), pdf.getPage(0).getMediaBox().getHeight(), .01f);
+            }
+        }
         Path invalidTarget = folder.resolve("invalid-geometry.pdf");
         var invalidSpec = new UdfReader.DocumentSpec("invalid.udf", "1.0", List.of(),
                 List.of(new DocumentElements.ImageBlock(png(), Float.NaN, 40f)),
