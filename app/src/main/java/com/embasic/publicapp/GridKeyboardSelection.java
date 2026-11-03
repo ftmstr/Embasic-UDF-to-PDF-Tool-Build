@@ -2,6 +2,7 @@ package com.embasic.publicapp;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 
@@ -38,13 +39,16 @@ public final class GridKeyboardSelection {
             throw new IllegalArgumentException("Dosya seçimi eksik");
         if (files.isEmpty() || removed.isEmpty())
             return new Result<>(List.of(), null, null);
+        // Normalize arbitrary collections once: large batch deletions must not
+        // scan a list of removed cards for every logical grid item.
+        HashSet<T> removedSet = new HashSet<>(removed);
         List<T> survivors = new ArrayList<>();
         int firstRemoved = -1;
         int survivingBeforeFocus = 0;
         int focusedIndex = focused == null ? -1 : files.indexOf(focused);
         for (int i = 0; i < files.size(); i++) {
             T item = files.get(i);
-            if (removed.contains(item)) {
+            if (removedSet.contains(item)) {
                 if (firstRemoved < 0) firstRemoved = i;
             } else {
                 survivors.add(item);
@@ -60,7 +64,7 @@ public final class GridKeyboardSelection {
         } else {
             position = 0;
             for (int i = 0; i < firstRemoved; i++)
-                if (!removed.contains(files.get(i))) position++;
+                if (!removedSet.contains(files.get(i))) position++;
         }
         T next = survivors.get(Math.min(position, survivors.size() - 1));
         return new Result<>(List.of(next), next, next);
@@ -91,7 +95,8 @@ public final class GridKeyboardSelection {
                 : (delta < 0 ? files.size() - 1 : 0);
         T nextFile = files.get(next);
         LinkedHashSet<T> nextSelection = new LinkedHashSet<>();
-        for (T item : files) if (selected.contains(item)) nextSelection.add(item);
+        HashSet<T> selectedSet = new HashSet<>(selected);
+        for (T item : files) if (selectedSet.contains(item)) nextSelection.add(item);
         // A stale anchor must not turn the first Shift+arrow into a surprise
         // multi-card range when no card is currently focused or selected.
         T nextAnchor = !hasOrigin ? nextFile
