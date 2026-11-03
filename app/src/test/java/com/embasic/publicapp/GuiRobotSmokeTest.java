@@ -8,7 +8,6 @@ import java.awt.Rectangle;
 import java.awt.Robot;
 import java.awt.event.InputEvent;
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -95,8 +94,17 @@ final class GuiRobotSmokeTest {
                     appRef.set(app);
                 } catch(Exception e) { throw new RuntimeException(e); }
             });
-            robot.waitForIdle();
+            // Preview workers may continue posting Swing events. Verify the
+            // actual window state with a bounded EDT poll instead of waiting
+            // for the event queue to become permanently idle.
             DesktopApp app=appRef.get();
+            GuiRobotWait.until(Duration.ofSeconds(8),Duration.ofMillis(60),
+                    ()->GuiRobotWait.onEdt(()->{
+                        JScrollPane viewport=(JScrollPane)field(app,"scroll");
+                        JPanel cards=(JPanel)field(app,"grid");
+                        return app.isShowing() && viewport.getViewport().getWidth()>0
+                                && cards.getComponentCount()>0;
+                    }),Boolean.TRUE::equals);
             JScrollPane scroll=(JScrollPane)field(app,"scroll");
             JPanel grid=(JPanel)field(app,"grid");
             JLabel feedback=(JLabel)field(app,"dragFeedback");
@@ -105,8 +113,9 @@ final class GuiRobotSmokeTest {
             assertEquals(source.size(),items.size());
             Object first=items.get(0);
 
-            VirtualGridLayout geometry=new VirtualGridLayout(items.size()+1,
-                    scroll.getViewport().getWidth(),ThumbnailSizing.DEFAULT_WIDTH);
+            VirtualGridLayout geometry=GuiRobotWait.onEdt(
+                    ()->(VirtualGridLayout)field(app,"virtualGrid"));
+            assertNotNull(geometry, "Live virtual layout must be initialized");
             Rectangle start=geometry.bounds(0);
             Point initial=SwingUtilities.convertPoint(grid,
                     new Point(start.x+start.width/4,start.y+start.height/2),
@@ -122,15 +131,17 @@ final class GuiRobotSmokeTest {
                 robot.mouseMove(mouseX,firstY+(edgeY-firstY)*i/16);
                 robot.delay(32);
             }
-            robot.delay(900);
-            // Repeating autoscroll timer keeps posting EDT events. Robot.waitForIdle
-            // is not reliable while it is running; use a bounded EDT barrier.
-            edt(() -> {});
-            final int[] scrolled={0};
-            edt(()-> scrolled[0]=scroll.getVerticalScrollBar().getValue());
-            assertTrue(scrolled[0]>0,"Drag near bottom did not auto-scroll real JFrame");
+            // Autoscroll speed varies with Windows DPI and runner performance.
+            // Poll a real Swing property within a fixed deadline.
+            GuiRobotWait.until(Duration.ofSeconds(8),Duration.ofMillis(70),
+                    ()->GuiRobotWait.onEdt(
+                            ()->scroll.getVerticalScrollBar().getValue()),
+                    value->value>0);
 
-            Rectangle view=scroll.getViewport().getViewRect();
+            Rectangle view=GuiRobotWait.onEdt(
+                    ()->scroll.getViewport().getViewRect());
+            geometry=GuiRobotWait.onEdt(
+                    ()->(VirtualGridLayout)field(app,"virtualGrid"));
             int target=-1;
             for(int i=1;i<items.size();i++) {
                 Rectangle bounds=geometry.bounds(i);
@@ -147,24 +158,18 @@ final class GuiRobotSmokeTest {
             viewportScreen=scroll.getViewport().getLocationOnScreen();
             robot.mouseMove(viewportScreen.x+destInViewport.x,
                     viewportScreen.y+destInViewport.y);
-            robot.delay(200);
-            // The drag timer may still be active; never wait for a permanently
-            // empty event queue while the mouse is held down.
-            edt(() -> {});
-            final int[] indicated={-1};
-            edt(()->{
-                try { indicated[0]=(Integer)field(app,"dropTargetIndex"); }
-                catch(Exception ex){ throw new RuntimeException(ex); }
-            });
-            assertEquals(targetIndex,indicated[0],
-                    "Visual marker must resolve real window drop location");
-            assertTrue(feedback.getText().contains((targetIndex+1)+". kartın"),
-                    "Drag position is not announced in the accessible status");
+            GuiRobotWait.until(Duration.ofSeconds(5),Duration.ofMillis(60),
+                    ()->GuiRobotWait.onEdt(()->{
+                        int index=(Integer)field(app,"dropTargetIndex");
+                        String hint=feedback.getText();
+                        return index==targetIndex && hint.contains((targetIndex+1)+". kartın");
+                    }),Boolean.TRUE::equals);
             robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);
             pressed=false;
-            robot.waitForIdle();
-            assertTrue(items.indexOf(first)>0,"Dragged source was not reordered");
-            assertEquals("",feedback.getText(),"Drop hint must be cleared after release");
+            GuiRobotWait.until(Duration.ofSeconds(5),Duration.ofMillis(60),
+                    ()->GuiRobotWait.onEdt(
+                        ()->items.indexOf(first)>0 && feedback.getText().isEmpty()),
+                    Boolean.TRUE::equals);
             System.out.println("WINDOWS-GUI-ROBOT-PASS: real DesktopApp mouse press/drag,"
                     +" edge scroll, target marker, accessible hint and drop order");
         } finally {
