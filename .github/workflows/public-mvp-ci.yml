@@ -53,7 +53,7 @@ jobs:
       # without logging document text or font paths. This is instrumentation,
       # not a performance improvement or a release approval.
       - name: Compile + JUnit test + shaded JAR build (no binary publication)
-        run: mvn -B -ntp -f app/pom.xml -Dembasic.diagnostics.fontTiming=true clean verify
+        run: mvn -B -ntp -f app/pom.xml "-Dembasic.diagnostics.fontTiming=true" clean verify
       - name: CLI synthetic UDF to PDF smoke
         run: python app/scripts/smoke_cli.py app/target/embasic-public-desktop-0.1.0-SNAPSHOT-all.jar
 
