@@ -543,6 +543,9 @@ public final class PdfExporter {
         private float x, y, lineHeight = 17f;
         // A CRLF pair can be split across differently styled text runs.
         private boolean previousWasCR;
+        // A UDF style/run boundary is not a legal line-break opportunity
+        // inside one uninterrupted word. Track the previous run's last codepoint.
+        private boolean previousRunEndsInWord;
         private Layout(PDDocument pdf, FontSet fonts,
                        DocumentElements.PageSpec page, boolean previewOnly) {
             this.pdf = pdf; this.fonts = fonts; this.page = page;
@@ -568,6 +571,7 @@ public final class PdfExporter {
         }
         void endParagraph() throws IOException {
             previousWasCR = false;
+            previousRunEndsInWord = false;
             newLine();
             y -= 5f;
             if (y < bottom) newPage();
@@ -578,9 +582,16 @@ public final class PdfExporter {
                 throw new IOException("PDF fontunda bulunmayan Unicode karakteri: " + word, ex);
             }
         }
-        private void word(String text, UdfReader.Style style) throws IOException {
+        private void word(String text, UdfReader.Style style, boolean continuesPriorRun)
+                throws IOException {
             if (text.isEmpty()) return;
             float size = style.size();
+            // PDFBox only sees each styled UDF run separately. Wrapping a
+            // fragment at this boundary would silently split a single word.
+            // Without a validated cross-style word layout, fail closed.
+            if (continuesPriorRun && y - size < bottom)
+                throw new IllegalArgumentException(
+                        "Biçimlendirilmiş kelime sayfa sonunda bölünemez");
             // A glyph that cannot fit vertically on this page belongs to the
             // next page. In a first-page preview, stop before resolving a font
             // used only by that later page (potentially expensive on Windows).
@@ -589,6 +600,9 @@ public final class PdfExporter {
             validateRunStyle(style);
             PDType0Font font = fonts.get(style.bold());
             float length = width(text, font, size);
+            if (continuesPriorRun && x + length > right)
+                throw new IllegalArgumentException(
+                        "Biçimlendirilmiş kelime satır sonunda bölünemez");
             if (length > right - left)
                 throw new IllegalArgumentException("Sayfaya sığmayan kelime: " + text.substring(0, Math.min(30, text.length())));
             // Recompute the *new* line's height after wrapping; otherwise a
@@ -634,6 +648,7 @@ public final class PdfExporter {
             UdfReader.Style style = run.style();
             String text = run.text();
             StringBuilder token = new StringBuilder();
+            boolean continuation = previousRunEndsInWord;
             for (int i = 0; i < text.length();) {
                 int cp = text.codePointAt(i);
                 i += Character.charCount(cp);
@@ -648,7 +663,8 @@ public final class PdfExporter {
                     // A lone CR is a real line break, not a character to drop.
                     // Remember it so a following LF (even in another run) does
                     // not advance the cursor a second time.
-                    word(token.toString(), style);
+                    word(token.toString(), style, continuation);
+                    continuation = false;
                     token.setLength(0);
                     newLine();
                     previousWasCR = true;
@@ -660,7 +676,8 @@ public final class PdfExporter {
                 }
                 previousWasCR = false;
                 if (cp == '\n' || cp == '\t' || Character.isWhitespace(cp)) {
-                    word(token.toString(), style);
+                    word(token.toString(), style, continuation);
+                    continuation = false;
                     token.setLength(0);
                     if (cp == '\n') newLine();
                     else if (cp == '\t') {
@@ -673,7 +690,12 @@ public final class PdfExporter {
                     token.appendCodePoint(cp);
                 }
             }
-            word(token.toString(), style);
+            word(token.toString(), style, continuation);
+            if (!text.isEmpty()) {
+                int last = text.codePointBefore(text.length());
+                previousRunEndsInWord = last != '\r' && last != '\n'
+                        && last != '\t' && !Character.isWhitespace(last);
+            }
         }
         void table(DocumentElements.TableBlock table) throws IOException {
             TableLayout.Geometry geometry=TableLayout.calculate(table);
