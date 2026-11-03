@@ -122,6 +122,19 @@ public final class PdfExporter {
      * PDFBox's potentially expensive first-use font discovery on Windows.
      * The actual renderer retains its layout checks as a second safeguard.
      */
+    private static boolean supportedPageSize(float width, float height) {
+        // The synthetic XML reader only admits A4, A5, Letter and Legal,
+        // in portrait or landscape. Direct PageSpec records must not invent
+        // unverified page sizes that the parser itself would reject.
+        float[][] sizes = {{595.28f, 841.89f}, {419.53f, 595.28f},
+                {612f, 792f}, {612f, 1008f}};
+        for (float[] size : sizes)
+            if ((Math.abs(width - size[0]) < 0.01f && Math.abs(height - size[1]) < 0.01f)
+                    || (Math.abs(width - size[1]) < 0.01f && Math.abs(height - size[0]) < 0.01f))
+                return true;
+        return false;
+    }
+
     private static void preflightPageGeometry(UdfReader.DocumentSpec document) {
         DocumentElements.PageSpec page = document.page();
         // Public DocumentSpec/PageSpec constructors bypass XML's positive,
@@ -129,7 +142,8 @@ public final class PdfExporter {
         // NaN coordinates or infinite page dimensions.
         if (!Float.isFinite(page.width()) || !Float.isFinite(page.height())
                 || !Float.isFinite(page.margin()) || page.width() <= 0
-                || page.height() <= 0 || page.margin() <= 0)
+                || page.height() <= 0 || page.margin() <= 0
+                || page.margin() > 100f || !supportedPageSize(page.width(), page.height()))
             throw new IllegalArgumentException("Geçersiz sayfa geometrisi");
         float usableWidth = page.width() - 2 * page.margin();
         float usableHeight = page.height() - 2 * page.margin();
