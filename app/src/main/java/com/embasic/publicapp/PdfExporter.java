@@ -181,7 +181,9 @@ public final class PdfExporter {
                 byte[] png = image.png();
                 if (png.length < 24 || png.length > 1_048_576
                         || (png[0] & 0xff) != 0x89 || png[1] != 'P'
-                        || png[2] != 'N' || png[3] != 'G')
+                        || png[2] != 'N' || png[3] != 'G'
+                        || (png[4] & 0xff) != 0x0d || (png[5] & 0xff) != 0x0a
+                        || (png[6] & 0xff) != 0x1a || (png[7] & 0xff) != 0x0a)
                     throw new IllegalArgumentException("PNG biçimi veya boyutu geçersiz");
             } else if (block instanceof DocumentElements.ParagraphBlock) {
                 // Paragraph geometry is handled by Layout; this is a supported
