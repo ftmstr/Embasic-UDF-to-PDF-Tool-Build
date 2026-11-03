@@ -175,6 +175,10 @@ public final class PdfExporter {
                     throw new IllegalArgumentException("Geçersiz PNG yerleşim geometrisi");
                 if (image.width() > usableWidth || image.height() > usableHeight)
                     throw new IllegalArgumentException("PNG sayfaya sığmıyor");
+            } else {
+                // Reject null or unknown direct API blocks before expensive font discovery.
+                // Never attempt to render a partially supported synthetic document.
+                throw new IllegalArgumentException("Desteklenmeyen belge bloğu");
             }
         }
     }
