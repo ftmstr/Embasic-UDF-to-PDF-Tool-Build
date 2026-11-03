@@ -139,3 +139,16 @@ The opt-in `GuiRobotSmokeTest` no longer invokes `Robot.waitForIdle()` while the
 `PdfExporter` rejects RTL, shaping-dependent script families and unpositioned combining marks before font loading or PDF staging. PDFBox's basic `showText` does not establish complex text shaping, visual order or mark placement. The new, original `PdfComplexScriptGateTest` covers synthetic Arabic, Hebrew, Devanagari, Thai and Myanmar text, combining accents and table cells, while confirming ordinary Turkish Latin glyphs still export. Rejected input fails closed instead of quietly producing a visually misleading PDF. **This narrows the accepted synthetic subset; it does not claim broad UYAP version support, enhanced rendering fidelity or native pixel equivalence.** Real rights-cleared golden documents and physical Windows UI/screen-reader acceptance remain outstanding.
 
 The color PowerShell dashboard keeps the previous weighted **44.3% engineering estimate**, reports Robot GUI acceptance as `NOT_RUN` and retains the low-confidence forecast dates anchored to the 2026-10-31 evidence review (rather than shifting them on every hourly run). Release publication approval and source/license/SHA gates remain unchanged. No downloadable executable or binary release is published.
+
+
+## Tur 45 — Stable opt-in GUI Robot checks and styled-word overflow guard (2026-11-03)
+
+The manual, interactive Windows `GuiRobotSmokeTest` no longer assumes fixed mouse delays or a default thumbnail width. It uses the actual live `VirtualGridLayout` and a bounded EDT-observation helper (`GuiRobotWait`) to verify a visible frame, edge autoscroll, insertion target and final reorder, with timeouts that fail explicitly instead of claiming success. `GuiRobotWaitTest` has four normal, cross-platform unit regressions for polling, timeout and EDT access. This **does not certify** physical Windows GUI acceptance: the Robot test remains user-triggered only and reports `NOT_RUN` until it actually runs on an unlocked Windows desktop. Use the existing opt-in command:
+
+```powershell
+pwsh -NoProfile -File app/scripts/Run-Windows-GuiRobotSmoke.ps1 -AllowGui
+```
+
+The independently authored PDFBox subset previously treated each styled run fragment as a separate word. If two adjacent, uninterrupted fragments crossed the page margin, it silently wrapped at the style boundary and changed the word layout. `PdfExporter` now **fails closed** on such unverified styled-word line/page breaks rather than publishing a misleading PDF. `PdfStyledRunWrapTest` checks a rejected 48-point split word, a genuine space-delimited wrap, a short Turkish styled word, and preservation of an existing validated PDF with no pending files after rejection. This does **not** implement full UYAP word wrapping, native font shaping, table equivalence or page-position parity.
+
+The color PowerShell dashboard remains at **44.3% manually weighted engineering maturity**; the physical Windows Robot acceptance field is still `NOT_RUN`. The conditional beta and final forecast are low confidence and should be revised if rights-cleared native fixtures, license/NOTICE approval or Windows UI acceptance remain unavailable. The old publication/SHA approval gates are unchanged, and no executable is released.
