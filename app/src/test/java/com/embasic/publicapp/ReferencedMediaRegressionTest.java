@@ -219,10 +219,10 @@ final class ReferencedMediaRegressionTest {
             var error = assertThrows(IllegalArgumentException.class,
                     () -> { try (PDDocument ignored = PdfExporter.render(List.of(spec))) {} });
             assertTrue(error.getMessage().contains("sayfa geometrisi"), error.getMessage());
-            Path rejected = folder.resolve("unsupported-page.pdf");
+            Path rejectedPageOutput = folder.resolve("unsupported-page.pdf");
             assertThrows(IllegalArgumentException.class,
-                    () -> PdfExporter.save(List.of(spec), rejected, false));
-            assertFalse(Files.exists(rejected), "Unsupported page must not publish a PDF");
+                    () -> PdfExporter.save(List.of(spec), rejectedPageOutput, false));
+            assertFalse(Files.exists(rejectedPageOutput), "Unsupported page must not publish a PDF");
         }
         // Valid XML-equivalent landscape sizes and margins remain accepted.
         for (var pageSpec : List.of(
