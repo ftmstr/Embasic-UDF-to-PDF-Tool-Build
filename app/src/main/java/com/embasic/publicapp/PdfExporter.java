@@ -175,6 +175,14 @@ public final class PdfExporter {
                     throw new IllegalArgumentException("Geçersiz PNG yerleşim geometrisi");
                 if (image.width() > usableWidth || image.height() > usableHeight)
                     throw new IllegalArgumentException("PNG sayfaya sığmıyor");
+                // Direct API callers bypass the XML PNG byte budget. Reject
+                // obviously invalid payloads before Windows font discovery;
+                // the bounded PNG decoder still validates format and pixels.
+                byte[] png = image.png();
+                if (png.length < 24 || png.length > 1_048_576
+                        || (png[0] & 0xff) != 0x89 || png[1] != 'P'
+                        || png[2] != 'N' || png[3] != 'G')
+                    throw new IllegalArgumentException("PNG biçimi veya boyutu geçersiz");
             } else if (block instanceof DocumentElements.ParagraphBlock) {
                 // Paragraph geometry is handled by Layout; this is a supported
                 // block type and must not be rejected by the early preflight.
