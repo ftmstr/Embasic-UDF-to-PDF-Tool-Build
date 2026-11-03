@@ -305,7 +305,15 @@ public final class PdfExporter {
 
     public static BufferedImage firstPage(UdfReader.DocumentSpec doc) throws Exception {
         try (PDDocument pdf = renderPreview(doc)) {
-            return new PDFRenderer(pdf).renderImageWithDPI(0, 40);
+            long started = System.nanoTime();
+            try {
+                return new PDFRenderer(pdf).renderImageWithDPI(0, 40);
+            } finally {
+                if (Boolean.getBoolean("embasic.diagnostics.fontTiming"))
+                    System.err.println("EMBASIC_TIMING preview_raster_ms="
+                            + java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
+                                    System.nanoTime() - started));
+            }
         }
     }
 
@@ -481,12 +489,27 @@ public final class PdfExporter {
         private PDType0Font regular, bold;
         FontSet(PDDocument pdf) { this.pdf = pdf; }
         PDType0Font get(boolean useBold) throws IOException {
-            if (useBold) {
-                if (bold == null) bold = PDType0Font.load(pdf, systemFont(true).toFile());
-                return bold;
+            PDType0Font cached = useBold ? bold : regular;
+            if (cached != null) return cached;
+            long started = System.nanoTime();
+            Path selected = systemFont(useBold);
+            long resolved = System.nanoTime();
+            try {
+                PDType0Font loaded = PDType0Font.load(pdf, selected.toFile());
+                if (useBold) bold = loaded; else regular = loaded;
+                return loaded;
+            } finally {
+                // Opt-in only: no font paths, document contents or personal data in logs.
+                // Measure discovery separately from embedding to diagnose slow Windows starts.
+                if (Boolean.getBoolean("embasic.diagnostics.fontTiming")) {
+                    long finished = System.nanoTime();
+                    System.err.println("EMBASIC_TIMING font=" + (useBold ? "bold" : "regular")
+                            + " lookup_ms=" + java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
+                                    resolved - started)
+                            + " load_ms=" + java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
+                                    finished - resolved));
+                }
             }
-            if (regular == null) regular = PDType0Font.load(pdf, systemFont(false).toFile());
-            return regular;
         }
     }
 
