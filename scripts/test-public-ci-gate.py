@@ -47,6 +47,21 @@ class PublicGateTest(unittest.TestCase):
         with self.assertRaisesRegex(gate.GateError, "unapproved_bootstrap_file"):
             self.run_gate()
 
+    def test_app_module_cannot_hide_in_bootstrap_even_with_matching_sha(self):
+        # The current desktop MVP lives under app/, not root src/main/.
+        # A matching SHA alone must never waive the source inventory review.
+        self.add("README.md")
+        self.add("app/pom.xml")
+        self.add("app/src/main/java/com/embasic/publicapp/DesktopApp.java")
+        with self.assertRaisesRegex(gate.GateError, "unapproved_bootstrap_file"):
+            self.run_gate(HEAD)
+
+    def test_app_only_source_without_review_is_rejected(self):
+        self.add("README.md")
+        self.add("app/src/main/java/com/embasic/publicapp/PdfExporter.java")
+        with self.assertRaisesRegex(gate.GateError, "unapproved_bootstrap_file"):
+            self.run_gate()
+
     def test_unapproved_binary_asset_is_rejected(self):
         self.add("README.md")
         self.add("artwork/new-logo.png")
