@@ -71,4 +71,19 @@ final class GridPointerSelectionTest {
         assertThrows(IllegalArgumentException.class,
                 () -> GridPointerSelection.press(FILES, List.of("B"), "B", "removed", false, false));
     }
+    @Test void completedClickRejectsStaleOrMissingCardWithoutCollapsingSelection() {
+        var pressed = GridPointerSelection.press(FILES, List.of("B", "D"), "B", "D", false, false);
+        assertTrue(pressed.collapseOnClick());
+        assertThrows(IllegalArgumentException.class,
+                () -> GridPointerSelection.release(pressed.selected(), null, true, false));
+        assertThrows(IllegalArgumentException.class,
+                () -> GridPointerSelection.release(pressed.selected(), "removed", true, false));
+        assertThrows(IllegalArgumentException.class,
+                () -> GridPointerSelection.release(pressed.selected(), "A", true, false));
+        assertEquals(List.of("B", "D"),
+                GridPointerSelection.release(pressed.selected(), "D", true, true));
+        assertEquals(List.of("D"),
+                GridPointerSelection.release(pressed.selected(), "D", true, false));
+    }
+
 }
