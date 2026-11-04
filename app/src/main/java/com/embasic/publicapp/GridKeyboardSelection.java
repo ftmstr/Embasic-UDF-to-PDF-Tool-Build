@@ -117,6 +117,15 @@ public final class GridKeyboardSelection {
                 ? (int) Math.max(0L, Math.min(files.size() - 1L, (long) oldIndex + delta))
                 : (delta < 0 ? files.size() - 1 : 0);
         T nextFile = files.get(next);
+        // Ctrl+arrow changes only keyboard focus. Avoid building and sorting
+        // the selection twice on every key repeat in large virtual grids.
+        if (ctrl && !shift) {
+            List<T> ordered = new ArrayList<>();
+            for (T item : files) if (selectedSet.contains(item)) ordered.add(item);
+            T nextAnchor = !hasOrigin ? nextFile
+                    : anchor != null && files.contains(anchor) ? anchor : files.get(oldIndex);
+            return new Result<>(ordered, nextAnchor, nextFile);
+        }
         LinkedHashSet<T> nextSelection = new LinkedHashSet<>();
         for (T item : files) if (selectedSet.contains(item)) nextSelection.add(item);
         // A stale anchor must not turn the first Shift+arrow into a surprise
