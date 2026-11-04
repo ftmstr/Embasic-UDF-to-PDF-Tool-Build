@@ -37,8 +37,15 @@ public final class GridKeyboardSelection {
             List<T> files, Collection<T> removed, T focused) {
         if (files == null || removed == null)
             throw new IllegalArgumentException("Dosya seçimi eksik");
-        if (files.isEmpty() || removed.isEmpty())
+        if (files.isEmpty())
             return new Result<>(List.of(), null, null);
+        // An empty delete request must not erase the current keyboard focus.
+        // Keep the existing logical card selected rather than resetting the grid.
+        if (removed.isEmpty()) {
+            T current = focused != null && files.contains(focused) ? focused : null;
+            return current == null ? new Result<>(List.of(), null, null)
+                    : new Result<>(List.of(current), current, current);
+        }
         // Normalize arbitrary collections once: large batch deletions must not
         // scan a list of removed cards for every logical grid item.
         HashSet<T> removedSet = new HashSet<>(removed);
