@@ -80,11 +80,13 @@ public final class GridKeyboardSelection {
         if (files == null || selected == null) throw new IllegalArgumentException("Dosya seçimi eksik");
         if (files.isEmpty()) return new Result<>(List.of(), null, null);
         int oldIndex = focused == null ? -1 : files.indexOf(focused);
+        // Reuse one membership index for both fallback focus and selection.
+        // Large Ctrl+A queues must not rebuild the same hash table per arrow.
+        HashSet<T> selectedSet = new HashSet<>(selected);
         if (oldIndex < 0 && !selected.isEmpty()) {
             // Selection collections may be unordered (e.g. HashSet). With no
             // focused card, navigate from the first card in visual grid order,
             // not whichever selected element the collection iterates first.
-            HashSet<T> selectedSet = new HashSet<>(selected);
             for (int i = 0; i < files.size(); i++) {
                 if (selectedSet.contains(files.get(i))) {
                     oldIndex = i;
@@ -101,7 +103,6 @@ public final class GridKeyboardSelection {
                 : (delta < 0 ? files.size() - 1 : 0);
         T nextFile = files.get(next);
         LinkedHashSet<T> nextSelection = new LinkedHashSet<>();
-        HashSet<T> selectedSet = new HashSet<>(selected);
         for (T item : files) if (selectedSet.contains(item)) nextSelection.add(item);
         // A stale anchor must not turn the first Shift+arrow into a surprise
         // multi-card range when no card is currently focused or selected.
