@@ -154,6 +154,16 @@ final class GridKeyboardSelectionTest {
         assertNull(all.focused());
     }
 
+    @Test void emptyRemovalDoesNotClearSurvivingKeyboardFocus() {
+        var unchanged = GridKeyboardSelection.afterRemoval(FILES, List.of(), "F");
+        assertEquals(List.of("F"), unchanged.selected());
+        assertEquals("F", unchanged.focused());
+        assertEquals("F", unchanged.anchor());
+        var stale = GridKeyboardSelection.afterRemoval(FILES, List.of(), "removed");
+        assertTrue(stale.selected().isEmpty());
+        assertNull(stale.focused());
+    }
+
     @Test void unorderedSelectionWithoutFocusNavigatesFromFirstVisualCard() {
         // HashSet iteration order must not decide the keyboard navigation origin.
         var unordered = new java.util.HashSet<>(List.of("F", "B"));
