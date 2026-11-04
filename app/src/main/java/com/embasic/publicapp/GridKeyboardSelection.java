@@ -63,6 +63,14 @@ public final class GridKeyboardSelection {
             }
         }
         if (survivors.isEmpty()) return new Result<>(List.of(), null, null);
+        // A stale deletion request may name cards already removed from the grid.
+        // When no current card was deleted, preserve a surviving keyboard focus
+        // instead of jumping to the first card on the next arrow.
+        if (firstRemoved < 0) {
+            T current = focusedIndex >= 0 ? files.get(focusedIndex) : null;
+            return current == null ? new Result<>(List.of(), null, null)
+                    : new Result<>(List.of(current), current, current);
+        }
         // Ctrl+arrow may have left focus on an unselected card. Preserve its
         // surviving position; otherwise use the first deleted slot.
         int position;
