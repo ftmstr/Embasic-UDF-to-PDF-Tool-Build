@@ -164,6 +164,21 @@ final class GridKeyboardSelectionTest {
         assertNull(stale.focused());
     }
 
+    @Test void staleDeletionKeepsSurvivingKeyboardFocus() {
+        // A queued Delete may race with an earlier removal; nothing in the
+        // current logical grid is removed by this second request.
+        var unchanged = GridKeyboardSelection.afterRemoval(FILES, List.of("already removed"), "F");
+        assertEquals(List.of("F"), unchanged.selected());
+        assertEquals("F", unchanged.anchor());
+        assertEquals("F", unchanged.focused());
+        var next = GridKeyboardSelection.move(FILES, unchanged.selected(),
+                unchanged.anchor(), unchanged.focused(), 1, false, false);
+        assertEquals(List.of("G"), next.selected());
+        var noFocus = GridKeyboardSelection.afterRemoval(FILES, List.of("already removed"), null);
+        assertTrue(noFocus.selected().isEmpty());
+        assertNull(noFocus.focused());
+    }
+
     @Test void unorderedSelectionWithoutFocusNavigatesFromFirstVisualCard() {
         // HashSet iteration order must not decide the keyboard navigation origin.
         var unordered = new java.util.HashSet<>(List.of("F", "B"));
