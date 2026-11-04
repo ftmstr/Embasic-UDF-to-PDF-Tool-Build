@@ -95,10 +95,11 @@ public final class GridKeyboardSelection {
         if (files == null || selected == null) throw new IllegalArgumentException("Dosya seçimi eksik");
         if (files.isEmpty()) return new Result<>(List.of(), null, null);
         int oldIndex = focused == null ? -1 : files.indexOf(focused);
-        // Reuse one membership index for both fallback focus and selection.
-        // Large Ctrl+A queues must not rebuild the same hash table per arrow.
-        HashSet<T> selectedSet = new HashSet<>(selected);
+        // Plain arrows with a valid focus do not need a selection membership
+        // index. Build it lazily only for missing-focus recovery or modifiers.
+        HashSet<T> selectedSet = null;
         if (oldIndex < 0 && !selected.isEmpty()) {
+            selectedSet = new HashSet<>(selected);
             // Selection collections may be unordered (e.g. HashSet). With no
             // focused card, navigate from the first card in visual grid order,
             // not whichever selected element the collection iterates first.
@@ -120,6 +121,7 @@ public final class GridKeyboardSelection {
         // Plain arrows always replace the selection with the focused card.
         // Avoid rebuilding and sorting the entire selected grid on every key repeat.
         if (!shift && !ctrl) return new Result<>(List.of(nextFile), nextFile, nextFile);
+        if (selectedSet == null) selectedSet = new HashSet<>(selected);
         // Ctrl+arrow changes only keyboard focus. Avoid building and sorting
         // the selection twice on every key repeat in large virtual grids.
         if (ctrl && !shift) {
