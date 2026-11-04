@@ -2,6 +2,7 @@ package com.embasic.publicapp;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 
@@ -22,7 +23,8 @@ public final class GridPointerSelection {
         if (ordered == null || selected == null || clicked == null || !ordered.contains(clicked))
             throw new IllegalArgumentException("Geçersiz kart seçimi");
         LinkedHashSet<T> next = new LinkedHashSet<>();
-        for (T item : ordered) if (selected.contains(item)) next.add(item);
+        HashSet<T> membership = new HashSet<>(selected);
+        for (T item : ordered) if (membership.contains(item)) next.add(item);
         if (shift) {
             T rangeAnchor = ordered.contains(anchor) ? anchor : clicked;
             // Ctrl+Shift extends the anchor range without dropping existing
@@ -49,7 +51,8 @@ public final class GridPointerSelection {
     /** Canonicalize selection order independently of Ctrl-click insertion order. */
     static <T> List<T> inVisualOrder(List<T> ordered, Collection<T> selected) {
         List<T> result = new ArrayList<>();
-        for (T item : ordered) if (selected.contains(item)) result.add(item);
+        HashSet<T> membership = new HashSet<>(selected);
+        for (T item : ordered) if (membership.contains(item)) result.add(item);
         return result;
     }
 
