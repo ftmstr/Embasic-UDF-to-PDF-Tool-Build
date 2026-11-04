@@ -58,7 +58,8 @@ public final class GridPointerSelection {
 
     public static <T> List<T> release(Collection<T> selected, T clicked,
                                       boolean collapseOnClick, boolean dragged) {
-        if (selected == null) throw new IllegalArgumentException("Geçersiz kart seçimi");
+        if (selected == null || (collapseOnClick && !dragged && (clicked == null || !selected.contains(clicked))))
+            throw new IllegalArgumentException("Geçersiz kart seçimi");
         return collapseOnClick && !dragged ? List.of(clicked) : List.copyOf(selected);
     }
 }
