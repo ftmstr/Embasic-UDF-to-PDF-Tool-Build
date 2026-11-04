@@ -121,9 +121,13 @@ public final class GridKeyboardSelection {
         // the selection twice on every key repeat in large virtual grids.
         if (ctrl && !shift) {
             List<T> ordered = new ArrayList<>();
-            for (T item : files) if (selectedSet.contains(item)) ordered.add(item);
+            boolean anchorPresent = false;
+            for (T item : files) {
+                if (selectedSet.contains(item)) ordered.add(item);
+                if (anchor != null && anchor.equals(item)) anchorPresent = true;
+            }
             T nextAnchor = !hasOrigin ? nextFile
-                    : anchor != null && files.contains(anchor) ? anchor : files.get(oldIndex);
+                    : anchorPresent ? anchor : files.get(oldIndex);
             return new Result<>(ordered, nextAnchor, nextFile);
         }
         LinkedHashSet<T> nextSelection = new LinkedHashSet<>();
