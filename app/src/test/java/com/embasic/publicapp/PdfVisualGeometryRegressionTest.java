@@ -3,12 +3,14 @@ package com.embasic.publicapp;
 import static org.junit.jupiter.api.Assertions.*;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.rendering.PDFRenderer;
 import org.apache.pdfbox.text.PDFTextStripper;
@@ -61,9 +63,15 @@ final class PdfVisualGeometryRegressionTest {
                     super.processTextPosition(value);
                 }
             }
-            var probe=new Positions();
-            assertTrue(probe.getText(pdf).contains("KIRMIZI"));
-            assertTrue(probe.getText(pdf).contains("BULUT"));
+            // A subset font is finalized when the PDF is saved. Verify the
+            // actual serialized user output, not the pre-save PDFont state.
+            ByteArrayOutputStream serialized=new ByteArrayOutputStream();
+            pdf.save(serialized);
+            try(PDDocument reopened=Loader.loadPDF(serialized.toByteArray())) {
+                var probe=new Positions();
+                String extracted=probe.getText(reopened);
+                assertTrue(extracted.contains("KIRMIZI"));
+                assertTrue(extracted.contains("BULUT"));
             TextPosition firstRed=probe.positions.stream().filter(p->"K".equals(p.getUnicode()))
                     .findFirst().orElseThrow();
             TextPosition firstBlue=probe.positions.stream().filter(p->"B".equals(p.getUnicode()))
@@ -72,6 +80,7 @@ final class PdfVisualGeometryRegressionTest {
             assertEquals(18f,firstBlue.getFontSizeInPt(),0.2f);
             assertTrue(firstRed.getFont().isEmbedded(),"Regular font must be embedded");
             assertTrue(firstBlue.getFont().isEmbedded(),"Bold font must be embedded");
+            }
         }
     }
 
