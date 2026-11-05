@@ -56,6 +56,10 @@ public final class GridPointerSelection {
             for (T item : ordered) if (membership.contains(item)) next.add(item);
             return new Press<>(next, rangeAnchor, false);
         }
+        // A sole already-selected card needs no virtual-grid scan or hash allocation.
+        // Preserve the same anchor and collapse semantics as the general path.
+        if (selected.size() == 1 && selected.contains(clicked))
+            return new Press<>(List.of(clicked), clicked, false);
         // Plain press on an already selected card preserves the entire
         // selection until release, allowing drag to start without collapsing.
         HashSet<T> membership = new HashSet<>(selected);
