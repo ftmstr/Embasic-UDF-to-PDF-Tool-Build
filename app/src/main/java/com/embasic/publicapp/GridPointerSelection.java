@@ -36,6 +36,15 @@ public final class GridPointerSelection {
                 range.add(ordered.get(i));
             return new Press<>(range, rangeAnchor, false);
         }
+        // Ctrl-click needs only one visual-order pass: toggle membership first,
+        // then emit selected cards in grid order without a second full scan.
+        if (ctrl && !shift) {
+            HashSet<T> membership = new HashSet<>(selected);
+            if (!membership.add(clicked)) membership.remove(clicked);
+            List<T> next = new ArrayList<>(membership.size());
+            for (T item : ordered) if (membership.contains(item)) next.add(item);
+            return new Press<>(next, clicked, false);
+        }
         LinkedHashSet<T> next = new LinkedHashSet<>();
         HashSet<T> membership = new HashSet<>(selected);
         for (T item : ordered) if (membership.contains(item)) next.add(item);
@@ -50,12 +59,6 @@ public final class GridPointerSelection {
             // Keep the original anchor so successive Shift-clicks resize the same range.
             // A disjoint Ctrl+Shift union must still follow the visual file order.
             return new Press<>(inVisualOrder(ordered, next), rangeAnchor, false);
-        }
-        if (ctrl) {
-            if (!next.add(clicked)) next.remove(clicked);
-            // Ctrl-click can insert a card between two earlier selections.
-            // Keep the selection in visual file order for subsequent actions.
-            return new Press<>(inVisualOrder(ordered, next), clicked, false);
         }
         if (next.size() > 1 && next.contains(clicked))
             return new Press<>(new ArrayList<>(next), anchor, true);
