@@ -33,6 +33,13 @@ final class GridPointerSelectionTest {
         assertEquals("B", second.anchor());
     }
 
+    @Test void firstCtrlClickSelectsSingleCardAndSetsAnchor() {
+        var pressed = GridPointerSelection.press(FILES, List.of(), null, "D", false, true);
+        assertEquals(List.of("D"), pressed.selected());
+        assertEquals("D", pressed.anchor());
+        assertFalse(pressed.collapseOnClick());
+    }
+
     @Test void ctrlClickTogglesWithoutDestroyingOtherSelection() {
         var pressed = GridPointerSelection.press(FILES, List.of("B", "D"), "B", "D", false, true);
         assertEquals(List.of("B"), pressed.selected());
