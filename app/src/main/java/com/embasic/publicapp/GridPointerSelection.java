@@ -26,6 +26,16 @@ public final class GridPointerSelection {
         // Do not hash and scan the full virtual grid on this common path.
         if (!shift && !ctrl && !selected.contains(clicked))
             return new Press<>(List.of(clicked), clicked, false);
+        // A non-additive Shift-click replaces the old selection with the anchor range.
+        // Avoid hashing and scanning all previously selected cards in this case.
+        if (shift && !ctrl) {
+            T rangeAnchor = ordered.contains(anchor) ? anchor : clicked;
+            int first = ordered.indexOf(rangeAnchor), last = ordered.indexOf(clicked);
+            List<T> range = new ArrayList<>(Math.abs(last - first) + 1);
+            for (int i = Math.min(first, last); i <= Math.max(first, last); i++)
+                range.add(ordered.get(i));
+            return new Press<>(range, rangeAnchor, false);
+        }
         LinkedHashSet<T> next = new LinkedHashSet<>();
         HashSet<T> membership = new HashSet<>(selected);
         for (T item : ordered) if (membership.contains(item)) next.add(item);
