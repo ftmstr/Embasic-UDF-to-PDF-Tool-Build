@@ -46,7 +46,7 @@ final class PdfVisualGeometryRegressionTest {
 
     @Test void rendersOpaqueStyledRunsWithMeasurableInkAndEmbeddedFonts() throws Exception {
         var document=paragraph(new UdfReader.Run("KIRMIZI ",RED),
-                new UdfReader.Run("MAVI",BLUE));
+                new UdfReader.Run("BULUT",BLUE));
         try(PDDocument pdf=PdfExporter.render(List.of(document))) {
             assertEquals(1,pdf.getNumberOfPages());
             BufferedImage raster=new PDFRenderer(pdf).renderImageWithDPI(0,72);
@@ -63,10 +63,10 @@ final class PdfVisualGeometryRegressionTest {
             }
             var probe=new Positions();
             assertTrue(probe.getText(pdf).contains("KIRMIZI"));
-            assertTrue(probe.getText(pdf).contains("MAVI"));
+            assertTrue(probe.getText(pdf).contains("BULUT"));
             TextPosition firstRed=probe.positions.stream().filter(p->"K".equals(p.getUnicode()))
                     .findFirst().orElseThrow();
-            TextPosition firstBlue=probe.positions.stream().filter(p->"M".equals(p.getUnicode()))
+            TextPosition firstBlue=probe.positions.stream().filter(p->"B".equals(p.getUnicode()))
                     .findFirst().orElseThrow();
             assertEquals(14f,firstRed.getFontSizeInPt(),0.2f);
             assertEquals(18f,firstBlue.getFontSizeInPt(),0.2f);
