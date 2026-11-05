@@ -86,4 +86,28 @@ final class GridPointerSelectionTest {
                 GridPointerSelection.release(pressed.selected(), "D", true, false));
     }
 
+
+    @Test void plainClickFastPathsPreserveExplorerDragAndAnchorSemantics() {
+        // An unselected card replaces a disjoint multi-selection immediately.
+        var newCard = GridPointerSelection.press(FILES, List.of("A", "E"), "A", "C", false, false);
+        assertEquals(List.of("C"), newCard.selected());
+        assertEquals("C", newCard.anchor());
+        assertFalse(newCard.collapseOnClick());
+
+        // Clicking the only selected card must not schedule a deferred collapse.
+        var sameCard = GridPointerSelection.press(FILES, List.of("C"), "A", "C", false, false);
+        assertEquals(List.of("C"), sameCard.selected());
+        assertEquals("C", sameCard.anchor());
+        assertFalse(sameCard.collapseOnClick());
+
+        // A multi-selection survives the press for dragging, then collapses on click release.
+        var dragCandidate = GridPointerSelection.press(FILES, List.of("A", "C"), "A", "C", false, false);
+        assertEquals(List.of("A", "C"), dragCandidate.selected());
+        assertEquals("A", dragCandidate.anchor());
+        assertTrue(dragCandidate.collapseOnClick());
+        assertEquals(List.of("A", "C"), GridPointerSelection.release(
+                dragCandidate.selected(), "C", true, true));
+        assertEquals(List.of("C"), GridPointerSelection.release(
+                dragCandidate.selected(), "C", true, false));
+    }
 }
