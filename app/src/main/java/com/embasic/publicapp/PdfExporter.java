@@ -590,6 +590,14 @@ public final class PdfExporter {
                 throws IOException {
             if (text.isEmpty()) return;
             float size = style.size();
+            // An earlier, already painted glyph on this line cannot be moved
+            // back when a later, larger styled word no longer fits vertically.
+            // Moving only the suffix to page two silently changes its baseline
+            // and paragraph geometry. Fail closed in complete export; a
+            // first-page thumbnail may still stop before the next page.
+            if (!previewOnly && x > left && y - size < bottom)
+                throw new IllegalArgumentException(
+                        "Satır içi yazı boyutu sayfa sonunda bölünemez");
             // PDFBox only sees each styled UDF run separately. Wrapping a
             // fragment at this boundary would silently split a single word.
             // Without a validated cross-style word layout, fail closed.
