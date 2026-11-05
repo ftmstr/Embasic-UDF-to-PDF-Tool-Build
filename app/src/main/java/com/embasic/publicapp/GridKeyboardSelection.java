@@ -121,6 +121,16 @@ public final class GridKeyboardSelection {
         // Plain arrows always replace the selection with the focused card.
         // Avoid rebuilding and sorting the entire selected grid on every key repeat.
         if (!shift && !ctrl) return new Result<>(List.of(nextFile), nextFile, nextFile);
+        // Shift without Ctrl replaces the previous selection entirely. Avoid
+        // hashing and traversing large old selections when extending a range.
+        if (shift && !ctrl) {
+            T nextAnchor = !hasOrigin ? nextFile
+                    : anchor != null && files.contains(anchor) ? anchor : files.get(oldIndex);
+            int start = files.indexOf(nextAnchor);
+            return new Result<>(new ArrayList<>(files.subList(
+                    Math.min(start, next), Math.max(start, next) + 1)),
+                    nextAnchor, nextFile);
+        }
         if (selectedSet == null) selectedSet = new HashSet<>(selected);
         // Ctrl+arrow changes only keyboard focus. Avoid building and sorting
         // the selection twice on every key repeat in large virtual grids.
