@@ -198,7 +198,11 @@ public final class PdfExporter {
 
     private static void validateRunStyle(UdfReader.Style style) {
         if (style == null || !Float.isFinite(style.size())
-                || style.size() < 6f || style.size() > 48f || style.color() == null)
+                || style.size() < 6f || style.size() > 48f || style.color() == null
+                // Synthetic XML accepts opaque #RRGGBB only. Direct Style
+                // constructors could supply alpha, which PDFBox's RGB color
+                // setter does not preserve. Never silently alter opacity.
+                || style.color().getAlpha() != 255)
             throw new IllegalArgumentException("Geçersiz sentetik metin stili");
     }
 
