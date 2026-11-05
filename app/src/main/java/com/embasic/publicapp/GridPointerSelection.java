@@ -38,6 +38,8 @@ public final class GridPointerSelection {
         // Ctrl-click needs only one visual-order pass: toggle membership first,
         // then emit selected cards in grid order without a second full scan.
         if (ctrl && !shift) {
+            // First additive click is a single selection; avoid scanning the grid.
+            if (selected.isEmpty()) return new Press<>(List.of(clicked), clicked, false);
             HashSet<T> membership = new HashSet<>(selected);
             if (!membership.add(clicked)) membership.remove(clicked);
             List<T> next = new ArrayList<>(membership.size());
