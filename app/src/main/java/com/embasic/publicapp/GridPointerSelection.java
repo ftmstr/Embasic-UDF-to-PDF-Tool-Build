@@ -22,6 +22,10 @@ public final class GridPointerSelection {
                                     T anchor, T clicked, boolean shift, boolean ctrl) {
         if (ordered == null || selected == null || clicked == null || !ordered.contains(clicked))
             throw new IllegalArgumentException("Geçersiz kart seçimi");
+        // A plain click on an unselected card replaces the selection outright.
+        // Do not hash and scan the full virtual grid on this common path.
+        if (!shift && !ctrl && !selected.contains(clicked))
+            return new Press<>(List.of(clicked), clicked, false);
         LinkedHashSet<T> next = new LinkedHashSet<>();
         HashSet<T> membership = new HashSet<>(selected);
         for (T item : ordered) if (membership.contains(item)) next.add(item);
