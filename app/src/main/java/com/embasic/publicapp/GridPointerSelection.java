@@ -3,7 +3,6 @@ package com.embasic.publicapp;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
-import java.util.LinkedHashSet;
 import java.util.List;
 
 /**
@@ -45,23 +44,25 @@ public final class GridPointerSelection {
             for (T item : ordered) if (membership.contains(item)) next.add(item);
             return new Press<>(next, clicked, false);
         }
-        LinkedHashSet<T> next = new LinkedHashSet<>();
-        HashSet<T> membership = new HashSet<>(selected);
-        for (T item : ordered) if (membership.contains(item)) next.add(item);
         if (shift) {
+            // Ctrl+Shift: union the additive anchor range with the existing
+            // selection, then emit once in the grid's canonical visual order.
             T rangeAnchor = ordered.contains(anchor) ? anchor : clicked;
-            // Ctrl+Shift extends the anchor range without dropping existing
-            // disjoint selections, like Explorer's additive range selection.
-            if (!ctrl) next.clear();
             int first = ordered.indexOf(rangeAnchor), last = ordered.indexOf(clicked);
+            HashSet<T> membership = new HashSet<>(selected);
             for (int i = Math.min(first, last); i <= Math.max(first, last); i++)
-                next.add(ordered.get(i));
-            // Keep the original anchor so successive Shift-clicks resize the same range.
-            // A disjoint Ctrl+Shift union must still follow the visual file order.
-            return new Press<>(inVisualOrder(ordered, next), rangeAnchor, false);
+                membership.add(ordered.get(i));
+            List<T> next = new ArrayList<>(membership.size());
+            for (T item : ordered) if (membership.contains(item)) next.add(item);
+            return new Press<>(next, rangeAnchor, false);
         }
+        // Plain press on an already selected card preserves the entire
+        // selection until release, allowing drag to start without collapsing.
+        HashSet<T> membership = new HashSet<>(selected);
+        List<T> next = new ArrayList<>(membership.size());
+        for (T item : ordered) if (membership.contains(item)) next.add(item);
         if (next.size() > 1 && next.contains(clicked))
-            return new Press<>(new ArrayList<>(next), anchor, true);
+            return new Press<>(next, anchor, true);
         return new Press<>(List.of(clicked), clicked, false);
     }
 
