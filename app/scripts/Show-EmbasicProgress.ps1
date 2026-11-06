@@ -47,7 +47,9 @@ $ci = [pscustomobject]@{ Status='OFFLINE'; Conclusion='NOT_CHECKED'; Url=''; Hea
 if (-not $Offline) {
     try {
         $encoded = [uri]::EscapeDataString($Branch)
-        $endpoint = "https://api.github.com/repos/$Repository/actions/runs?branch=$encoded&per_page=30"
+        # Query the secure Windows workflow directly: a busy branch may have >30 unrelated runs.
+        # Never treat pagination of unrelated workflows as proof that the release gate did not run.
+        $endpoint = "https://api.github.com/repos/$Repository/actions/workflows/388403027/runs?branch=$encoded&per_page=30"
         $headers = @{ 'Accept'='application/vnd.github+json'; 'User-Agent'='Embasic-Public-Progress' }
         if (-not [string]::IsNullOrWhiteSpace($env:GITHUB_TOKEN)) {
             $headers['Authorization'] = "Bearer $($env:GITHUB_TOKEN)"
