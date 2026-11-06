@@ -53,8 +53,12 @@ if (-not $Offline) {
             $headers['Authorization'] = "Bearer $($env:GITHUB_TOKEN)"
         }
         $response = Invoke-RestMethod -Uri $endpoint -Headers $headers -TimeoutSec 12
+        # Never report an older commit's green gate as evidence for the current branch HEAD.
+        $headEndpoint = "https://api.github.com/repos/$Repository/commits/$encoded"
+        $currentHead = Invoke-RestMethod -Uri $headEndpoint -Headers $headers -TimeoutSec 12
+        if ([string]::IsNullOrWhiteSpace([string]$currentHead.sha)) { throw 'Cannot verify branch HEAD' }
         # A green MVP workflow must not conceal a failed secure Windows delivery gate.
-        $run = $response.workflow_runs | Where-Object { $_.name -eq 'Windows Hosted CI (Secure Bootstrap)' } | Select-Object -First 1
+        $run = $response.workflow_runs | Where-Object { $_.name -eq 'Windows Hosted CI (Secure Bootstrap)' -and $_.head_sha -eq $currentHead.sha } | Select-Object -First 1
         # Fail closed: a successful Desktop MVP run cannot substitute for a missing secure Windows gate.
         # Keep UNKNOWN/NO_RUN when the secure Windows workflow has no run in the queried window.
         if ($null -ne $run) {
