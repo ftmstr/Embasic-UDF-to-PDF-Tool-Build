@@ -55,9 +55,8 @@ if (-not $Offline) {
         $response = Invoke-RestMethod -Uri $endpoint -Headers $headers -TimeoutSec 12
         # A green MVP workflow must not conceal a failed secure Windows delivery gate.
         $run = $response.workflow_runs | Where-Object { $_.name -eq 'Windows Hosted CI (Secure Bootstrap)' } | Select-Object -First 1
-        if ($null -eq $run) {
-            $run = $response.workflow_runs | Where-Object { $_.name -eq 'Public-only Desktop MVP Proof' } | Select-Object -First 1
-        }
+        # Fail closed: a successful Desktop MVP run cannot substitute for a missing secure Windows gate.
+        # Keep UNKNOWN/NO_RUN when the secure Windows workflow has no run in the queried window.
         if ($null -ne $run) {
             $ci = [pscustomobject]@{
                 Status=[string]$run.status
