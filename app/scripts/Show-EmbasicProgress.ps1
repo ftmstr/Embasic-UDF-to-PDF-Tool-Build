@@ -53,7 +53,11 @@ if (-not $Offline) {
             $headers['Authorization'] = "Bearer $($env:GITHUB_TOKEN)"
         }
         $response = Invoke-RestMethod -Uri $endpoint -Headers $headers -TimeoutSec 12
-        $run = $response.workflow_runs | Where-Object { $_.name -eq 'Public-only Desktop MVP Proof' } | Select-Object -First 1
+        # A green MVP workflow must not conceal a failed secure Windows delivery gate.
+        $run = $response.workflow_runs | Where-Object { $_.name -eq 'Windows Hosted CI (Secure Bootstrap)' } | Select-Object -First 1
+        if ($null -eq $run) {
+            $run = $response.workflow_runs | Where-Object { $_.name -eq 'Public-only Desktop MVP Proof' } | Select-Object -First 1
+        }
         if ($null -ne $run) {
             $ci = [pscustomobject]@{
                 Status=[string]$run.status
