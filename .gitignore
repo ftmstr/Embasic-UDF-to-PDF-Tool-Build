@@ -1,0 +1,31 @@
+# Compiled outputs / IDE state
+target/
+build/
+dist/
+release/
+windows-image/
+windows-installer/
+package-input/
+.idea/
+.vscode/
+*.class
+*.log
+*.tmp
+
+# Case files, personal documents and security material (NEVER publish)
+*.udf
+*.pdf
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.pem
+*.key
+.env
+.env.*
+*.sqlite
+*.db
+*private-approval*.json
+*identity-terms*
+*forensic*
+*.bak
