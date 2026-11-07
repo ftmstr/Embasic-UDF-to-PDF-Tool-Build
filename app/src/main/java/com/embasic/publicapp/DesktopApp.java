@@ -587,6 +587,11 @@ public final class DesktopApp extends JFrame {
             item.document = null;
             item.sourceFingerprint = null;
             item.thumbnail = null;
+            // An older PDFBox render may still be running. Invalidate its result
+            // and remove queued work before this source is parsed again.
+            if (item.previewTask != null)
+                cancelQueuedPreview(previewQueue, item.previewTask);
+            item.previewTask = null;
             item.info = "Okunuyor...";
             List<Path> others = items.stream().filter(other -> other != item && !other.cancelled)
                     .map(other -> other.path).toList();
@@ -704,7 +709,9 @@ public final class DesktopApp extends JFrame {
     }
 
     private void renderThumbnail(Item item, UdfReader.DocumentSpec parsed) {
-        if (item.cancelled) return;
+        // A retry can supersede this render while PDFBox is working.
+        final long generation = item.parseGeneration;
+        if (item.cancelled || item.document != parsed) return;
         try {
             BufferedImage image = PdfExporter.firstPage(parsed);
             if (item.cancelled) return;
@@ -722,14 +729,16 @@ public final class DesktopApp extends JFrame {
                         (PREVIEW_HEIGHT - height) / 2, width, height, null);
             } finally { g.dispose(); }
             SwingUtilities.invokeLater(() -> {
-                if (item.cancelled || !items.contains(item)) return;
+                if (item.cancelled || !items.contains(item)
+                        || generation != item.parseGeneration || item.document != parsed) return;
                 item.thumbnail = new ImageIcon(thumb);
                 item.info = "Hazır";
                 previewRefresh.restart();
             });
         } catch (Exception ex) {
             SwingUtilities.invokeLater(() -> {
-                if (item.cancelled || !items.contains(item)) return;
+                if (item.cancelled || !items.contains(item)
+                        || generation != item.parseGeneration || item.document != parsed) return;
                 // A failed thumbnail must not invalidate a parsed document.
                 item.info = "Önizleme yok: " + friendly(ex);
                 previewRefresh.restart();
