@@ -567,7 +567,7 @@ public final class DesktopApp extends JFrame {
                             updateFileStatus();
                         });
             } catch (RejectedExecutionException queueFull) {
-                item.info = "UDF okuma kuyruğu dolu — kaldırıp yeniden ekleyin";
+                item.info = "UDF okuma kuyruğu dolu — kartı seçip Yeniden dene'ye basın";
             }
         }
         rebuild();
