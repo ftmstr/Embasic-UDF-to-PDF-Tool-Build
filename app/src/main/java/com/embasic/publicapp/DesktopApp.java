@@ -538,11 +538,13 @@ public final class DesktopApp extends JFrame {
                 long generation = ++item.parseGeneration;
                 item.parseTask = parseWithoutBlockingPreview(parsers,
                         () -> {
-                            if (item.cancelled) return null;
+                            if (item.cancelled || generation != item.parseGeneration) return null;
                             FileImportPolicy.preflightDistinctImport(item.path,
                                     earlier.stream().filter(previous -> !previous.cancelled)
                                             .map(previous -> previous.path).toList());
-                            return item.cancelled ? null : parseSource(item.path);
+                            // A superseded import must not start expensive UDF parsing.
+                            return item.cancelled || generation != item.parseGeneration
+                                    ? null : parseSource(item.path);
                         },
                         parsed -> {
                             if (parsed == null || item.cancelled || !items.contains(item)
