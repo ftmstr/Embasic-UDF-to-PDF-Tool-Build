@@ -590,7 +590,13 @@ public final class DesktopApp extends JFrame {
             if (isFailedPreview(item.document != null, item.info)) {
                 // The failed Future is completed. Allow one new on-demand render
                 // without re-reading the UDF or changing PDF export eligibility.
+                // A completed render may still have a pending EDT callback. Invalidate
+                // that callback before scheduling a new preview of the same document.
+                ++item.parseGeneration;
+                if (item.previewTask != null)
+                    cancelQueuedPreview(previewQueue, item.previewTask);
                 item.previewTask = null;
+                item.thumbnail = null;
                 item.info = DEFERRED_PREVIEW;
                 continue;
             }
