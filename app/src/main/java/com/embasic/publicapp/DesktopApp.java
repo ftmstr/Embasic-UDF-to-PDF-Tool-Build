@@ -101,6 +101,7 @@ public final class DesktopApp extends JFrame {
     private final JButton moveLeftButton = new JButton("← Taşı");
     private final JButton moveRightButton = new JButton("Taşı →");
     private final JButton removeButton = new JButton("Kaldır");
+    private final JButton retryButton = new JButton("Yeniden dene");
     private final JButton clearButton = new JButton("Temizle");
     private final JButton themeButton = new JButton("Aydınlık tema");
     private final JSlider thumbnailZoom = new JSlider(ThumbnailSizing.MIN_WIDTH,
@@ -137,6 +138,7 @@ public final class DesktopApp extends JFrame {
         volatile String info = "Okunuyor...";
         volatile boolean cancelled;
         volatile Future<?> parseTask;
+        volatile long parseGeneration;
         volatile Future<?> previewTask;
         Item(Path path) { this.path = path; }
     }
@@ -222,6 +224,8 @@ public final class DesktopApp extends JFrame {
         moveLeftButton.setToolTipText("Seçili UDF kartlarını bir sıra önceye taşı (Alt + Yukarı)");
         moveRightButton.setToolTipText("Seçili UDF kartlarını bir sıra sonraya taşı (Alt + Aşağı)");
         removeButton.addActionListener(e -> removeSelected());
+        retryButton.addActionListener(e -> retryFailedSelected());
+        retryButton.setToolTipText("Seçili hatalı UDF kartlarını yeniden oku; kaynak bütünlüğü tekrar denetlenir");
         clearButton.addActionListener(e -> {
             if (converting || items.isEmpty() || JOptionPane.showConfirmDialog(this,
                     "Tüm dosyalar kaldırılsın mı?", "Temizle",
@@ -230,7 +234,7 @@ public final class DesktopApp extends JFrame {
             items.clear(); selected.clear(); anchor = null; focused = null; rebuild(); updateFileStatus();
         });
         ordered.add(moveLeftButton); ordered.add(moveRightButton);
-        ordered.add(removeButton); ordered.add(clearButton);
+        ordered.add(retryButton); ordered.add(removeButton); ordered.add(clearButton);
         bottom.add(ordered, BorderLayout.SOUTH);
         add(bottom, BorderLayout.SOUTH);
 
@@ -531,6 +535,7 @@ public final class DesktopApp extends JFrame {
             Item item = new Item(normalized);
             items.add(item);
             try {
+                long generation = ++item.parseGeneration;
                 item.parseTask = parseWithoutBlockingPreview(parsers,
                         () -> {
                             if (item.cancelled) return null;
@@ -540,7 +545,8 @@ public final class DesktopApp extends JFrame {
                             return item.cancelled ? null : parseSource(item.path);
                         },
                         parsed -> {
-                            if (parsed == null || item.cancelled || !items.contains(item)) return;
+                            if (parsed == null || item.cancelled || !items.contains(item)
+                                    || generation != item.parseGeneration) return;
                             // The fingerprint belongs to exactly the parsed source.
                             // Never enable export with an incomplete source snapshot.
                             item.sourceFingerprint = parsed.fingerprint();
@@ -554,7 +560,8 @@ public final class DesktopApp extends JFrame {
                             updateFileStatus();
                         },
                         ex -> {
-                            if (item.cancelled || !items.contains(item)) return;
+                            if (item.cancelled || !items.contains(item)
+                                    || generation != item.parseGeneration) return;
                             item.info = "Desteklenmiyor: " + friendly(ex);
                             rebuild();
                             updateFileStatus();
@@ -566,6 +573,53 @@ public final class DesktopApp extends JFrame {
         rebuild();
         updateFileStatus();
         return !plan.accepted().isEmpty();
+    }
+
+    /** Retry failed selected cards without changing their PDF order or silently dropping failures. */
+    private void retryFailedSelected() {
+        if (converting || selected.isEmpty()) return;
+        for (Item item : List.copyOf(selected)) {
+            if (item.cancelled || !items.contains(item)
+                    || !isFailedImport(item.document != null, item.info)) continue;
+            // Supersede any previously queued or running result before re-submitting.
+            long generation = ++item.parseGeneration;
+            if (item.parseTask != null) item.parseTask.cancel(false);
+            item.document = null;
+            item.sourceFingerprint = null;
+            item.thumbnail = null;
+            item.info = "Okunuyor...";
+            List<Path> others = items.stream().filter(other -> other != item && !other.cancelled)
+                    .map(other -> other.path).toList();
+            try {
+                item.parseTask = parseWithoutBlockingPreview(parsers,
+                        () -> {
+                            if (item.cancelled || generation != item.parseGeneration) return null;
+                            FileImportPolicy.preflightDistinctImport(item.path, others);
+                            return item.cancelled || generation != item.parseGeneration
+                                    ? null : parseSource(item.path);
+                        },
+                        parsed -> {
+                            if (parsed == null || item.cancelled || !items.contains(item)
+                                    || generation != item.parseGeneration) return;
+                            item.sourceFingerprint = parsed.fingerprint();
+                            item.document = parsed.document();
+                            item.info = DEFERRED_PREVIEW;
+                            rebuild();
+                            updateFileStatus();
+                        },
+                        ex -> {
+                            if (item.cancelled || !items.contains(item)
+                                    || generation != item.parseGeneration) return;
+                            item.info = "Desteklenmiyor: " + friendly(ex);
+                            rebuild();
+                            updateFileStatus();
+                        });
+            } catch (RejectedExecutionException queueFull) {
+                item.info = "UDF okuma kuyruğu dolu — yeniden deneyin";
+            }
+        }
+        rebuild();
+        updateFileStatus();
     }
 
     /** Reject incomplete batches before adding any card; parsing is still asynchronous. */
@@ -1215,6 +1269,8 @@ public final class DesktopApp extends JFrame {
         getContentPane().setBackground(bg);
         grid.setBackground(bg);
         addButton.setEnabled(canAddMore(items.size(), converting));
+        retryButton.setEnabled(!converting && selected.stream().anyMatch(item ->
+                items.contains(item) && isFailedImport(item.document != null, item.info)));
         saveButton.setEnabled(!converting && !items.isEmpty()
                 && items.stream().allMatch(item ->
                         item.document != null && item.sourceFingerprint != null));
@@ -1240,6 +1296,8 @@ public final class DesktopApp extends JFrame {
         moveLeftButton.setEnabled(enabled);
         moveRightButton.setEnabled(enabled);
         removeButton.setEnabled(enabled);
+        retryButton.setEnabled(enabled && selected.stream().anyMatch(item ->
+                items.contains(item) && isFailedImport(item.document != null, item.info)));
         clearButton.setEnabled(enabled);
     }
 
