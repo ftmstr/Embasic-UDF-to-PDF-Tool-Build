@@ -583,7 +583,10 @@ public final class DesktopApp extends JFrame {
                     || !isFailedImport(item.document != null, item.info)) continue;
             // Supersede any previously queued or running result before re-submitting.
             long generation = ++item.parseGeneration;
-            if (item.parseTask != null) item.parseTask.cancel(false);
+            // Remove cancelled queued parses immediately so retries do not exhaust
+            // the bounded parser queue; running tasks remain generation-guarded.
+            if (item.parseTask != null)
+                cancelQueuedPreviews(parsers, List.of(item.parseTask));
             item.document = null;
             item.sourceFingerprint = null;
             item.thumbnail = null;
