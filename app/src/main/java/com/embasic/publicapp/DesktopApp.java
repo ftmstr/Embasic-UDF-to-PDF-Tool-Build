@@ -722,7 +722,9 @@ public final class DesktopApp extends JFrame {
         if (item.cancelled || item.document != parsed) return;
         try {
             BufferedImage image = PdfExporter.firstPage(parsed);
-            if (item.cancelled) return;
+            // A retry/removal may supersede this render while PDFBox rasterizes.
+            // Skip thumbnail allocation/scaling for obsolete results, not just UI publication.
+            if (item.cancelled || generation != item.parseGeneration || item.document != parsed) return;
             BufferedImage thumb = new BufferedImage(PREVIEW_WIDTH, PREVIEW_HEIGHT, BufferedImage.TYPE_INT_RGB);
             Graphics2D g = thumb.createGraphics();
             try {
