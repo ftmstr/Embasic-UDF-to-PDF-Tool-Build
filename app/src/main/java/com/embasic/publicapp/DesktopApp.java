@@ -625,6 +625,9 @@ public final class DesktopApp extends JFrame {
                             updateFileStatus();
                         });
             } catch (RejectedExecutionException queueFull) {
+                // A rejected submission has no live parse task. Do not retain the
+                // cancelled task from an earlier generation on this retryable card.
+                item.parseTask = null;
                 item.info = "UDF okuma kuyruğu dolu — kartı seçip Yeniden dene'ye basın";
             }
         }
