@@ -225,7 +225,7 @@ public final class DesktopApp extends JFrame {
         moveRightButton.setToolTipText("Seçili UDF kartlarını bir sıra sonraya taşı (Alt + Aşağı)");
         removeButton.addActionListener(e -> removeSelected());
         retryButton.addActionListener(e -> retryFailedSelected());
-        retryButton.setToolTipText("Seçili hatalı UDF kartlarını yeniden oku; kaynak bütünlüğü tekrar denetlenir");
+        retryButton.setToolTipText("Hatalı UDF dosyalarını yeniden oku veya başarısız önizlemeyi yeniden oluştur");
         clearButton.addActionListener(e -> {
             if (converting || items.isEmpty() || JOptionPane.showConfirmDialog(this,
                     "Tüm dosyalar kaldırılsın mı?", "Temizle",
@@ -577,12 +577,24 @@ public final class DesktopApp extends JFrame {
         return !plan.accepted().isEmpty();
     }
 
+    /** Preview failures remain exportable; retry only on explicit user action. */
+    static boolean isFailedPreview(boolean parsed, String info) {
+        return parsed && info != null && info.startsWith("Önizleme yok: ");
+    }
+
     /** Retry failed selected cards without changing their PDF order or silently dropping failures. */
     private void retryFailedSelected() {
         if (converting || selected.isEmpty()) return;
         for (Item item : List.copyOf(selected)) {
-            if (item.cancelled || !items.contains(item)
-                    || !isFailedImport(item.document != null, item.info)) continue;
+            if (item.cancelled || !items.contains(item)) continue;
+            if (isFailedPreview(item.document != null, item.info)) {
+                // The failed Future is completed. Allow one new on-demand render
+                // without re-reading the UDF or changing PDF export eligibility.
+                item.previewTask = null;
+                item.info = DEFERRED_PREVIEW;
+                continue;
+            }
+            if (!isFailedImport(item.document != null, item.info)) continue;
             // Supersede any previously queued or running result before re-submitting.
             long generation = ++item.parseGeneration;
             // Remove cancelled queued parses immediately so retries do not exhaust
@@ -1289,7 +1301,8 @@ public final class DesktopApp extends JFrame {
         grid.setBackground(bg);
         addButton.setEnabled(canAddMore(items.size(), converting));
         retryButton.setEnabled(!converting && selected.stream().anyMatch(item ->
-                items.contains(item) && isFailedImport(item.document != null, item.info)));
+                items.contains(item) && (isFailedImport(item.document != null, item.info)
+                        || isFailedPreview(item.document != null, item.info))));
         saveButton.setEnabled(!converting && !items.isEmpty()
                 && items.stream().allMatch(item ->
                         item.document != null && item.sourceFingerprint != null));
@@ -1316,7 +1329,8 @@ public final class DesktopApp extends JFrame {
         moveRightButton.setEnabled(enabled);
         removeButton.setEnabled(enabled);
         retryButton.setEnabled(enabled && selected.stream().anyMatch(item ->
-                items.contains(item) && isFailedImport(item.document != null, item.info)));
+                items.contains(item) && (isFailedImport(item.document != null, item.info)
+                        || isFailedPreview(item.document != null, item.info))));
         clearButton.setEnabled(enabled);
     }
 
