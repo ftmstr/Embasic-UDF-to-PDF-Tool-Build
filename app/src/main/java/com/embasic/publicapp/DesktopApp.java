@@ -548,12 +548,16 @@ public final class DesktopApp extends JFrame {
                             // Do not render every offscreen PDF when importing 160 files.
                             // A visible card requests its thumbnail in refreshViewport().
                             item.info = DEFERRED_PREVIEW;
-                            previewRefresh.restart();
+                            // Parsing changes export eligibility, not just the thumbnail.
+                            // Refresh toolbar and aggregate status on the Swing EDT.
+                            rebuild();
+                            updateFileStatus();
                         },
                         ex -> {
                             if (item.cancelled || !items.contains(item)) return;
                             item.info = "Desteklenmiyor: " + friendly(ex);
-                            previewRefresh.restart();
+                            rebuild();
+                            updateFileStatus();
                         });
             } catch (RejectedExecutionException queueFull) {
                 item.info = "UDF okuma kuyruğu dolu — kaldırıp yeniden ekleyin";
