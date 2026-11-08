@@ -17,8 +17,20 @@ if (-not $IsWindows) { throw 'Bu test etkileşimli Windows masaüstü gerektirir
 $root = (Resolve-Path (Join-Path $PSScriptRoot '../..')).Path
 Write-Host 'Embasic PUBLIC — yerel Windows Robot GUI kabul kontrolü' -ForegroundColor Cyan
 Write-Host 'UYARI: Test geçerken fareyi veya klavyeyi kullanmayın; sentetik verilerle çalışır.' -ForegroundColor Yellow
+$report = Join-Path $root 'app/target/surefire-reports/TEST-com.embasic.publicapp.GuiRobotSmokeTest.xml'
+# Remove stale evidence so an old successful report cannot satisfy this invocation.
+if (Test-Path -LiteralPath $report) { Remove-Item -LiteralPath $report -Force }
 & mvn -B -ntp -f (Join-Path $root 'app/pom.xml') '-Dtest=GuiRobotSmokeTest' '-Dembasic.gui.robot=true' test
 if ($LASTEXITCODE -ne 0) {
     throw 'GUI Robot testi başarısız veya etkileşimli masaüstü yok. GUI kabulü doğrulanamadı.'
 }
-Write-Host 'GUI Robot testi tamamlandı. Rapor: app/target/surefire-reports/' -ForegroundColor Green
+# Maven may exit zero when a JUnit test is skipped; that is NOT physical GUI acceptance.
+if (-not (Test-Path -LiteralPath $report)) { throw 'GUI Robot JUnit XML raporu bulunamadı; kabul doğrulanamadı.' }
+[xml]$result = Get-Content -LiteralPath $report -Raw
+$suite = $result.testsuite
+if ($null -eq $suite -or [int]$suite.tests -lt 1 -or
+    [int]$suite.skipped -ne 0 -or [int]$suite.failures -ne 0 -or
+    [int]$suite.errors -ne 0) {
+    throw 'GUI Robot testleri eksik, atlandı veya başarısız; fiziksel kabul PASS değildir.'
+}
+Write-Host 'GUI Robot testi tamamlandı; JUnit XML sıfır skip/failure/error doğrulandı.' -ForegroundColor Green
