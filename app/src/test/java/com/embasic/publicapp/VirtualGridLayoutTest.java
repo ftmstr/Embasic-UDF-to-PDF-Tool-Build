@@ -73,6 +73,10 @@ final class VirtualGridLayoutTest {
                 () -> grid.reflowScrollY(null, oldY, 650));
         assertEquals(0, grid.topRowAnchor(0));
         assertEquals(0, grid.topRowOffset(0));
+        // Extreme negative scroll coordinates must clamp to zero, not wrap
+        // the int subtraction into a positive in-row offset.
+        assertEquals(0, grid.topRowOffset(Integer.MIN_VALUE));
+        assertEquals(0, grid.topRowAnchor(Integer.MIN_VALUE));
         int gap = grid.bounds(80).y + grid.bounds(80).height + 2;
         assertEquals(anchor, grid.topRowAnchor(gap),
                 "Vertical card gaps belong to the preceding logical row");
