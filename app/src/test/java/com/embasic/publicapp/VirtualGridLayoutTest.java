@@ -143,6 +143,11 @@ final class VirtualGridLayoutTest {
         for (int pointer=-20;pointer<800;pointer++)
             assertTrue(Math.abs(VirtualGridLayout.edgeScrollDelta(pointer,650))<=36);
         assertEquals(0,VirtualGridLayout.edgeScrollDelta(0,0));
+        // Leaving the viewport must stop scrolling instead of driving the grid
+        // while the pointer is outside the active drop area.
+        assertEquals(0,VirtualGridLayout.edgeScrollDelta(-1,650));
+        assertEquals(0,VirtualGridLayout.edgeScrollDelta(650,650));
+        assertEquals(0,VirtualGridLayout.edgeScrollDelta(999,650));
         // A narrow responsive window must not make the top and bottom zones
         // overlap: a pointer near the bottom must always scroll down.
         for (int height : new int[]{2, 8, 16, 23}) {
