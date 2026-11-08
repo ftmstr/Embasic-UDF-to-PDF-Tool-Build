@@ -23,8 +23,10 @@ public final class ThumbnailSizing {
     }
     public static int columns(int viewportWidth, int requestedCardWidth) {
         int width = at(requestedCardWidth).cardWidth();
-        int usable = Math.max(1, viewportWidth - 24);
-        return Math.max(1, (usable + GAP) / (width + GAP));
+        // Layout can briefly supply an invalid negative width during reflow.
+        // Compute before clamping to avoid int underflow turning it into many columns.
+        long usable = Math.max(1L, (long) viewportWidth - 24L);
+        return (int) Math.max(1L, (usable + GAP) / (width + GAP));
     }
     public static int zoomBy(int current, int steps) {
         long requested = (long) current + (long) steps * STEP;
