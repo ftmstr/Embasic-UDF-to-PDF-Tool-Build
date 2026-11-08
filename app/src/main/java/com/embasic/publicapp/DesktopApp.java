@@ -742,9 +742,9 @@ public final class DesktopApp extends JFrame {
                 && expectedDocument == currentDocument;
     }
 
-    private void renderThumbnail(Item item, UdfReader.DocumentSpec parsed) {
-        // A retry can supersede this render while PDFBox is working.
-        final long generation = item.parseGeneration;
+    private void renderThumbnail(Item item, UdfReader.DocumentSpec parsed, long generation) {
+        // Capture generation at submission, not when a queued worker starts:
+        // a retry may supersede a queued task before it runs.
         if (!isCurrentPreview(item.cancelled, generation, item.parseGeneration, parsed, item.document)) return;
         try {
             BufferedImage image = PdfExporter.firstPage(parsed);
@@ -1219,7 +1219,8 @@ public final class DesktopApp extends JFrame {
                 item -> {
                     try {
                         UdfReader.DocumentSpec parsed = item.document;
-                        item.previewTask = previews.submit(() -> renderThumbnail(item, parsed));
+                        long generation = item.parseGeneration;
+                        item.previewTask = previews.submit(() -> renderThumbnail(item, parsed, generation));
                         item.info = "Önizleme hazırlanıyor...";
                     } catch (RejectedExecutionException queueFull) {
                         // No task was accepted; retry when the viewport refreshes.
