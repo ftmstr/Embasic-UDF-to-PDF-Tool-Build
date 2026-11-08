@@ -28,9 +28,19 @@ if ($LASTEXITCODE -ne 0) {
 if (-not (Test-Path -LiteralPath $report)) { throw 'GUI Robot JUnit XML raporu bulunamadı; kabul doğrulanamadı.' }
 [xml]$result = Get-Content -LiteralPath $report -Raw
 $suite = $result.testsuite
-if ($null -eq $suite -or [int]$suite.tests -lt 1 -or
-    [int]$suite.skipped -ne 0 -or [int]$suite.failures -ne 0 -or
-    [int]$suite.errors -ne 0) {
+# Reject malformed/incomplete Surefire evidence: absent counters otherwise cast to zero.
+if ($null -eq $suite) { throw 'GUI Robot JUnit XML testsuite öğesi eksik.' }
+foreach ($field in @('tests', 'skipped', 'failures', 'errors')) {
+    $attribute = $suite.GetAttribute($field)
+    $count = 0
+    if ([string]::IsNullOrWhiteSpace($attribute) -or
+        -not [int]::TryParse($attribute, [ref]$count) -or $count -lt 0) {
+        throw "GUI Robot JUnit XML geçersiz veya eksik sayaç: $field"
+    }
+}
+if ([int]$suite.tests -lt 1 -or [int]$suite.skipped -ne 0 -or
+    [int]$suite.failures -ne 0 -or [int]$suite.errors -ne 0 -or
+    @($suite.testcase).Count -ne [int]$suite.tests) {
     throw 'GUI Robot testleri eksik, atlandı veya başarısız; fiziksel kabul PASS değildir.'
 }
 Write-Host 'GUI Robot testi tamamlandı; JUnit XML sıfır skip/failure/error doğrulandı.' -ForegroundColor Green
