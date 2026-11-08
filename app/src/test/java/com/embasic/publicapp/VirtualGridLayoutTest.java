@@ -88,6 +88,20 @@ final class VirtualGridLayoutTest {
         var nonempty=new VirtualGridLayout(7,1000,188);
         assertTrue(nonempty.visible(new Rectangle(0,0,0,0)).count()<=nonempty.columns()*2);
     }
+    @Test void offGridViewportsNeverMaterializeUnrelatedCards() {
+        var grid = new VirtualGridLayout(161,1000,188);
+        int bottom = grid.preferredSize().height;
+        assertEquals(0,grid.visible(new Rectangle(0,-10000,1000,650)).count());
+        assertEquals(0,grid.visible(new Rectangle(0,bottom,1000,650)).count());
+        assertEquals(0,grid.visible(new Rectangle(-2000,0,650,650)).count());
+        assertEquals(0,grid.visible(new Rectangle(1000,0,650,650)).count());
+        assertTrue(grid.visible(new Rectangle(0,-100,1000,650)).count()>0,
+                "A viewport partly overlapping the first row must still render it");
+        assertTrue(grid.visible(new Rectangle(0,bottom-100,1000,650)).count()>0,
+                "A viewport partly overlapping the last row must still render it");
+        assertEquals(0,grid.visible(new Rectangle(0,Integer.MAX_VALUE,1000,650)).count());
+    }
+
     @Test void targetResolutionAcrossScrollResizeAndZoomNeedsNoCardComponents() {
         for (int width : new int[]{680,1000,1430}) {
             for (int zoom : new int[]{132,188,272}) {
