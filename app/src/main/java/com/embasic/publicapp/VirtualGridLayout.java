@@ -128,8 +128,10 @@ public final class VirtualGridLayout {
     /** One extra row on each side avoids flicker while scrolling. */
     public Visible visible(Rectangle viewport) {
         if(entries==0) return new Visible(0,0);
+        // A zero-sized or absent viewport cannot display any cards. Do not
+        // allocate Swing components until layout has a positive area.
         if (viewport == null || viewport.height <= 0 || viewport.width <= 0)
-            return new Visible(0,Math.min(entries,columns*2));
+            return new Visible(0,0);
         // A viewport entirely outside the grid must not instantiate unrelated
         // cards; long arithmetic prevents overflow at extreme scroll offsets.
         if ((long)viewport.x + viewport.width <= 0 || viewport.x >= width ||
