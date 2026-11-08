@@ -107,7 +107,7 @@ public final class VirtualGridLayout {
      * The pointer position is viewport-local, not document-local.
      */
     public static int edgeScrollDelta(int pointerY, int viewportHeight) {
-        if (viewportHeight<=0) return 0;
+        if (viewportHeight<=0 || pointerY<0 || pointerY>=viewportHeight) return 0;
         // Keep top and bottom hot zones disjoint in very short responsive windows.
         // Otherwise a pointer at the bottom can incorrectly request upward scroll.
         int edge=Math.min(viewportHeight/2,Math.min(48,Math.max(12,viewportHeight/4)));
