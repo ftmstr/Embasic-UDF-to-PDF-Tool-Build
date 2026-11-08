@@ -22,4 +22,16 @@ final class DesktopPreviewRetryClassificationTest {
         assertFalse(DesktopApp.isFailedPreview(true, "Önizleme görünür olunca hazırlanacak"));
         assertFalse(DesktopApp.isFailedPreview(true, "Önizleme kuyruğu dolu — PDF kaydedilebilir"));
     }
+
+    @Test void delayedPreviewCallbackCannotOverwriteNewRetry() {
+        Object parsed = new Object();
+        Object replacement = new Object();
+        assertTrue(DesktopApp.isCurrentPreview(false, 7, 7, parsed, parsed));
+        assertFalse(DesktopApp.isCurrentPreview(false, 7, 8, parsed, parsed),
+                "old EDT callback must be rejected after explicit retry");
+        assertFalse(DesktopApp.isCurrentPreview(false, 8, 8, parsed, replacement),
+                "replacement document must invalidate old thumbnail");
+        assertFalse(DesktopApp.isCurrentPreview(true, 8, 8, parsed, parsed),
+                "removed card must not receive a thumbnail");
+    }
 }
