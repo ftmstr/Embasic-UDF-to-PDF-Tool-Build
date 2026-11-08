@@ -582,12 +582,18 @@ public final class DesktopApp extends JFrame {
         return parsed && info != null && info.startsWith("Önizleme yok: ");
     }
 
+    /** A full preview queue is recoverable without re-parsing the UDF. */
+    static boolean isPreviewQueueFull(boolean parsed, String info) {
+        return parsed && "Önizleme kuyruğu dolu — PDF kaydedilebilir".equals(info);
+    }
+
     /** Retry failed selected cards without changing their PDF order or silently dropping failures. */
     private void retryFailedSelected() {
         if (converting || selected.isEmpty()) return;
         for (Item item : List.copyOf(selected)) {
             if (item.cancelled || !items.contains(item)) continue;
-            if (isFailedPreview(item.document != null, item.info)) {
+            if (isFailedPreview(item.document != null, item.info)
+                    || isPreviewQueueFull(item.document != null, item.info)) {
                 // The failed Future is completed. Allow one new on-demand render
                 // without re-reading the UDF or changing PDF export eligibility.
                 // A completed render may still have a pending EDT callback. Invalidate
@@ -1317,7 +1323,8 @@ public final class DesktopApp extends JFrame {
         addButton.setEnabled(canAddMore(items.size(), converting));
         retryButton.setEnabled(!converting && selected.stream().anyMatch(item ->
                 items.contains(item) && (isFailedImport(item.document != null, item.info)
-                        || isFailedPreview(item.document != null, item.info))));
+                        || isFailedPreview(item.document != null, item.info)
+                        || isPreviewQueueFull(item.document != null, item.info))));
         saveButton.setEnabled(!converting && !items.isEmpty()
                 && items.stream().allMatch(item ->
                         item.document != null && item.sourceFingerprint != null));
@@ -1345,7 +1352,8 @@ public final class DesktopApp extends JFrame {
         removeButton.setEnabled(enabled);
         retryButton.setEnabled(enabled && selected.stream().anyMatch(item ->
                 items.contains(item) && (isFailedImport(item.document != null, item.info)
-                        || isFailedPreview(item.document != null, item.info))));
+                        || isFailedPreview(item.document != null, item.info)
+                        || isPreviewQueueFull(item.document != null, item.info))));
         clearButton.setEnabled(enabled);
     }
 
