@@ -18,6 +18,10 @@ final class ThumbnailSizingTest {
         assertTrue(small > medium);
         assertTrue(medium > large);
         assertEquals(1,ThumbnailSizing.columns(0,272));
+        // Negative layout widths must not overflow into a huge column count.
+        assertEquals(1, ThumbnailSizing.columns(Integer.MIN_VALUE, 132));
+        assertEquals(1, ThumbnailSizing.columns(-1, 188));
+        assertTrue(ThumbnailSizing.columns(Integer.MAX_VALUE, 272) > 1);
     }
     @Test void cardAndImageRemainPositiveAndConsistent() {
         for(int width=132;width<=272;width++) {
