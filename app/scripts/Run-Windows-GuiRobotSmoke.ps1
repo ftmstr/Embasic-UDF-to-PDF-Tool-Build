@@ -43,4 +43,12 @@ if ([int]$suite.tests -lt 1 -or [int]$suite.skipped -ne 0 -or
     $null -eq $suite.testcase -or @($suite.testcase).Count -ne [int]$suite.tests) {
     throw 'GUI Robot testleri eksik, atlandı veya başarısız; fiziksel kabul PASS değildir.'
 }
+# A forged or inconsistent suite counter must not hide per-test skipped/failure/error nodes.
+foreach ($case in @($suite.testcase)) {
+    if ($null -ne $case.SelectSingleNode('skipped') -or
+        $null -ne $case.SelectSingleNode('failure') -or
+        $null -ne $case.SelectSingleNode('error')) {
+        throw 'GUI Robot JUnit XML testcase hata/atlama öğesi içeriyor; fiziksel kabul PASS değildir.'
+    }
+}
 Write-Host 'GUI Robot testi tamamlandı; JUnit XML sıfır skip/failure/error doğrulandı.' -ForegroundColor Green
