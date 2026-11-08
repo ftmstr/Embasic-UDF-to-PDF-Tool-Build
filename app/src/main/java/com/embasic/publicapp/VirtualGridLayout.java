@@ -130,6 +130,11 @@ public final class VirtualGridLayout {
         if(entries==0) return new Visible(0,0);
         if (viewport == null || viewport.height <= 0 || viewport.width <= 0)
             return new Visible(0,Math.min(entries,columns*2));
+        // A viewport entirely outside the grid must not instantiate unrelated
+        // cards; long arithmetic prevents overflow at extreme scroll offsets.
+        if ((long)viewport.x + viewport.width <= 0 || viewport.x >= width ||
+                (long)viewport.y + viewport.height <= 0 ||
+                viewport.y >= preferredSize().height) return new Visible(0,0);
         int firstRow=Math.max(0,viewport.y/rowStride-BUFFER_ROWS);
         long bottom=(long)Math.max(0,viewport.y)+(long)viewport.height;
         int lastRow=(int)Math.min(rows()-1, Math.max(0,bottom/rowStride)+BUFFER_ROWS);
