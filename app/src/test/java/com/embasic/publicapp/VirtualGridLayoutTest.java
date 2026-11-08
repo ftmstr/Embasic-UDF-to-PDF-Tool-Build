@@ -86,7 +86,11 @@ final class VirtualGridLayoutTest {
         assertThrows(IllegalArgumentException.class,()->new VirtualGridLayout(-1,400,188));
         assertThrows(IndexOutOfBoundsException.class,()->grid.bounds(0));
         var nonempty=new VirtualGridLayout(7,1000,188);
-        assertTrue(nonempty.visible(new Rectangle(0,0,0,0)).count()<=nonempty.columns()*2);
+        assertEquals(0,nonempty.visible(new Rectangle(0,0,0,0)).count());
+        assertEquals(0,nonempty.visible(new Rectangle(0,0,1000,0)).count());
+        assertEquals(0,nonempty.visible(new Rectangle(0,0,0,650)).count());
+        assertEquals(0,nonempty.visible(null).count());
+        assertTrue(nonempty.visible(new Rectangle(0,0,1000,650)).count()>0);
     }
     @Test void offGridViewportsNeverMaterializeUnrelatedCards() {
         var grid = new VirtualGridLayout(161,1000,188);
