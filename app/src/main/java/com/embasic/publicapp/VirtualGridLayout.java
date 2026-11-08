@@ -72,7 +72,8 @@ public final class VirtualGridLayout {
     public int topRowOffset(int viewportY) {
         int anchor = topRowAnchor(viewportY);
         if (anchor < 0) return 0;
-        return Math.max(0, Math.min(rowStride - 1, viewportY - bounds(anchor).y));
+        return (int) Math.max(0L, Math.min((long) rowStride - 1,
+                (long) viewportY - bounds(anchor).y));
     }
 
     public int anchoredScrollY(int anchor, int offset, int viewportHeight) {
