@@ -734,15 +734,23 @@ public final class DesktopApp extends JFrame {
         return new ParsedSource(parsed, after);
     }
 
+    /** Reject stale preview work, including EDT callbacks queued before an explicit retry. */
+    static boolean isCurrentPreview(boolean cancelled, long expectedGeneration,
+                                    long currentGeneration, Object expectedDocument,
+                                    Object currentDocument) {
+        return !cancelled && expectedGeneration == currentGeneration
+                && expectedDocument == currentDocument;
+    }
+
     private void renderThumbnail(Item item, UdfReader.DocumentSpec parsed) {
         // A retry can supersede this render while PDFBox is working.
         final long generation = item.parseGeneration;
-        if (item.cancelled || item.document != parsed) return;
+        if (!isCurrentPreview(item.cancelled, generation, item.parseGeneration, parsed, item.document)) return;
         try {
             BufferedImage image = PdfExporter.firstPage(parsed);
             // A retry/removal may supersede this render while PDFBox rasterizes.
             // Skip thumbnail allocation/scaling for obsolete results, not just UI publication.
-            if (item.cancelled || generation != item.parseGeneration || item.document != parsed) return;
+            if (!isCurrentPreview(item.cancelled, generation, item.parseGeneration, parsed, item.document)) return;
             BufferedImage thumb = new BufferedImage(PREVIEW_WIDTH, PREVIEW_HEIGHT, BufferedImage.TYPE_INT_RGB);
             Graphics2D g = thumb.createGraphics();
             try {
@@ -757,16 +765,16 @@ public final class DesktopApp extends JFrame {
                         (PREVIEW_HEIGHT - height) / 2, width, height, null);
             } finally { g.dispose(); }
             SwingUtilities.invokeLater(() -> {
-                if (item.cancelled || !items.contains(item)
-                        || generation != item.parseGeneration || item.document != parsed) return;
+                if (!items.contains(item) || !isCurrentPreview(item.cancelled, generation,
+                        item.parseGeneration, parsed, item.document)) return;
                 item.thumbnail = new ImageIcon(thumb);
                 item.info = "Hazır";
                 previewRefresh.restart();
             });
         } catch (Exception ex) {
             SwingUtilities.invokeLater(() -> {
-                if (item.cancelled || !items.contains(item)
-                        || generation != item.parseGeneration || item.document != parsed) return;
+                if (!items.contains(item) || !isCurrentPreview(item.cancelled, generation,
+                        item.parseGeneration, parsed, item.document)) return;
                 // A failed thumbnail must not invalidate a parsed document.
                 item.info = "Önizleme yok: " + friendly(ex);
                 previewRefresh.restart();
