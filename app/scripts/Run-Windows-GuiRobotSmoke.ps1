@@ -40,7 +40,7 @@ foreach ($field in @('tests', 'skipped', 'failures', 'errors')) {
 }
 if ([int]$suite.tests -lt 1 -or [int]$suite.skipped -ne 0 -or
     [int]$suite.failures -ne 0 -or [int]$suite.errors -ne 0 -or
-    @($suite.testcase).Count -ne [int]$suite.tests) {
+    $null -eq $suite.testcase -or @($suite.testcase).Count -ne [int]$suite.tests) {
     throw 'GUI Robot testleri eksik, atlandı veya başarısız; fiziksel kabul PASS değildir.'
 }
 Write-Host 'GUI Robot testi tamamlandı; JUnit XML sıfır skip/failure/error doğrulandı.' -ForegroundColor Green
