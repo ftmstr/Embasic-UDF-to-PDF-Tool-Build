@@ -26,7 +26,7 @@ public final class GridDropIndicator {
     public static String description(int index, int fileCount, boolean after) {
         if (fileCount == 0 || index < 0 || fileCount < 0 || index > fileCount)
             return "Geçerli bırakma hedefi yok. Esc ile iptal edebilirsiniz.";
-        if (index == fileCount) return "Seçilen dosyaları listenin sonuna taşı.";
+        if (index == fileCount) return "Seçilen dosyaları listenin sonuna taşı. Esc ile iptal edebilirsiniz.";
         return (index + 1) + ". kartın " + (after ? "arkasına" : "önüne")
                 + " taşı. Esc ile iptal edebilirsiniz.";
     }
