@@ -11,7 +11,7 @@ final class GridDropAccessibilityTest {
                 GridDropIndicator.description(0, 160, false));
         assertEquals("160. kartın arkasına taşı. Esc ile iptal edebilirsiniz.",
                 GridDropIndicator.description(159, 160, true));
-        assertEquals("Seçilen dosyaları listenin sonuna taşı.",
+        assertEquals("Seçilen dosyaları listenin sonuna taşı. Esc ile iptal edebilirsiniz.",
                 GridDropIndicator.description(160, 160, false));
     }
     @Test void emptyGridDoesNotAnnounceAnImpossibleDropTarget() {
