@@ -25,10 +25,10 @@ $forecastBase = [DateTime]::ParseExact('2026-10-31', 'yyyy-MM-dd', [System.Globa
 # Weight totals are exactly 100. Completion is engineering judgement, not telemetry.
 $milestones = @(
     [pscustomobject]@{ Name='Public kod tabani / Maven'; Weight=12; Complete=100; Evidence='Public kaynak + Linux/Windows Maven CI' }
-    [pscustomobject]@{ Name='Windows launcher / smoke'; Weight=12; Complete=100; Evidence='jpackage EXE smoke 42544804681 (Tur 50 Public HEAD e44946c)' }
-    [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=73; Evidence='Tur 50 secili X/Y sayaci + kart sirasi integration PASS; fiziksel GUI Robot NOT_RUN' }
+    [pscustomobject]@{ Name='Windows launcher / smoke'; Weight=12; Complete=100; Evidence='jpackage EXE smoke 42598158107 (Tur 51 Public HEAD 9a5d6ba)' }
+    [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=73; Evidence='Tur 51: 160 kart EDT kuyruk 16/16 PASS; secim/siralama PASS; fiziksel Robot NOT_RUN' }
     [pscustomobject]@{ Name='UDF turleri ve surumleri'; Weight=26; Complete=12; Evidence='Sentetik ZIP PNG referans, A5/LEGAL; gercek UYAP schema dogrulanmadi' }
-    [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Tur 50: 145 JUnit (144 PASS, 1 SKIP) Windows/Linux; gercek sentetik ZIP, sirali 5 sayfa, RGB PNG, font ve fail-closed; native UYAP golden YOK' }
+    [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Tur 51: 147 JUnit (146 PASS, 1 SKIP) Win/Linux; font cache 50sn ilk raster kanitli, PNG+font+sirali PDF fail-closed; native UYAP golden YOK' }
     [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Sentetik gate var; binary dagitim onayi yok' }
     [pscustomobject]@{ Name='Beta kabul / dagitim'; Weight=8; Complete=10; Evidence='Paket CI ici; indirme paketi yayinlanmadi' }
 )
