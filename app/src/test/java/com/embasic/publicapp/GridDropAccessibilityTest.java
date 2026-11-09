@@ -9,8 +9,10 @@ final class GridDropAccessibilityTest {
     @Test void includesPositionAndBeforeAfterMeaning() {
         assertEquals("1. kartın önüne taşı. Esc ile iptal edebilirsiniz.",
                 GridDropIndicator.description(0, 160, false));
-        assertEquals("160. kartın arkasına taşı. Esc ile iptal edebilirsiniz.",
+        assertEquals("Seçilen dosyaları listenin sonuna taşı. Esc ile iptal edebilirsiniz.",
                 GridDropIndicator.description(159, 160, true));
+        assertEquals("159. kartın arkasına taşı. Esc ile iptal edebilirsiniz.",
+                GridDropIndicator.description(158, 160, true));
         assertEquals("Seçilen dosyaları listenin sonuna taşı. Esc ile iptal edebilirsiniz.",
                 GridDropIndicator.description(160, 160, false));
     }
