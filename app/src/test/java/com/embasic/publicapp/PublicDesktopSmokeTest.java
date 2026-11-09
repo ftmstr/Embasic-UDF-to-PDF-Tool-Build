@@ -30,6 +30,15 @@ import org.junit.jupiter.api.io.TempDir;
 final class PublicDesktopSmokeTest {
     @TempDir Path root;
 
+    @Test void selectionCounterTracksLogicalCardsWithoutLoadingVisibleThumbnails() {
+        // A 160-card workspace may have only a handful of Swing card widgets.
+        // Its selection counter must derive solely from the full logical queue.
+        assertEquals("Seçili: 0 / 0", DesktopApp.selectedCountText(0, 0));
+        assertEquals("Seçili: 0 / 160", DesktopApp.selectedCountText(160, 0));
+        assertEquals("Seçili: 3 / 160", DesktopApp.selectedCountText(160, 3));
+        assertEquals("Seçili: 160 / 160", DesktopApp.selectedCountText(160, 160));
+    }
+
     private static String xml(String value) {
         return "<template format_id='1.0'><content>" + value + "</content>"
             + "<elements><paragraph><content startOffset='0' length='" + value.length() + "'/>"
