@@ -24,7 +24,7 @@ public final class GridDropIndicator {
 
     /** Stable Turkish text for the on-screen and accessible drag target hint. */
     public static String description(int index, int fileCount, boolean after) {
-        if (index < 0 || fileCount < 0 || index > fileCount)
+        if (fileCount == 0 || index < 0 || fileCount < 0 || index > fileCount)
             return "Geçerli bırakma hedefi yok. Esc ile iptal edebilirsiniz.";
         if (index == fileCount) return "Seçilen dosyaları listenin sonuna taşı.";
         return (index + 1) + ". kartın " + (after ? "arkasına" : "önüne")
