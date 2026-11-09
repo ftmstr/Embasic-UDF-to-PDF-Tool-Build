@@ -131,7 +131,8 @@ final class PdfMultipageCompositeRegressionTest {
             glyphs.getText(result);
             TextPosition red = glyphs.glyphs.stream()
                     .filter(p -> p.getUnicode().equals("K")).findFirst().orElseThrow();
-            // V appears only in the blue MAVI run; M also exists in KIRMIZI.\n            TextPosition blue = glyphs.glyphs.stream()
+            // V appears only in the blue MAVI run; M also exists in KIRMIZI.
+            TextPosition blue = glyphs.glyphs.stream()
                     .filter(p -> p.getUnicode().equals("V")).findFirst().orElseThrow();
             assertEquals(14f, red.getFontSizeInPt(), .2f);
             assertEquals(18f, blue.getFontSizeInPt(), .2f);
