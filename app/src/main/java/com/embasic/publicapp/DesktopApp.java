@@ -96,6 +96,9 @@ public final class DesktopApp extends JFrame {
     private final JScrollPane scroll = new JScrollPane(grid);
     private final JLabel status = new JLabel("Dosyaları çalışma alanına bırakın veya + kartına basın");
     private final JLabel dragFeedback = new JLabel("");
+    // Explorer-style selection count remains visible even when selected cards
+    // are outside the 160-item virtual viewport.
+    private final JLabel selectionCount = new JLabel("Seçili: 0 / 0");
     private final JButton saveButton = new JButton("PDF olarak kaydet");
     private final JButton addButton = new JButton("+ UDF ekle");
     private final JButton moveLeftButton = new JButton("← Taşı");
@@ -233,6 +236,8 @@ public final class DesktopApp extends JFrame {
             cancelPreviewTasks(items);
             items.clear(); selected.clear(); anchor = null; focused = null; rebuild(); updateFileStatus();
         });
+        selectionCount.setToolTipText("Seçili UDF sayısı; PDF çıktısı seçime değil tüm kartların sırasına göre oluşur.");
+        ordered.add(selectionCount);
         ordered.add(moveLeftButton); ordered.add(moveRightButton);
         ordered.add(retryButton); ordered.add(removeButton); ordered.add(clearButton);
         bottom.add(ordered, BorderLayout.SOUTH);
@@ -1310,6 +1315,11 @@ public final class DesktopApp extends JFrame {
         rebuild();
     }
 
+    /** Visible selection indicator is based on logical cards, never loaded thumbnails. */
+    static String selectedCountText(int total, int selected) {
+        return "Seçili: " + selected + " / " + total;
+    }
+
     private void rebuild() {
         if (!SwingUtilities.isEventDispatchThread()) {
             SwingUtilities.invokeLater(this::rebuild);
@@ -1329,6 +1339,11 @@ public final class DesktopApp extends JFrame {
                 && items.stream().allMatch(item ->
                         item.document != null && item.sourceFingerprint != null));
         status.setForeground(fg);
+        selectionCount.setForeground(fg);
+        selectionCount.setText(selectedCountText(items.size(), selected.size()));
+        selectionCount.getAccessibleContext().setAccessibleDescription(
+                items.size() + " UDF dosyasından " + selected.size() + " seçili. "
+                + "PDF tüm kartları görsel sırayla birleştirir.");
         dragFeedback.setForeground(fg);
         for (Component cmp : getContentPane().getComponents())
             if (cmp instanceof JPanel panel) {
