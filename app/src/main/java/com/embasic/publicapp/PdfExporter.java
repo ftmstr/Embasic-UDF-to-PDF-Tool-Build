@@ -325,15 +325,28 @@ public final class PdfExporter {
     }
 
     public static BufferedImage firstPage(UdfReader.DocumentSpec doc) throws Exception {
+        // Opt-in, privacy-safe timing distinguishes PDF layout (including first
+        // font lookup/embed) from rasterization. No paths, text or image bytes.
+        // A slow first thumbnail cannot be attributed to rasterization alone.
+        long layoutStarted = System.nanoTime();
         try (PDDocument pdf = renderPreview(doc)) {
-            long started = System.nanoTime();
+            long rasterStarted = System.nanoTime();
+            if (Boolean.getBoolean("embasic.diagnostics.fontTiming"))
+                System.err.println("EMBASIC_TIMING preview_layout_ms="
+                        + java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
+                                rasterStarted - layoutStarted));
             try {
                 return new PDFRenderer(pdf).renderImageWithDPI(0, 40);
             } finally {
-                if (Boolean.getBoolean("embasic.diagnostics.fontTiming"))
+                if (Boolean.getBoolean("embasic.diagnostics.fontTiming")) {
+                    long finished = System.nanoTime();
                     System.err.println("EMBASIC_TIMING preview_raster_ms="
                             + java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
-                                    System.nanoTime() - started));
+                                    finished - rasterStarted));
+                    System.err.println("EMBASIC_TIMING preview_total_ms="
+                            + java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
+                                    finished - layoutStarted));
+                }
             }
         }
     }
