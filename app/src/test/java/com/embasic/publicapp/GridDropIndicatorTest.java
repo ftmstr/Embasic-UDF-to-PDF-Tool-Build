@@ -21,7 +21,7 @@ final class GridDropIndicatorTest {
                         assertNotNull(indicator);
                         assertTrue(tile.contains(indicator.x+indicator.width/2,
                                         indicator.y+indicator.height/2));
-                        if (index == 160) {
+                        if (index == 160 && after) {
                             assertEquals(tile.y+tile.height-6,indicator.y);
                         } else if (after) {
                             assertTrue(indicator.x>tile.x+tile.width/2);
@@ -37,6 +37,17 @@ final class GridDropIndicatorTest {
                 assertEquals(-1,GridDropIndicator.targetAt(layout,-20,-20));
             }
         }
+    }
+
+    @Test void lastCardBeforeAndAfterHaveDistinctDropMarkers() {
+        VirtualGridLayout layout=new VirtualGridLayout(1,680,188);
+        Rectangle tile=layout.bounds(0);
+        Rectangle before=GridDropIndicator.bounds(layout,0,false);
+        Rectangle after=GridDropIndicator.bounds(layout,0,true);
+        assertEquals(tile.x,before.x);
+        assertEquals(tile.y+4,before.y);
+        assertEquals(tile.y+tile.height-6,after.y);
+        assertNotEquals(before,after);
     }
 
     @Test void paintOnlyIndicatorIsVisibleAndDoesNotModifyContent() {
