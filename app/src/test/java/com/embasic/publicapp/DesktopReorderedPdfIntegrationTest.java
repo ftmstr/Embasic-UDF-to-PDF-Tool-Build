@@ -242,4 +242,39 @@ final class DesktopReorderedPdfIntegrationTest {
                     .startsWith(".embasic-pending-")).count());
         }
     }
+
+    @Test void offscreenReorderKeepsFirstPageThumbnailsAttachedToEachSource()
+            throws Exception {
+        List<Card> imported = fixtures();
+        // Move two discontiguous cards ahead of the A5 table, as in an
+        // Explorer-style offscreen drag. Their preview images must follow the
+        // cards rather than the old viewport index.
+        List<Card> order = GridReorder.before(imported,
+                List.of(imported.get(3), imported.get(1)), imported.get(0));
+        assertEquals(List.of("letter-red.udf", "legal-blue.udf",
+                        "a5-table.udf", "a4-blue.udf"),
+                order.stream().map(x -> x.source().getFileName().toString()).toList());
+        BufferedImage letterThumb = PdfExporter.firstPage(order.get(0).document());
+        BufferedImage legalThumb = PdfExporter.firstPage(order.get(1).document());
+        // The preview uses 40 DPI: 48 pt margin starts at pixel 27. A source
+        // 80 pt color image covers the independent point (63,63) => (35,35).
+        assertRgb(new Color(210, 35, 45), letterThumb.getRGB(35, 35),
+                "Letter thumbnail must retain its original red source image");
+        assertRgb(new Color(35, 55, 220), legalThumb.getRGB(35, 35),
+                "Legal thumbnail must retain its original blue source image");
+
+        // The A5 source has five 120pt rows and an image on PDF page two.
+        // Its one-page thumbnail cannot decode or display that later image.
+        try (PDDocument preview = PdfExporter.renderPreview(order.get(2).document())) {
+            assertEquals(1, preview.getNumberOfPages());
+            assertTrue(pageText(preview, 1).contains("A-ROW-0"));
+            assertFalse(pageText(preview, 1).contains("A-ROW-4"),
+                    "Second-page row must not leak into first-page preview");
+            assertFalse(preview.getPage(0).getResources().getXObjectNames()
+                            .iterator().hasNext(),
+                    "Later-page PNG cannot appear as first-page thumbnail XObject");
+        }
+        assertEquals("a5-table.udf", imported.get(0).source().getFileName().toString(),
+                "Preview and reorder operations must not mutate the import queue");
+    }
 }
