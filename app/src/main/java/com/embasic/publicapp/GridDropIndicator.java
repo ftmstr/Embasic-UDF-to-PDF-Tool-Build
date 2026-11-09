@@ -13,8 +13,8 @@ public final class GridDropIndicator {
     public static Rectangle bounds(VirtualGridLayout geometry, int index, boolean after) {
         if (geometry == null || index < 0 || index >= geometry.count()) return null;
         Rectangle tile=geometry.bounds(index);
-        if(index==geometry.count()-1) {
-            // Trailing + tile represents "move to end", not a before/after split.
+        if(after && index==geometry.count()-1) {
+            // Only an after-drop on the final tile represents "move to end".
             return new Rectangle(tile.x+4, tile.y+tile.height-6,
                     Math.max(1,tile.width-8), 4);
         }
