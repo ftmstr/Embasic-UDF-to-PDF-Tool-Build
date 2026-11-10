@@ -110,6 +110,26 @@ final class PdfBoxFontCacheDirectoryTest {
         assertFalse(Files.exists(app));
     }
 
+    @Test void rejectsIntermediateProfileSymlinkWithoutWritingOutsideProfile()
+            throws Exception {
+        Path home = home();
+        Path external = Files.createDirectories(sandbox.resolve("external").resolve("Local"));
+        Path alias = home.resolve("AppData");
+        boolean linked = false;
+        try {
+            Files.createSymbolicLink(alias, external.getParent());
+            linked = true;
+            assertEquals(Optional.empty(), PdfBoxFontCacheDirectory.prepare(home, alias.resolve("Local")),
+                    "Intermediate symlink must not redirect the PDFBox cache");
+            assertFalse(Files.exists(external.resolve("Embasic-UDF-to-PDF")));
+        } catch (java.nio.file.FileSystemException | UnsupportedOperationException
+                | SecurityException notPermittedOnWindows) {
+            // Windows runner may not permit creating symbolic links.
+        } finally {
+            if (linked) Files.delete(alias);
+        }
+    }
+
     @Test void explicitPdfBoxPropertyIsNotOverwrittenByAutomaticSelection()
             throws Exception {
         String original = System.getProperty("pdfbox.fontcache");
