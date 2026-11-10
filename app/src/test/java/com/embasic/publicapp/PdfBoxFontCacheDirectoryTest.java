@@ -263,6 +263,63 @@ final class PdfBoxFontCacheDirectoryTest {
         }
     }
 
+    private static int icacls(Path path, String... operations) throws Exception {
+        java.util.ArrayList<String> command = new java.util.ArrayList<>();
+        command.add("icacls.exe");
+        command.add(path.toString());
+        command.addAll(java.util.List.of(operations));
+        Process process = new ProcessBuilder(command).redirectErrorStream(true).start();
+        // The test never logs account names, file paths or ACL output.
+        try (var input = process.getInputStream()) {
+            input.readAllBytes();
+        }
+        if (!process.waitFor(12, java.util.concurrent.TimeUnit.SECONDS)) {
+            process.destroyForcibly();
+            throw new IllegalStateException("Disposable ACL probe timed out");
+        }
+        return process.exitValue();
+    }
+
+    @Test void isolatedWindowsOwnerOnlyAclAcceptedThenUntrustedWriteGrantRejected()
+            throws Exception {
+        if (!System.getProperty("os.name", "").toLowerCase(
+                java.util.Locale.ROOT).startsWith("windows"))
+            return;
+        // Exclusively JUnit's ephemeral test profile: NEVER alter the actual
+        // USERPROFILE, LOCALAPPDATA, system fonts, or production cache.
+        Path home = home();
+        Path appData = Files.createDirectories(home.resolve("AppData"));
+        Path local = local(home);
+        String owner = Files.getOwner(home).getName();
+        for (Path directory : java.util.List.of(home, appData, local)) {
+            int exit = icacls(directory, "/inheritance:r", "/grant:r",
+                    owner + ":(OI)(CI)F");
+            if (exit != 0) {
+                System.out.println("EMBASIC_FONT_CACHE_ACL_POSITIVE nativeWindows=NOT_RUN"
+                        + " reason=disposable_acl_privilege");
+                return;
+            }
+        }
+        Optional<Path> accepted = PdfBoxFontCacheDirectory.prepare(home, local);
+        assertTrue(accepted.isPresent(),
+                "Only the current owner with full control must be accepted");
+        Path app = accepted.orElseThrow();
+        assertTrue(PdfBoxFontCacheDirectory.trustedAcl(app, Files.getOwner(home)));
+        try {
+            int injected = icacls(app, "/grant:r", "*S-1-5-11:(OI)(CI)M");
+            assertEquals(0, injected,
+                    "Disposable folder must accept a controlled Authenticated Users ACE");
+            assertEquals(Optional.empty(), PdfBoxFontCacheDirectory.prepare(home, local),
+                    "Other users' modification rights must revoke cache acceptance");
+            assertTrue(Files.isDirectory(app));
+            System.out.println("EMBASIC_FONT_CACHE_ACL_POSITIVE nativeWindows=PASS"
+                    + " ownerOnly=ACCEPTED injectedOtherWriter=REJECTED");
+        } finally {
+            // Restore the isolated test folder; never touch real system ACL.
+            icacls(app, "/remove:g", "*S-1-5-11");
+        }
+    }
+
     @Test void explicitPdfBoxPropertyIsNotOverwrittenByAutomaticSelection()
             throws Exception {
         String original = System.getProperty("pdfbox.fontcache");
