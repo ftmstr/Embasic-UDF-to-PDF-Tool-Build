@@ -64,4 +64,68 @@ final class PdfFontSourceChangeFailClosedTest {
             else System.setProperty("embasic.font.regular", original);
         }
     }
+    /**
+     * Inspects the embedded subset itself, not merely the PDF's differing
+     * timestamps or randomly generated font subset names.
+     */
+    private static byte[] embeddedTrueType(Path pdfFile) throws Exception {
+        try (var pdf = Loader.loadPDF(pdfFile.toFile())) {
+            assertEquals(1, pdf.getNumberOfPages());
+            assertTrue(new PDFTextStripper().getText(pdf)
+                    .contains("SYNTHETIC-VALID-FONT-SWAP"));
+            var resources = pdf.getPage(0).getResources();
+            for (var name : resources.getFontNames()) {
+                var font = resources.getFont(name);
+                if (font.getFontDescriptor() != null
+                        && font.getFontDescriptor().getFontFile2() != null) {
+                    try (var stream = font.getFontDescriptor()
+                            .getFontFile2().createInputStream()) {
+                        return stream.readAllBytes();
+                    }
+                }
+            }
+            throw new AssertionError("Rendered PDF has no embedded TrueType subset");
+        }
+    }
+
+    @Test void validFontReplacementAtSameOverridePathUpdatesEmbeddedPdfSubset()
+            throws Exception {
+        Path regular = PdfExporter.systemFont(false);
+        Path bold = PdfExporter.systemFont(true);
+        assertFalse(java.util.Arrays.equals(Files.readAllBytes(regular),
+                Files.readAllBytes(bold)),
+                "Fixture must use two distinct installed source fonts");
+        Path privateFont = folder.resolve("changeable-font.ttf");
+        Files.copy(regular, privateFont);
+        var paragraph = new UdfReader.Paragraph(List.of(new UdfReader.Run(
+                "SYNTHETIC-VALID-FONT-SWAP", new UdfReader.Style(
+                        13, false, new Color(25, 70, 130)))));
+        var doc = new UdfReader.DocumentSpec("public-synthetic.udf", "1.0",
+                List.of(paragraph));
+        Path before = folder.resolve("before.pdf");
+        Path after = folder.resolve("after.pdf");
+        String original = System.getProperty("embasic.font.regular");
+        try {
+            System.setProperty("embasic.font.regular", privateFont.toString());
+            assertEquals(1, PdfExporter.save(List.of(doc), before, false));
+            byte[] initialSubset = embeddedTrueType(before);
+
+            // Only the disposable copy is replaced. All installed Windows
+            // and Linux font files remain untouched.
+            Files.copy(bold, privateFont, StandardCopyOption.REPLACE_EXISTING);
+            assertEquals(1, PdfExporter.save(List.of(doc), after, false));
+            byte[] updatedSubset = embeddedTrueType(after);
+            assertFalse(java.util.Arrays.equals(initialSubset, updatedSubset),
+                    "PDF must embed newly selected valid font bytes, never reuse"
+                    + " stale subset content from the old file at the same path");
+            assertTrue(Files.size(before) > 1000);
+            assertTrue(Files.size(after) > 1000);
+            System.out.println("EMBASIC_FONT_VALID_UPDATE embeddedFontChanged=PASS"
+                    + " text=PARITY pages=1 systemFonts=UNCHANGED");
+        } finally {
+            if (original == null) System.clearProperty("embasic.font.regular");
+            else System.setProperty("embasic.font.regular", original);
+        }
+    }
+
 }
