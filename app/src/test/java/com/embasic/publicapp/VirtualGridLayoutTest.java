@@ -108,6 +108,17 @@ final class VirtualGridLayoutTest {
                     && visibleIndex < shifted.endExclusive());
     }
 
+    @Test void extremeHorizontalCoordinatesNeverWrapIntoNegativeCardBounds() {
+        var grid = new VirtualGridLayout(1_000_000, Integer.MAX_VALUE, 132);
+        assertEquals(1, grid.rows());
+        Rectangle farRight = grid.bounds(999_999);
+        assertTrue(farRight.x >= 0,
+                "Offscreen card coordinates must not wrap into the visible left edge");
+        assertEquals(Integer.MAX_VALUE, farRight.x);
+        assertEquals(-1, grid.indexAt(20, farRight.y + farRight.height / 2),
+                "A far-right card must never become a left-side drop target");
+    }
+
     @Test void emptyAndInvalidViewportsAreSafe() {
         var grid=new VirtualGridLayout(0,0,188);
         assertEquals(0,grid.visible(new Rectangle(0,0,0,0)).count());
