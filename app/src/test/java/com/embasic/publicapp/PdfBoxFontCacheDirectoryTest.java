@@ -301,6 +301,21 @@ final class PdfBoxFontCacheDirectoryTest {
             }
         }
         Optional<Path> accepted = PdfBoxFontCacheDirectory.prepare(home, local);
+        if (accepted.isEmpty()) {
+            // Sanitized diagnostics: boolean checks only; no profile paths,
+            // account names or actual ACL entries are written to CI logs.
+            Path cacheCandidate = local.resolve("Embasic-UDF-to-PDF");
+            var expectedOwner = Files.getOwner(home);
+            System.out.println("EMBASIC_FONT_CACHE_ACL_DIAG homeReal="
+                    + home.equals(home.toRealPath())
+                    + " localReal=" + local.equals(local.toRealPath())
+                    + " sameOwner=" + expectedOwner.equals(Files.getOwner(local))
+                    + " homeAcl=" + PdfBoxFontCacheDirectory.trustedAcl(home, expectedOwner)
+                    + " localAcl=" + PdfBoxFontCacheDirectory.trustedAcl(local, expectedOwner)
+                    + " appExists=" + Files.exists(cacheCandidate)
+                    + " appAcl=" + (Files.exists(cacheCandidate)
+                        && PdfBoxFontCacheDirectory.trustedAcl(cacheCandidate, expectedOwner)));
+        }
         assertTrue(accepted.isPresent(),
                 "Only the current owner with full control must be accepted");
         Path app = accepted.orElseThrow();
