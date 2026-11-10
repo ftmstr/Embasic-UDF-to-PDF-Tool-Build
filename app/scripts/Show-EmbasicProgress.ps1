@@ -25,11 +25,11 @@ $forecastBase = [DateTime]::ParseExact('2026-10-31', 'yyyy-MM-dd', [System.Globa
 # Weight totals are exactly 100. Completion is engineering judgement, not telemetry.
 $milestones = @(
     [pscustomobject]@{ Name='Public kod tabani / Maven'; Weight=12; Complete=100; Evidence='Public kaynak + Linux/Windows Maven CI' }
-    [pscustomobject]@{ Name='Windows launcher / smoke'; Weight=12; Complete=100; Evidence='Windows jpackage CI-only smoke 42861670087 (Tur 56 code HEAD f14c91f)' }
-    [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=73; Evidence='Tur 56: 160 kart EDT 16/16, klavye/fare secim-siralama sentetik PASS; fiziksel Windows Robot NOT_RUN' }
+    [pscustomobject]@{ Name='Windows launcher / smoke'; Weight=12; Complete=100; Evidence='Windows jpackage CLI launcher 42883983749 and separate app-image check 42883983821 (Tur 57 Public code HEAD e0b0959)' }
+    [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=73; Evidence='Tur 57: 160 kart EDT 16/16, klavye/fare secim-siralama sentetik PASS; fiziksel Windows Robot NOT_RUN' }
     [pscustomobject]@{ Name='UDF turleri ve surumleri'; Weight=26; Complete=12; Evidence='Sentetik ZIP PNG referans, A5/LEGAL; gercek UYAP schema dogrulanmadi' }
-    [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Tur 56: 169 JUnit (168 PASS, 1 SKIP) Win/Linux; guvensiz cache fallback, PNG/font/tablo, renk, geometri ve fail-closed PASS; native UYAP golden YOK' }
-    [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Tur 56: real Windows LOCALAPPDATA guvensiz => custom cache UNSET, PDF PASS; Windows Java secure handle UNAVAILABLE; atomic TOCTOU NO-GO; SHA SUCCESS, SOURCE_GATE BLOCKED' }
+    [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Tur 57: 169 JUnit (168 PASS, 1 SKIP) Win/Linux; 4 JVM default cache font update/metadata corrupt/invalid font PASS; PNG, renk, tablo ve fail-closed sentetik PASS; native UYAP golden YOK' }
+    [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Tur 57: 4 JVM default PDFBox cache Windows/Linux PASS, 3 JVM explicit cache Win PASS, checksums ON; Windows Java handle UNAVAILABLE, atomic TOCTOU NO-GO; upstream SHA SUCCESS, SOURCE_GATE BLOCKED' }
     [pscustomobject]@{ Name='Beta kabul / dagitim'; Weight=8; Complete=10; Evidence='Paket CI ici; indirme paketi yayinlanmadi' }
 )
 if ((($milestones | Measure-Object -Property Weight -Sum).Sum) -ne 100) {
