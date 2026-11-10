@@ -287,9 +287,19 @@ final class PdfBoxFontCacheDirectoryTest {
             return;
         // Exclusively JUnit's ephemeral test profile: NEVER alter the actual
         // USERPROFILE, LOCALAPPDATA, system fonts, or production cache.
-        Path home = home();
+        // A hosted runner's @TempDir alias can traverse a junction outside
+        // this test profile. Start at the verified canonical backing directory
+        // so the production real-path gate can be tested fairly.
+        Path home = Files.createDirectories(
+                sandbox.toRealPath().resolve("isolated-positive-profile"));
         Path appData = Files.createDirectories(home.resolve("AppData"));
-        Path local = local(home);
+        Path local = Files.createDirectories(appData.resolve("Local"));
+        if (!home.equals(home.toRealPath())
+                || !local.equals(local.toRealPath())) {
+            System.out.println("EMBASIC_FONT_CACHE_ACL_POSITIVE nativeWindows=NOT_RUN"
+                    + " reason=noncanonical_disposable_root");
+            return;
+        }
         var owner = Files.getOwner(home);
         for (Path directory : java.util.List.of(home, appData, local)) {
             // icacls /inheritance:r removes inherited ACEs only; /grant:r
