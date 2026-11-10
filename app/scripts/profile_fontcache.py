@@ -22,7 +22,7 @@ def execute(cache_dir: Path, label: str) -> tuple[int, int, int]:
         raise RuntimeError("Missing Maven")
     argv = [
         maven, "-B", "-ntp", "-f", "app/pom.xml",
-        "-Dtest=PdfFontFirstUseProfileTest",
+        "-Dtest=PdfFontFirstUseProfileTest,PdfFontSourceChangeFailClosedTest",
         f"-Dpdfbox.fontcache={cache_dir}",
         "-Dpdfbox.fontcache.skipchecksums=false",
         "-Dembasic.diagnostics.fontTiming=true", "test",
@@ -35,7 +35,9 @@ def execute(cache_dir: Path, label: str) -> tuple[int, int, int]:
     elapsed = round((time.monotonic() - start) * 1000)
     log = finished.stdout + "\n" + finished.stderr
     result = PATTERN.search(log)
-    if finished.returncode != 0 or result is None:
+    if (finished.returncode != 0 or result is None
+            or "EMBASIC_FONT_VALID_UPDATE embeddedFontChanged=PASS" not in log
+            or "EMBASIC_FONT_SOURCE_CHANGE originalPdf=UNCHANGED" not in log):
         raise RuntimeError(
             f"{label}: JUnit failed with exit={finished.returncode}\n"
             + "\n".join(log.splitlines()[-16:])
@@ -66,7 +68,8 @@ def main() -> None:
             f"cold_wall_ms={cold[0]} warm_wall_ms={warm[0]} "
             f"corrupt_wall_ms={corrupted[0]} cold_preview_ms={cold[1]} "
             f"warm_preview_ms={warm[1]} corrupt_preview_ms={corrupted[1]} "
-            "metadata_rebuild=PASS checksums=ON pixel_parity=PASS"
+            "metadata_rebuild=PASS checksums=ON pixel_parity=PASS "
+            "valid_font_update=PASS corrupted_font_fail_closed=PASS"
         )
 
 
