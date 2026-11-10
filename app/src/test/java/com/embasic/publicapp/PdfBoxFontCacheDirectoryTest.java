@@ -382,6 +382,50 @@ final class PdfBoxFontCacheDirectoryTest {
             // Restore the isolated test folder; never touch real system ACL.
             icacls(app, "/remove:g", "*S-1-5-11");
         }
+
+        // Deterministic post-selection path race: after one validated
+        // prepare(), replace only the disposable app folder with a real NTFS
+        // junction to an external disposable directory, then revalidate.
+        // A previously returned Path cannot be made an atomic capability by
+        // this test. Detection at a NEW prepare is all this proves.
+        Path backup = local.resolve("Embasic-UDF-to-PDF-safe-backup");
+        Path external = Files.createDirectories(
+                sandbox.toRealPath().resolve("post-selection-external"));
+        Files.move(app, backup);
+        boolean linked = false;
+        try {
+            Process create = new ProcessBuilder("cmd.exe", "/d", "/c",
+                    "mklink /J \"" + app + "\" \"" + external + "\"")
+                    .redirectErrorStream(true).start();
+            try (var output = create.getInputStream()) { output.readAllBytes(); }
+            assertTrue(create.waitFor(12, java.util.concurrent.TimeUnit.SECONDS));
+            if (create.exitValue() == 0) {
+                linked = true;
+                assertEquals(Optional.empty(), PdfBoxFontCacheDirectory.prepare(home, local),
+                        "A changed directory alias must be rejected at the next check");
+                assertFalse(Files.exists(external.resolve(".pdfbox.cache")),
+                        "Revalidation may not write any metadata to redirected folder");
+                System.out.println("EMBASIC_FONT_CACHE_POST_SELECT_JUNCTION"
+                        + " previouslyAccepted=true nextPrepare=REJECTED"
+                        + " outsideWrites=0 atomicGuarantee=NOT_PROVEN");
+            } else {
+                System.out.println("EMBASIC_FONT_CACHE_POST_SELECT_JUNCTION"
+                        + " nativeWindows=NOT_RUN reason=runner_permission");
+            }
+        } finally {
+            if (linked) {
+                Process remove = new ProcessBuilder("cmd.exe", "/d", "/c",
+                        "rmdir \"" + app + "\"")
+                        .redirectErrorStream(true).start();
+                try (var output = remove.getInputStream()) { output.readAllBytes(); }
+                assertTrue(remove.waitFor(12, java.util.concurrent.TimeUnit.SECONDS));
+                assertEquals(0, remove.exitValue());
+            }
+            Files.move(backup, app);
+        }
+        assertEquals(Optional.of(app), PdfBoxFontCacheDirectory.prepare(home, local),
+                "Restoring original app directory must regain trust");
+        assertTrue(Files.isDirectory(external));
     }
 
     @Test void explicitPdfBoxPropertyIsNotOverwrittenByAutomaticSelection()
