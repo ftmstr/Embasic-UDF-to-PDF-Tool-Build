@@ -63,6 +63,13 @@ jobs:
       - name: Profile 160 valid public synthetic UDF files (512 MiB heap)
         run: python app/scripts/profile_160.py app/target/embasic-public-desktop-0.1.0-SNAPSHOT-all.jar
 
+      # Three isolated JVM launches prove PDFBox reads a persistent metadata cache
+      # and rebuilds corrupted metadata without disabling font checksums.
+      # Run only on explicitly marked commits to conserve hosted runner minutes.
+      - name: Profile Windows PDFBox cold, warm and corrupt font metadata (CI only)
+        if: runner.os == 'Windows' && github.event_name == 'push' && contains(github.event.head_commit.message, '[fontcache-3x]')
+        run: python app/scripts/profile_fontcache.py
+
       # Robot is never part of the default/scheduled CI gate: hosted runners
       # may not expose a real interactive desktop. Opt-in runs fail when
       # there is no desktop rather than falsely reporting GUI acceptance.
