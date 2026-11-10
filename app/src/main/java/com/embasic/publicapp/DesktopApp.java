@@ -1563,6 +1563,10 @@ public final class DesktopApp extends JFrame {
     }
 
     public static void main(String[] args) {
+        // Before PDFBox's first raster initialization, select a persistent
+        // per-user font metadata cache when Windows profile ownership is safe.
+        // Rendering still validates font checksums on every new JVM.
+        PdfBoxFontCacheDirectory.configureForDesktop();
         if (args.length > 0) {
             try {
                 if (args.length < 3 || !args[0].equals("--merge"))
