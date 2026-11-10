@@ -70,6 +70,15 @@ jobs:
         if: runner.os == 'Windows' && github.event_name == 'push' && contains(github.event.head_commit.message, '[fontcache-3x]')
         run: python app/scripts/profile_fontcache.py
 
+      # This separate opt-in experiment is NOT the explicit pdfbox.fontcache
+      # cache used in the 3x probe above. It leaves the cache property unset,
+      # overrides user.home only inside each disposable Surefire child JVM,
+      # and verifies cold/update/corrupt/bad-font behavior across four JVMs.
+      # Run on both Windows and Linux, but only for deliberate tagged pushes.
+      - name: Probe true PDFBox default-cache fallback over four JVMs (CI only)
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, '[fontcache-default-4x]')
+        run: python app/scripts/profile_fontcache_default.py
+
       # Robot is never part of the default/scheduled CI gate: hosted runners
       # may not expose a real interactive desktop. Opt-in runs fail when
       # there is no desktop rather than falsely reporting GUI acceptance.
