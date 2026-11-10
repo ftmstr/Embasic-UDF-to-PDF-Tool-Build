@@ -144,6 +144,20 @@ public final class VirtualGridLayout {
         if(firstRow>lastRow) return new Visible(0,0);
         int start=Math.min(entries,firstRow*columns);
         int end=(int)Math.min(entries,(long)(lastRow+1)*columns);
+        // In a single-row grid, the horizontal viewport is also a contiguous
+        // logical range. Avoid instantiating every offscreen card when a very
+        // wide layout is viewed through a narrow scroll pane. Multi-row grids
+        // retain full rows because Visible represents one contiguous range.
+        if (rows() == 1) {
+            long right=(long) viewport.x + viewport.width;
+            long stride=(long) card.cardWidth()+ThumbnailSizing.GAP;
+            int first=(int)Math.max(0L, Math.min((long)entries,
+                    Math.floorDiv((long)viewport.x-PADDING, stride)-1L));
+            int last=(int)Math.max(0L, Math.min((long)entries,
+                    Math.floorDiv(right-PADDING, stride)+2L));
+            start=Math.max(start,first);
+            end=Math.min(end,Math.max(start,last));
+        }
         return new Visible(start,Math.max(start,end));
     }
 }
