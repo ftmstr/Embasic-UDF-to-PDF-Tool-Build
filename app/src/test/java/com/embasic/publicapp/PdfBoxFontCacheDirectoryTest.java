@@ -290,15 +290,30 @@ final class PdfBoxFontCacheDirectoryTest {
         Path home = home();
         Path appData = Files.createDirectories(home.resolve("AppData"));
         Path local = local(home);
-        String owner = Files.getOwner(home).getName();
+        var owner = Files.getOwner(home);
         for (Path directory : java.util.List.of(home, appData, local)) {
-            int exit = icacls(directory, "/inheritance:r", "/grant:r",
-                    owner + ":(OI)(CI)F");
-            if (exit != 0) {
+            // icacls /inheritance:r removes inherited ACEs only; /grant:r
+            // replaces the named user's ACE only. Other explicit writers
+            // can remain in a disposable temp folder. First make the ACL
+            // independent of its parent, then replace the *entire* DACL.
+            // Never modify actual Windows LOCALAPPDATA or USERPROFILE.
+            if (icacls(directory, "/inheritance:d") != 0) {
                 System.out.println("EMBASIC_FONT_CACHE_ACL_POSITIVE nativeWindows=NOT_RUN"
                         + " reason=disposable_acl_privilege");
                 return;
             }
+            var view = Files.getFileAttributeView(directory,
+                    java.nio.file.attribute.AclFileAttributeView.class);
+            assertNotNull(view);
+            var onlyOwner = java.nio.file.attribute.AclEntry.newBuilder()
+                    .setType(java.nio.file.attribute.AclEntryType.ALLOW)
+                    .setPrincipal(owner)
+                    .setPermissions(java.util.EnumSet.allOf(
+                            java.nio.file.attribute.AclEntryPermission.class))
+                    .setFlags(java.nio.file.attribute.AclEntryFlag.FILE_INHERIT,
+                            java.nio.file.attribute.AclEntryFlag.DIRECTORY_INHERIT)
+                    .build();
+            view.setAcl(java.util.List.of(onlyOwner));
         }
         Optional<Path> accepted = PdfBoxFontCacheDirectory.prepare(home, local);
         if (accepted.isEmpty()) {
