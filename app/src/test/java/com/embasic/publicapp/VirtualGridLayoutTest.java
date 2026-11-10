@@ -115,7 +115,7 @@ final class VirtualGridLayoutTest {
         assertTrue(farRight.x >= 0,
                 "Offscreen card coordinates must not wrap into the visible left edge");
         assertEquals(Integer.MAX_VALUE, farRight.x);
-        assertEquals(-1, grid.indexAt(20, farRight.y + farRight.height / 2),
+        assertEquals(-1, grid.indexAt(1, farRight.y + farRight.height / 2),
                 "A far-right card must never become a left-side drop target");
     }
 
