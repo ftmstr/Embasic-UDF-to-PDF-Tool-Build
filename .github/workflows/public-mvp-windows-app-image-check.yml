@@ -37,8 +37,9 @@ jobs:
           $ErrorActionPreference = "Stop"
           $jar = "app/target/embasic-public-desktop-0.1.0-SNAPSHOT-all.jar"
           if (-not (Test-Path -LiteralPath $jar -PathType Leaf)) { throw "Public desktop shaded JAR missing" }
-          & jar tf $jar | Select-String -SimpleMatch "com/embasic/publicapp/DesktopApp.class" -Quiet | Out-Null
-          if (-not $?) { throw "DesktopApp class missing" }
+          $entries = & jar tf $jar
+          if ($LASTEXITCODE -ne 0) { throw "Unable to inspect shaded JAR" }
+          if (-not ($entries -contains "com/embasic/publicapp/DesktopApp.class")) { throw "DesktopApp class missing" }
           & jar xf $jar META-INF/MANIFEST.MF
           if (-not (Select-String -LiteralPath "META-INF/MANIFEST.MF" -Pattern "^Main-Class: com.embasic.publicapp.DesktopApp\s*$" -Quiet)) { throw "Unexpected Main-Class" }
       - name: Build ephemeral app-image, inspect launcher (no ZIP or upload)
