@@ -25,11 +25,11 @@ $forecastBase = [DateTime]::ParseExact('2026-10-31', 'yyyy-MM-dd', [System.Globa
 # Weight totals are exactly 100. Completion is engineering judgement, not telemetry.
 $milestones = @(
     [pscustomobject]@{ Name='Public kod tabani / Maven'; Weight=12; Complete=100; Evidence='Public kaynak + Linux/Windows Maven CI' }
-    [pscustomobject]@{ Name='Windows launcher / smoke'; Weight=12; Complete=100; Evidence='Windows jpackage CI-only smoke 42858925718 (Tur 55 code HEAD 32f6bcd)' }
-    [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=73; Evidence='Tur 55: 160 kart EDT 16/16, klavye/fare secim-siralama sentetik PASS; fiziksel Windows Robot NOT_RUN' }
+    [pscustomobject]@{ Name='Windows launcher / smoke'; Weight=12; Complete=100; Evidence='Windows jpackage CI-only smoke 42861670087 (Tur 56 code HEAD f14c91f)' }
+    [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=73; Evidence='Tur 56: 160 kart EDT 16/16, klavye/fare secim-siralama sentetik PASS; fiziksel Windows Robot NOT_RUN' }
     [pscustomobject]@{ Name='UDF turleri ve surumleri'; Weight=26; Complete=12; Evidence='Sentetik ZIP PNG referans, A5/LEGAL; gercek UYAP schema dogrulanmadi' }
-    [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Tur 55: 165 JUnit (164 PASS, 1 SKIP) Win/Linux; gecerli/bozuk font, RGB PNG, tablo ve geometri regresyonlari PASS; native UYAP golden YOK' }
-    [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Tur 55: real runner LOCALAPPDATA salt-okunur owner mismatch, ACL not trusted; disposable metadata ACE/late junction REJECTED; SHA SUCCESS, SOURCE_GATE BLOCKED' }
+    [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Tur 56: 169 JUnit (168 PASS, 1 SKIP) Win/Linux; guvensiz cache fallback, PNG/font/tablo, renk, geometri ve fail-closed PASS; native UYAP golden YOK' }
+    [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Tur 56: real Windows LOCALAPPDATA guvensiz => custom cache UNSET, PDF PASS; Windows Java secure handle UNAVAILABLE; atomic TOCTOU NO-GO; SHA SUCCESS, SOURCE_GATE BLOCKED' }
     [pscustomobject]@{ Name='Beta kabul / dagitim'; Weight=8; Complete=10; Evidence='Paket CI ici; indirme paketi yayinlanmadi' }
 )
 if ((($milestones | Measure-Object -Property Weight -Sum).Sum) -ne 100) {
