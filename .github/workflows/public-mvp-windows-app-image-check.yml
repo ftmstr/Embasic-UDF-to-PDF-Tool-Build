@@ -1,0 +1,53 @@
+name: Public MVP Windows app-image acceptance (no publication)
+
+on:
+  push:
+    branches: ["ci/secure-windows-bootstrap-20261018"]
+    paths:
+      - "app/**"
+      - ".github/workflows/public-mvp-windows-app-image-check.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-app-image:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+          cache-dependency-path: app/pom.xml
+      - name: Build and test public-only desktop module
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          & mvn -B -ntp -f app/pom.xml clean verify
+          if ($LASTEXITCODE -ne 0) { throw "Public desktop Maven verify failed" }
+      - name: Verify actual shaded desktop JAR and manifest
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $jar = "app/target/embasic-public-desktop-0.1.0-SNAPSHOT-all.jar"
+          if (-not (Test-Path -LiteralPath $jar -PathType Leaf)) { throw "Public desktop shaded JAR missing" }
+          & jar tf $jar | Select-String -SimpleMatch "com/embasic/publicapp/DesktopApp.class" -Quiet | Out-Null
+          if (-not $?) { throw "DesktopApp class missing" }
+          & jar xf $jar META-INF/MANIFEST.MF
+          if (-not (Select-String -LiteralPath "META-INF/MANIFEST.MF" -Pattern "^Main-Class: com.embasic.publicapp.DesktopApp\s*$" -Quiet)) { throw "Unexpected Main-Class" }
+      - name: Build ephemeral app-image, inspect launcher (no ZIP or upload)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $jar = "embasic-public-desktop-0.1.0-SNAPSHOT-all.jar"
+          & jpackage --type app-image --name EmbasicPublicMvp --input app/target --main-jar $jar --main-class com.embasic.publicapp.DesktopApp --app-version 0.1.0 --dest "$env:RUNNER_TEMP/embasic-app-image"
+          if ($LASTEXITCODE -ne 0) { throw "Public MVP jpackage app-image failed" }
+          $exe = Join-Path $env:RUNNER_TEMP "embasic-app-image/EmbasicPublicMvp/EmbasicPublicMvp.exe"
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "Windows launcher missing" }
+          Write-Host "Ephemeral app-image launcher exists. GUI launch NOT_RUN; no publication approval implied."
