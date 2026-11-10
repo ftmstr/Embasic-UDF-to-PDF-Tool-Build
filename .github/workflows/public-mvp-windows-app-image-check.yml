@@ -78,3 +78,51 @@ jobs:
               }
             }
           }
+      - name: Verify packaged desktop has a visible top-level window
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $exe = Join-Path $env:RUNNER_TEMP "embasic-app-image/EmbasicPublicMvp/EmbasicPublicMvp.exe"
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "Windows launcher missing" }
+          Add-Type -TypeDefinition @'
+          using System;
+          using System.Runtime.InteropServices;
+          public static class EmbasicWindowProbe {
+            public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+            [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
+            [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
+            [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+            public static bool HasVisibleWindow(uint pid) {
+              bool found = false;
+              EnumWindows((hWnd, ignored) => {
+                uint owner;
+                GetWindowThreadProcessId(hWnd, out owner);
+                if (owner == pid && IsWindowVisible(hWnd)) { found = true; return false; }
+                return true;
+              }, IntPtr.Zero);
+              return found;
+            }
+          }
+          '@
+          $process = $null
+          try {
+            $process = Start-Process -FilePath $exe -PassThru -ErrorAction Stop
+            $deadline = (Get-Date).AddSeconds(25)
+            $visible = $false
+            while ((Get-Date) -lt $deadline) {
+              $process.Refresh()
+              if ($process.HasExited) { throw "Packaged GUI process exited before a visible window appeared" }
+              if ([EmbasicWindowProbe]::HasVisibleWindow([uint32]$process.Id)) { $visible = $true; break }
+              Start-Sleep -Milliseconds 500
+            }
+            if (-not $visible) { throw "No visible top-level window for packaged launcher within 25 seconds; GUI acceptance FAIL" }
+            Write-Host "Visible top-level window verified for packaged launcher PID $($process.Id). No user interaction or UYAP compatibility implied."
+          } finally {
+            if ($null -ne $process) {
+              $process.Refresh()
+              if (-not $process.HasExited) {
+                Stop-Process -Id $process.Id -Force -ErrorAction Stop
+                $process.WaitForExit(10000) | Out-Null
+              }
+            }
+          }
