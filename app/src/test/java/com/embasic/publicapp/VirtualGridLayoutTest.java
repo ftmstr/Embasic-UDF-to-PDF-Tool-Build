@@ -83,6 +83,18 @@ final class VirtualGridLayoutTest {
         assertEquals(0, grid.anchoredScrollY(160, 0, Integer.MAX_VALUE),
                 "A viewport taller than the grid must never scroll past its content");
     }
+    @Test void extremeViewportWidthDoesNotOverflowRowCountOrLoseCards() {
+        // A maximized/invalid layout width can yield millions of logical columns.
+        // The former int addition entries + columns - 1 wrapped negative.
+        var grid = new VirtualGridLayout(1_000_000, Integer.MAX_VALUE, 132);
+        assertEquals(1, grid.rows());
+        assertEquals(1_000_000, grid.count());
+        assertTrue(grid.preferredSize().height > 0);
+        assertEquals(0, grid.topRowAnchor(0));
+        assertEquals(0, grid.visible(new Rectangle(0, 0, 1200, 650)).startInclusive());
+        assertEquals(1_000_000, grid.visible(new Rectangle(0, 0, 1200, 650)).endExclusive());
+    }
+
     @Test void emptyAndInvalidViewportsAreSafe() {
         var grid=new VirtualGridLayout(0,0,188);
         assertEquals(0,grid.visible(new Rectangle(0,0,0,0)).count());
