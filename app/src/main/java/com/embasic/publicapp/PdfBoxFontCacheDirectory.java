@@ -33,6 +33,16 @@ final class PdfBoxFontCacheDirectory {
                     || !Files.isWritable(local))
                 return Optional.empty();
 
+            // Reject aliases in every intermediate profile component: a lexical
+            // startsWith check does not detect AppData junctions/symlinks.
+            Path cursor = privateHome;
+            for (Path component : privateHome.relativize(local)) {
+                cursor = cursor.resolve(component);
+                if (Files.isSymbolicLink(cursor)
+                        || !Files.isDirectory(cursor, LinkOption.NOFOLLOW_LINKS))
+                    return Optional.empty();
+            }
+
             // Cache metadata must remain in a folder owned by the same user
             // as the Windows home profile, never in a shared redirected path.
             var owner = Files.getOwner(privateHome, LinkOption.NOFOLLOW_LINKS);
