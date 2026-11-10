@@ -25,11 +25,11 @@ $forecastBase = [DateTime]::ParseExact('2026-10-31', 'yyyy-MM-dd', [System.Globa
 # Weight totals are exactly 100. Completion is engineering judgement, not telemetry.
 $milestones = @(
     [pscustomobject]@{ Name='Public kod tabani / Maven'; Weight=12; Complete=100; Evidence='Public kaynak + Linux/Windows Maven CI' }
-    [pscustomobject]@{ Name='Windows launcher / smoke'; Weight=12; Complete=100; Evidence='Windows jpackage launcher smoke 42799155000 (Tur 53 Public HEAD 796280c)' }
-    [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=73; Evidence='Tur 53: 160 kart EDT 16/16, sirali PDF sentetik PASS; fiziksel Windows Robot NOT_RUN' }
+    [pscustomobject]@{ Name='Windows launcher / smoke'; Weight=12; Complete=100; Evidence='Windows jpackage launcher smoke 42834392134 (Tur 54 Public code HEAD a7b374b)' }
+    [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=73; Evidence='Tur 54: 160 kart EDT kuyruk 16/16, secim ve sirali PDF sentetik PASS; fiziksel Windows Robot NOT_RUN' }
     [pscustomobject]@{ Name='UDF turleri ve surumleri'; Weight=26; Complete=12; Evidence='Sentetik ZIP PNG referans, A5/LEGAL; gercek UYAP schema dogrulanmadi' }
-    [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Tur 53: 162 JUnit (161 PASS, 1 SKIP) Win/Linux; bozuk font kaynak fail-closed PDF bytes PASS, sentetik PNG/tablo/sira PASS; native UYAP golden YOK' }
-    [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Tur 53: Windows ACL inherited DENIED, gercek NTFS junction PASS; SHA audit SUCCESS; SOURCE_GATE BLOCKED, release onayi yok' }
+    [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Tur 54: 164 JUnit (163 PASS, 1 SKIP) Win/Linux; gecerli font swap embedded bytes PASS, bozuk font mevcut PDF unchanged; PNG/tablo/sira PASS, native UYAP golden YOK' }
+    [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Tur 54: Windows owner-only ACL ACCEPTED, later other-writer REJECTED, real NTFS junction PASS; SHA audit SUCCESS, SOURCE_GATE BLOCKED, release onayi yok' }
     [pscustomobject]@{ Name='Beta kabul / dagitim'; Weight=8; Complete=10; Evidence='Paket CI ici; indirme paketi yayinlanmadi' }
 )
 if ((($milestones | Measure-Object -Property Weight -Sum).Sum) -ne 100) {
