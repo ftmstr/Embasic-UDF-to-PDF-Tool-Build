@@ -51,4 +51,30 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Public MVP jpackage app-image failed" }
           $exe = Join-Path $env:RUNNER_TEMP "embasic-app-image/EmbasicPublicMvp/EmbasicPublicMvp.exe"
           if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "Windows launcher missing" }
-          Write-Host "Ephemeral app-image launcher exists. GUI launch NOT_RUN; no publication approval implied."
+          Write-Host "Ephemeral app-image launcher exists. No publication approval implied."
+      - name: Smoke launch Windows packaged executable (no GUI interaction)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $exe = Join-Path $env:RUNNER_TEMP "embasic-app-image/EmbasicPublicMvp/EmbasicPublicMvp.exe"
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "Windows launcher missing" }
+          $process = $null
+          try {
+            $process = Start-Process -FilePath $exe -PassThru -ErrorAction Stop
+            # A packaged Swing app must remain alive long enough to create its window.
+            # This is a process smoke test, NOT a Robot/visual GUI acceptance.
+            Start-Sleep -Seconds 5
+            $process.Refresh()
+            if ($process.HasExited) {
+              throw "Packaged Windows launcher exited prematurely (exit $($process.ExitCode))"
+            }
+            Write-Host "Packaged launcher remained running for 5 seconds; physical GUI acceptance NOT_RUN."
+          } finally {
+            if ($null -ne $process) {
+              $process.Refresh()
+              if (-not $process.HasExited) {
+                Stop-Process -Id $process.Id -Force -ErrorAction Stop
+                $process.WaitForExit(10000) | Out-Null
+              }
+            }
+          }
