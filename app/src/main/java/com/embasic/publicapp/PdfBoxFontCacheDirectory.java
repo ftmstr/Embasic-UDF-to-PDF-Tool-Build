@@ -148,13 +148,27 @@ final class PdfBoxFontCacheDirectory {
                         .startsWith("windows"))
             return;
         try {
-            Optional<Path> cache = prepare(
+            configureForDesktop(
                     Path.of(System.getProperty("user.home", "")),
                     Path.of(System.getenv().getOrDefault("LOCALAPPDATA", "")));
-            cache.ifPresent(path -> System.setProperty(PROPERTY, path.toString()));
         } catch (SecurityException | IllegalArgumentException ex) {
             // Unusable or untrusted profile configuration: leave the default
             // PDFBox selection intact instead of using a shared temp folder.
         }
+    }
+
+    /**
+     * Explicit-path seam for isolated fail-closed tests. Production continues
+     * to read the real environment above. A rejected profile MUST NOT set a
+     * PDFBox path or disable its checksums; PDFBox retains its own defaults.
+     * Never call this helper with a user's real profile in fixture tests.
+     */
+    static void configureForDesktop(Path home, Path localAppData) {
+        if (System.getProperty(PROPERTY) != null
+                || !System.getProperty("os.name", "").toLowerCase(Locale.ROOT)
+                        .startsWith("windows"))
+            return;
+        prepare(home, localAppData).ifPresent(
+                path -> System.setProperty(PROPERTY, path.toString()));
     }
 }
