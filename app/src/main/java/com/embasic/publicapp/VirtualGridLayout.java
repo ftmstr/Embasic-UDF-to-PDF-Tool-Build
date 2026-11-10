@@ -35,7 +35,8 @@ public final class VirtualGridLayout {
         int col=index%columns, row=index/columns;
         long x=PADDING+(long)col*(card.cardWidth()+ThumbnailSizing.GAP);
         long y=PADDING+(long)row*rowStride;
-        return new Rectangle((int)x,(int)Math.min(Integer.MAX_VALUE,y),
+        return new Rectangle((int)Math.min(Integer.MAX_VALUE,x),
+                (int)Math.min(Integer.MAX_VALUE,y),
                 card.cardWidth(),card.cardHeight());
     }
     /**
