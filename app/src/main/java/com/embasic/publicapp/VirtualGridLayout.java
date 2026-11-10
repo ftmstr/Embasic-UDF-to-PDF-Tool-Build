@@ -25,7 +25,7 @@ public final class VirtualGridLayout {
     }
     public int columns() { return columns; }
     public int count() { return entries; }
-    public int rows() { return (entries + columns - 1) / columns; }
+    public int rows() { return (int) (((long) entries + columns - 1L) / columns); }
     public Dimension preferredSize() {
         long height = 2L * PADDING + (long) rows() * rowStride;
         return new Dimension(width,(int)Math.min(Integer.MAX_VALUE,Math.max(1,height)));
