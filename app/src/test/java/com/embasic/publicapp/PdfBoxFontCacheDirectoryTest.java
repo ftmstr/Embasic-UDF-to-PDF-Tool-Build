@@ -345,6 +345,30 @@ final class PdfBoxFontCacheDirectoryTest {
                 "Only the current owner with full control must be accepted");
         Path app = accepted.orElseThrow();
         assertTrue(PdfBoxFontCacheDirectory.trustedAcl(app, Files.getOwner(home)));
+
+        // A cache file is a separate attack surface: its DACL may change
+        // between JVM launches, independently of its parent directory.
+        // Use only a disposable synthetic metadata file; never a real cache.
+        Path metadata = Files.writeString(app.resolve(".pdfbox.cache"),
+                "SYNTHETIC-CACHE-BYTES", StandardCharsets.UTF_8);
+        byte[] originalBytes = Files.readAllBytes(metadata);
+        assertEquals(Optional.of(app), PdfBoxFontCacheDirectory.prepare(home, local));
+        try {
+            assertEquals(0, icacls(metadata, "/grant:r", "*S-1-5-11:M"));
+            assertEquals(Optional.empty(), PdfBoxFontCacheDirectory.prepare(home, local),
+                    "A cache file that gains untrusted write rights must be rejected");
+            assertArrayEquals(originalBytes, Files.readAllBytes(metadata),
+                    "The trust checker may not erase or repair cache bytes");
+        } finally {
+            assertEquals(0, icacls(metadata, "/remove:g", "*S-1-5-11"));
+        }
+        assertEquals(Optional.of(app), PdfBoxFontCacheDirectory.prepare(home, local),
+                "Restoring the disposable metadata ACL must restore acceptance");
+        assertArrayEquals(originalBytes, Files.readAllBytes(metadata));
+        System.out.println("EMBASIC_FONT_CACHE_METADATA_ACL"
+                + " original=ACCEPTED otherWriter=REJECTED recovered=PASS"
+                + " bytesUnchanged=PASS");
+        Files.delete(metadata);
         try {
             int injected = icacls(app, "/grant:r", "*S-1-5-11:(OI)(CI)M");
             assertEquals(0, injected,
