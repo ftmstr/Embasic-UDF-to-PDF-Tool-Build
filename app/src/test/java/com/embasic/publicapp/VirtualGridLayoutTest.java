@@ -92,7 +92,20 @@ final class VirtualGridLayoutTest {
         assertTrue(grid.preferredSize().height > 0);
         assertEquals(0, grid.topRowAnchor(0));
         assertEquals(0, grid.visible(new Rectangle(0, 0, 1200, 650)).startInclusive());
-        assertEquals(1_000_000, grid.visible(new Rectangle(0, 0, 1200, 650)).endExclusive());
+        var narrow = grid.visible(new Rectangle(0, 0, 1200, 650));
+        assertTrue(narrow.endExclusive() < 20,
+                "A narrow viewport must not instantiate one million offscreen cards");
+        for (int i = 0; i < 1_000_000; i += 997) {
+            Rectangle card = grid.bounds(i);
+            if (card.intersects(0, 0, 1200, 650))
+                assertTrue(i >= narrow.startInclusive() && i < narrow.endExclusive());
+        }
+        var shifted = grid.visible(new Rectangle(100_000, 0, 1200, 650));
+        assertTrue(shifted.count() < 20);
+        int visibleIndex = grid.indexAt(100_020, 30);
+        if (visibleIndex >= 0)
+            assertTrue(visibleIndex >= shifted.startInclusive()
+                    && visibleIndex < shifted.endExclusive());
     }
 
     @Test void emptyAndInvalidViewportsAreSafe() {
