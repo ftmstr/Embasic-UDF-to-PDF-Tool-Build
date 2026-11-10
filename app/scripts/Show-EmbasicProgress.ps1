@@ -25,11 +25,11 @@ $forecastBase = [DateTime]::ParseExact('2026-10-31', 'yyyy-MM-dd', [System.Globa
 # Weight totals are exactly 100. Completion is engineering judgement, not telemetry.
 $milestones = @(
     [pscustomobject]@{ Name='Public kod tabani / Maven'; Weight=12; Complete=100; Evidence='Public kaynak + Linux/Windows Maven CI' }
-    [pscustomobject]@{ Name='Windows launcher / smoke'; Weight=12; Complete=100; Evidence='jpackage EXE smoke 42795586434 (Tur 52 Public HEAD 5f722d3)' }
-    [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=73; Evidence='Tur 52: 160 kart EDT 16/16, GUI siralama PASS; fiziksel Windows Robot NOT_RUN' }
+    [pscustomobject]@{ Name='Windows launcher / smoke'; Weight=12; Complete=100; Evidence='Windows jpackage launcher smoke 42799155000 (Tur 53 Public HEAD 796280c)' }
+    [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=73; Evidence='Tur 53: 160 kart EDT 16/16, sirali PDF sentetik PASS; fiziksel Windows Robot NOT_RUN' }
     [pscustomobject]@{ Name='UDF turleri ve surumleri'; Weight=26; Complete=12; Evidence='Sentetik ZIP PNG referans, A5/LEGAL; gercek UYAP schema dogrulanmadi' }
-    [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Tur 52: 157 JUnit (156 PASS, 1 SKIP) Win/Linux; cold/warm/corrupt fontcache 3 JVM PASS, PNG+font+tablo/sira fail-closed; native UYAP golden YOK' }
-    [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Tur 52 profile owner/symlink gate; SHA audit SUCCESS; SOURCE_GATE BLOCKED, binary dagitim onayi yok' }
+    [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Tur 53: 162 JUnit (161 PASS, 1 SKIP) Win/Linux; bozuk font kaynak fail-closed PDF bytes PASS, sentetik PNG/tablo/sira PASS; native UYAP golden YOK' }
+    [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Tur 53: Windows ACL inherited DENIED, gercek NTFS junction PASS; SHA audit SUCCESS; SOURCE_GATE BLOCKED, release onayi yok' }
     [pscustomobject]@{ Name='Beta kabul / dagitim'; Weight=8; Complete=10; Evidence='Paket CI ici; indirme paketi yayinlanmadi' }
 )
 if ((($milestones | Measure-Object -Property Weight -Sum).Sum) -ne 100) {
