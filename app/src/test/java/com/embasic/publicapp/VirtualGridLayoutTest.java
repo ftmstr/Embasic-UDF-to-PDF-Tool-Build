@@ -114,7 +114,13 @@ final class VirtualGridLayoutTest {
         Rectangle farRight = grid.bounds(999_999);
         assertTrue(farRight.x >= 0,
                 "Offscreen card coordinates must not wrap into the visible left edge");
-        assertEquals(Integer.MAX_VALUE, farRight.x);
+        // One million cards at this thumbnail width fit inside signed int.
+        // The expected coordinate is the actual logical column stride, not
+        // Integer.MAX_VALUE; saturation is required only past that limit.
+        long stride = (long) ThumbnailSizing.at(132).cardWidth() + ThumbnailSizing.GAP;
+        long coordinate = 12L + 999_999L * stride;
+        assertTrue(coordinate < Integer.MAX_VALUE);
+        assertEquals((int) coordinate, farRight.x);
         assertEquals(-1, grid.indexAt(1, farRight.y + farRight.height / 2),
                 "A far-right card must never become a left-side drop target");
     }
