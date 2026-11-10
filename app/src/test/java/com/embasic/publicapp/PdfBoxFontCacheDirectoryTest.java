@@ -166,7 +166,7 @@ final class PdfBoxFontCacheDirectoryTest {
         assertFalse(PdfBoxFontCacheDirectory.trustedWriter(owner, null));
         assertFalse(PdfBoxFontCacheDirectory.grantsMutation(
                 java.util.Set.of(java.nio.file.attribute.AclEntryPermission.READ_DATA,
-                        java.nio.file.attribute.AclEntryPermission.READ_CONTROL)));
+                        java.nio.file.attribute.AclEntryPermission.READ_ACL)));
         for (var mutation : java.util.List.of(
                 java.nio.file.attribute.AclEntryPermission.WRITE_DATA,
                 java.nio.file.attribute.AclEntryPermission.APPEND_DATA,
