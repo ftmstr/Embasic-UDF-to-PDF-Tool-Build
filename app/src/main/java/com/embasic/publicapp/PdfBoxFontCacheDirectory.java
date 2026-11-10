@@ -33,19 +33,28 @@ final class PdfBoxFontCacheDirectory {
                     || !Files.isWritable(local))
                 return Optional.empty();
 
+            // Cache metadata must remain in a folder owned by the same user
+            // as the Windows home profile, never in a shared redirected path.
+            var owner = Files.getOwner(privateHome, LinkOption.NOFOLLOW_LINKS);
+            if (!owner.equals(Files.getOwner(local, LinkOption.NOFOLLOW_LINKS)))
+                return Optional.empty();
+
             Path app = local.resolve(CHILD);
             if (Files.isSymbolicLink(app)) return Optional.empty();
             if (!Files.exists(app, LinkOption.NOFOLLOW_LINKS))
                 Files.createDirectory(app);
             if (!Files.isDirectory(app, LinkOption.NOFOLLOW_LINKS)
-                    || !Files.isWritable(app)) return Optional.empty();
+                    || !Files.isWritable(app)
+                    || !owner.equals(Files.getOwner(app, LinkOption.NOFOLLOW_LINKS)))
+                return Optional.empty();
 
             // Never select a malicious alias or directory in the cache-file
             // position. A regular but corrupt cache is left for PDFBox's
             // built-in checksum and format validation to reject/rebuild.
             Path cache = app.resolve(".pdfbox.cache");
             if (Files.exists(cache, LinkOption.NOFOLLOW_LINKS)
-                    && !Files.isRegularFile(cache, LinkOption.NOFOLLOW_LINKS))
+                    && (!Files.isRegularFile(cache, LinkOption.NOFOLLOW_LINKS)
+                        || !owner.equals(Files.getOwner(cache, LinkOption.NOFOLLOW_LINKS))))
                 return Optional.empty();
             return Optional.of(app);
         } catch (IOException | SecurityException | IllegalArgumentException ex) {
