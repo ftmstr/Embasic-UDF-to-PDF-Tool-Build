@@ -222,6 +222,47 @@ final class PdfBoxFontCacheDirectoryTest {
                 + " trusted=" + trusted + " metadataAltered=false");
     }
 
+    @Test void actualWindowsNtfsJunctionDoesNotRedirectFontCacheOutsideProfile()
+            throws Exception {
+        if (!System.getProperty("os.name", "").toLowerCase(
+                java.util.Locale.ROOT).startsWith("windows"))
+            return;
+        Path home = home();
+        Path target = Files.createDirectories(
+                sandbox.resolve("junction-target").resolve("Local"));
+        Path junction = home.resolve("AppData");
+        // cmd.exe /d suppresses user AutoRun; all paths come from JUnit's
+        // disposable temp root, never any user's existing junction.
+        Process create = new ProcessBuilder("cmd.exe", "/d", "/c",
+                "mklink /J \"" + junction + "\" \"" + target.getParent() + "\"")
+                .redirectErrorStream(true).start();
+        assertTrue(create.waitFor(12, java.util.concurrent.TimeUnit.SECONDS),
+                "Junction setup should not hang a CI worker");
+        if (create.exitValue() != 0) {
+            System.out.println("EMBASIC_FONT_CACHE_JUNCTION nativeWindows=NOT_RUN"
+                    + " reason=runner_permission");
+            return;
+        }
+        try {
+            assertTrue(Files.isDirectory(junction));
+            assertEquals(Optional.empty(), PdfBoxFontCacheDirectory.prepare(
+                    home, junction.resolve("Local")),
+                    "A Windows junction must not redirect cache outside the private home");
+            assertFalse(Files.exists(target.resolve("Embasic-UDF-to-PDF")),
+                    "No cache bytes may be written into the junction target");
+            System.out.println("EMBASIC_FONT_CACHE_JUNCTION nativeWindows=PASS"
+                    + " externalCacheCreated=false");
+        } finally {
+            Process remove = new ProcessBuilder("cmd.exe", "/d", "/c",
+                    "rmdir \"" + junction + "\"")
+                    .redirectErrorStream(true).start();
+            assertTrue(remove.waitFor(12, java.util.concurrent.TimeUnit.SECONDS));
+            assertEquals(0, remove.exitValue(), "Remove only the disposable junction");
+            assertTrue(Files.isDirectory(target),
+                    "Junction cleanup must preserve its backing directory");
+        }
+    }
+
     @Test void explicitPdfBoxPropertyIsNotOverwrittenByAutomaticSelection()
             throws Exception {
         String original = System.getProperty("pdfbox.fontcache");
