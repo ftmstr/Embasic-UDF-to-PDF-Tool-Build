@@ -265,6 +265,21 @@ final class GuiRobotSmokeTest {
                                 && field(app,"focused")==items.get(items.size()-1)
                                 && count.getText().equals("Seçili: 39 / 40");
                     }),Boolean.TRUE::equals);
+            // Shift+End selected 39 of 40 cards above. Delete them through
+            // the real keyboard route to expose the viewport's empty area;
+            // testing only a full grid could hide the dark-theme white strip.
+            Object survivor=items.get(0);
+            robot.keyPress(KeyEvent.VK_DELETE);
+            robot.keyRelease(KeyEvent.VK_DELETE);
+            GuiRobotWait.until(Duration.ofSeconds(5),Duration.ofMillis(60),
+                    ()->GuiRobotWait.onEdt(()->{
+                        @SuppressWarnings("unchecked")
+                        java.util.Set<Object> remaining=(java.util.Set<Object>)field(app,"selected");
+                        return items.size()==1 && items.get(0)==survivor
+                                && remaining.size()==1 && remaining.contains(survivor)
+                                && count.getText().equals("Seçili: 1 / 1");
+                    }),Boolean.TRUE::equals);
+
             // WGUI-06: use real Windows pointer events to toggle the visible
             // theme control. A palette helper test alone cannot prove that the
             // actual button updates the scroll pane, viewport and short-grid
@@ -302,7 +317,7 @@ final class GuiRobotSmokeTest {
             System.out.println("WINDOWS-GUI-ROBOT-PASS: real DesktopApp mouse drag,"
                     +" edge scroll, target hint, drop order, Ctrl+A, Ctrl+End/Home,"
                     +" Ctrl+minus/zero thumbnail zoom, Ctrl+Space toggle,"
-                    +" plain-arrow collapse, Shift+End offscreen range,"
+                    +" plain-arrow collapse, Shift+End offscreen range, Delete to one card,"
                     +" and physical light/dark theme toggle with viewport palette");
         } finally {
             if (pressed) robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);
