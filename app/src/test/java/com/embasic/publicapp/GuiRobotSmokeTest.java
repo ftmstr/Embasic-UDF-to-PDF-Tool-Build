@@ -265,10 +265,45 @@ final class GuiRobotSmokeTest {
                                 && field(app,"focused")==items.get(items.size()-1)
                                 && count.getText().equals("Seçili: 39 / 40");
                     }),Boolean.TRUE::equals);
+            // WGUI-06: use real Windows pointer events to toggle the visible
+            // theme control. A palette helper test alone cannot prove that the
+            // actual button updates the scroll pane, viewport and short-grid
+            // background together. Keep the test opt-in on an unlocked desktop.
+            javax.swing.JButton themeButton=(javax.swing.JButton)field(app,"themeButton");
+            java.awt.Color originalBackground=GuiRobotWait.onEdt(
+                    ()->scroll.getViewport().getBackground());
+            Point themeScreen=GuiRobotWait.onEdt(()->{
+                Point location=themeButton.getLocationOnScreen();
+                return new Point(location.x+themeButton.getWidth()/2,
+                        location.y+themeButton.getHeight()/2);
+            });
+            robot.mouseMove(themeScreen.x,themeScreen.y);
+            robot.mousePress(InputEvent.BUTTON1_DOWN_MASK);
+            robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);
+            GuiRobotWait.until(Duration.ofSeconds(5),Duration.ofMillis(60),
+                    ()->GuiRobotWait.onEdt(()->{
+                        java.awt.Color next=scroll.getViewport().getBackground();
+                        return !next.equals(originalBackground)
+                                && next.equals(scroll.getBackground())
+                                && next.equals(grid.getBackground())
+                                && themeButton.getText().equals("Karanlık tema");
+                    }),Boolean.TRUE::equals);
+            robot.mousePress(InputEvent.BUTTON1_DOWN_MASK);
+            robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);
+            GuiRobotWait.until(Duration.ofSeconds(5),Duration.ofMillis(60),
+                    ()->GuiRobotWait.onEdt(()->{
+                        java.awt.Color restored=scroll.getViewport().getBackground();
+                        return restored.equals(originalBackground)
+                                && restored.equals(scroll.getBackground())
+                                && restored.equals(grid.getBackground())
+                                && themeButton.getText().equals("Aydınlık tema");
+                    }),Boolean.TRUE::equals);
+
             System.out.println("WINDOWS-GUI-ROBOT-PASS: real DesktopApp mouse drag,"
                     +" edge scroll, target hint, drop order, Ctrl+A, Ctrl+End/Home,"
                     +" Ctrl+minus/zero thumbnail zoom, Ctrl+Space toggle,"
-                    +" plain-arrow collapse and Shift+End offscreen range");
+                    +" plain-arrow collapse, Shift+End offscreen range,"
+                    +" and physical light/dark theme toggle with viewport palette");
         } finally {
             if (pressed) robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);
             DesktopApp app=appRef.get();
