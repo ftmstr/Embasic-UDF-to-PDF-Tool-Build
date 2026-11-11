@@ -90,7 +90,35 @@ final class GuiRobotSmokeTest {
         return false;
     }
 
-    @Test @Timeout(65)
+    /** The chooser belongs to the tested window, not another desktop process. */
+    private static javax.swing.JFileChooser activeMvpChooser(DesktopApp app) {
+        for (java.awt.Window window : java.awt.Window.getWindows()) {
+            if (!(window instanceof javax.swing.JDialog dialog)
+                    || !dialog.isShowing() || dialog.getOwner() != app) continue;
+            java.util.ArrayDeque<java.awt.Component> pending = new java.util.ArrayDeque<>();
+            pending.add(dialog);
+            while (!pending.isEmpty()) {
+                java.awt.Component next = pending.removeFirst();
+                if (next instanceof javax.swing.JFileChooser chooser) return chooser;
+                if (next instanceof java.awt.Container container)
+                    for (java.awt.Component child : container.getComponents()) pending.addLast(child);
+            }
+        }
+        return null;
+    }
+
+    private static javax.swing.JButton approveButton(java.awt.Component root, String text) {
+        if (root instanceof javax.swing.JButton button && text.equals(button.getText())
+                && button.isShowing() && button.isEnabled()) return button;
+        if (root instanceof java.awt.Container container)
+            for (java.awt.Component child : container.getComponents()) {
+                javax.swing.JButton found = approveButton(child, text);
+                if (found != null) return found;
+            }
+        return null;
+    }
+
+    @Test @Timeout(85)
     void realWindowDragAutoScrollAndAccessibleTarget() throws Exception {
         Assumptions.assumeTrue(Boolean.getBoolean("embasic.gui.robot"),
                 "Real Windows Robot test is manual opt-in; do not count as GUI acceptance");
@@ -395,11 +423,53 @@ final class GuiRobotSmokeTest {
             assertEquals(1,GuiRobotWait.onEdt(items::size),
                     "Cancelling all + tile choosers must leave the UDF queue unchanged");
 
+            // WGUI-07 approval path: select ONLY a newly created, rights-clean
+            // synthetic fixture in the actual owned JFileChooser. The Robot
+            // physically clicks its enabled Approve button. This specifically
+            // exercises the product's post-approval tile-focus restoration,
+            // without touching user files or pretending to test native UYAP.
+            Path approved = makeFixture(40);
+            robot.mouseMove(addScreen.x, addScreen.y);
+            robot.mousePress(InputEvent.BUTTON1_DOWN_MASK);
+            robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);
+            GuiRobotWait.until(Duration.ofSeconds(5), Duration.ofMillis(60),
+                    () -> GuiRobotWait.onEdt(() -> isMvpChooserVisible(app)),
+                    Boolean.TRUE::equals);
+            Point approveScreen = GuiRobotWait.until(Duration.ofSeconds(5),
+                    Duration.ofMillis(60), () -> GuiRobotWait.onEdt(() -> {
+                        javax.swing.JFileChooser chooser = activeMvpChooser(app);
+                        if (chooser == null) return null;
+                        chooser.setSelectedFile(approved.toFile());
+                        if (!approved.toFile().equals(chooser.getSelectedFile())) return null;
+                        String text = chooser.getUI().getApproveButtonText(chooser);
+                        javax.swing.JButton button = approveButton(chooser, text);
+                        if (button == null) return null;
+                        Point point = button.getLocationOnScreen();
+                        return new Point(point.x + button.getWidth()/2,
+                                point.y + button.getHeight()/2);
+                    }), java.util.Objects::nonNull);
+            robot.mouseMove(approveScreen.x, approveScreen.y);
+            robot.mousePress(InputEvent.BUTTON1_DOWN_MASK);
+            robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);
+            GuiRobotWait.until(Duration.ofSeconds(8), Duration.ofMillis(60),
+                    () -> GuiRobotWait.onEdt(() -> !isMvpChooserVisible(app)
+                            && items.size() == 2 && items.get(0) == survivor
+                            && approved.equals(field(items.get(1), "path"))),
+                    Boolean.TRUE::equals);
+            GuiRobotWait.until(Duration.ofSeconds(8), Duration.ofMillis(60),
+                    () -> GuiRobotWait.onEdt(() -> {
+                        JPanel current = DesktopApp.existingAddTile(grid);
+                        return app.isFocused() && current != null && current.isShowing()
+                                && current.isEnabled() && current.isFocusOwner();
+                    }), Boolean.TRUE::equals);
+            assertEquals(2, GuiRobotWait.onEdt(items::size),
+                    "Approved synthetic UDF must be added exactly once");
+
             System.out.println("WINDOWS-GUI-ROBOT-PASS: real DesktopApp mouse drag,"
                     +" edge scroll, target hint, drop order, Ctrl+A, Ctrl+End/Home,"
                     +" Ctrl+minus/zero thumbnail zoom, Ctrl+Space toggle,"
                     +" plain-arrow collapse, Shift+End offscreen range, Delete to one card,"
-                    +" physical light/dark theme toggle and + tile chooser click/Enter/Space");
+                    +" physical light/dark theme toggle and + tile chooser click/Enter/Space/Approve");
         } finally {
             if (pressed) robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);
             DesktopApp app=appRef.get();
