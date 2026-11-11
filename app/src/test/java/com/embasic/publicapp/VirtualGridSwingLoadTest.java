@@ -97,6 +97,16 @@ final class VirtualGridSwingLoadTest {
                     Runtime.getRuntime().freeMemory();
             JPanel grid=new JPanel(null);
             JScrollPane scroll=new JScrollPane(grid);
+            // A short/empty grid exposes the JViewport background. Switching
+            // themes must not leave a white strip around dark UDF cards.
+            java.awt.Color dark = new java.awt.Color(20, 27, 42);
+            java.awt.Color light = new java.awt.Color(237, 242, 249);
+            DesktopApp.styleScrollBackground(scroll, dark);
+            assertEquals(dark, scroll.getBackground());
+            assertEquals(dark, scroll.getViewport().getBackground());
+            DesktopApp.styleScrollBackground(scroll, light);
+            assertEquals(light, scroll.getBackground());
+            assertEquals(light, scroll.getViewport().getBackground());
             for(int width:new int[]{680,1000,1400}) {
                 scroll.setSize(width,650);
                 scroll.doLayout();
