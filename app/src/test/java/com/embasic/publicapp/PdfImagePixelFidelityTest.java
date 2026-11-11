@@ -212,4 +212,78 @@ final class PdfImagePixelFidelityTest {
                 + " alpha=0,64,128,255 compositing=PASS pages=1");
     }
 
+    /**
+     * Across TWO page formats, verify every pixel in a rights-clean 8-bit
+     * RGBA PNG after PDF alpha compositing, not only four quadrant centers.
+     * At 72 DPI the placed 8x8 image occupies exactly 80x80 PDF points,
+     * so every source pixel has a distinct 10x10 destination region.
+     */
+    @Test void rgbaAlphaGridPreservesAllPixelsAndPageBoundsOnA5AndLegal()
+            throws Exception {
+        BufferedImage source = new BufferedImage(8, 8, BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < 8; y++) for (int x = 0; x < 8; x++) {
+            int alpha = (x == 0 && y == 0) ? 0
+                    : (x == 7 && y == 7) ? 255 : (x * 37 + y * 41 + 17) % 256;
+            int red = (31 * x + 7 * y + 23) % 256;
+            int green = (13 * x + 29 * y + 57) % 256;
+            int blue = (17 * x + 11 * y + 149) % 256;
+            source.setRGB(x, y, new Color(red, green, blue, alpha).getRGB());
+        }
+        ByteArrayOutputStream encoded = new ByteArrayOutputStream();
+        assertTrue(ImageIO.write(source, "PNG", encoded));
+        byte[] png = encoded.toByteArray();
+        assertEquals(8, png[24] & 255, "Only the admitted 8-bit PNG subset");
+        assertEquals(6, png[25] & 255, "RGBA PNG must not be silently reclassified");
+        var a5 = new DocumentElements.PageSpec(419.53f, 595.28f, 48f);
+        var legalLandscape = new DocumentElements.PageSpec(1008f, 612f, 48f);
+        Path output = folder.resolve("rgba-alpha-grid-two-pages.pdf");
+        assertEquals(2, PdfExporter.save(List.of(
+                imageOnly("rgba-a5-synthetic.udf", png, a5),
+                imageOnly("rgba-legal-synthetic.udf", png, legalLandscape)),
+                output, false));
+        try (PDDocument pdf = Loader.loadPDF(output.toFile())) {
+            assertEquals(2, pdf.getNumberOfPages());
+            var renderer = new PDFRenderer(pdf);
+            for (int p = 0; p < 2; p++) {
+                var expectedPage = p == 0 ? a5 : legalLandscape;
+                var page = pdf.getPage(p);
+                assertEquals(expectedPage.width(), page.getMediaBox().getWidth(), .03f);
+                assertEquals(expectedPage.height(), page.getMediaBox().getHeight(), .03f);
+                List<PDImageXObject> images = new ArrayList<>();
+                for (var name : page.getResources().getXObjectNames()) {
+                    var image = page.getResources().getXObject(name);
+                    if (image instanceof PDImageXObject pngImage) images.add(pngImage);
+                }
+                assertEquals(1, images.size(), "One PNG with no duplicated or lost XObjects");
+                assertEquals(8, images.get(0).getWidth());
+                assertEquals(8, images.get(0).getHeight());
+                assertNotNull(images.get(0).getCOSObject().getDictionaryObject(
+                        org.apache.pdfbox.cos.COSName.SMASK),
+                        "A distinct page must retain its PNG alpha soft mask");
+                BufferedImage raster = renderer.renderImageWithDPI(p, 72);
+                // Independent per-pixel oracle from the original raw ARGB,
+                // with integer white-composite rounding. No golden PDF used.
+                for (int y = 0; y < 8; y++) for (int x = 0; x < 8; x++) {
+                    Color c = new Color(source.getRGB(x, y), true);
+                    int a = c.getAlpha();
+                    Color expected = new Color(
+                            (c.getRed() * a + 255 * (255 - a) + 127) / 255,
+                            (c.getGreen() * a + 255 * (255 - a) + 127) / 255,
+                            (c.getBlue() * a + 255 * (255 - a) + 127) / 255);
+                    assertSameRgb(expected, raster.getRGB(53 + 10 * x, 53 + 10 * y),
+                            "Page " + p + " RGBA pixel " + x + "," + y);
+                }
+                // No image ink may leak outside the exact 48..128pt bounds.
+                for (int[] outside : new int[][] {{46, 72}, {130, 72},
+                        {72, 46}, {72, 130}})
+                    assertSameRgb(Color.WHITE,
+                            raster.getRGB(outside[0], outside[1]),
+                            "Page " + p + " transparent image outside its box");
+            }
+        }
+        System.out.println("EMBASIC_RGBA_GRID_PARITY pages=2 pixels=128"
+                + " alpha=PER_PIXEL softMask=BOTH geometry=A5_LEGAL"
+                + " outsideBounds=WHITE checks=PASS");
+    }
+
 }
