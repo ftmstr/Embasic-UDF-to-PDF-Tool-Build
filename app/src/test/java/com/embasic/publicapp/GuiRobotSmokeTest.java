@@ -439,8 +439,14 @@ final class GuiRobotSmokeTest {
                     Duration.ofMillis(60), () -> GuiRobotWait.onEdt(() -> {
                         javax.swing.JFileChooser chooser = activeMvpChooser(app);
                         if (chooser == null) return null;
-                        chooser.setSelectedFile(approved.toFile());
-                        if (!approved.toFile().equals(chooser.getSelectedFile())) return null;
+                        // This chooser is explicitly multi-select: setting only
+                        // selectedFile leaves getSelectedFiles() empty on some
+                        // Windows LAFs, causing an empty approval and error dialog.
+                        chooser.setCurrentDirectory(folder.toFile());
+                        chooser.setSelectedFiles(new java.io.File[]{approved.toFile()});
+                        if (chooser.getSelectedFiles().length != 1
+                                || !approved.toFile().equals(chooser.getSelectedFiles()[0]))
+                            return null;
                         String text = chooser.getUI().getApproveButtonText(chooser);
                         javax.swing.JButton button = approveButton(chooser, text);
                         if (button == null) return null;
@@ -452,10 +458,14 @@ final class GuiRobotSmokeTest {
             robot.mousePress(InputEvent.BUTTON1_DOWN_MASK);
             robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);
             GuiRobotWait.until(Duration.ofSeconds(8), Duration.ofMillis(60),
-                    () -> GuiRobotWait.onEdt(() -> !isMvpChooserVisible(app)
-                            && items.size() == 2 && items.get(0) == survivor
-                            && approved.equals(field(items.get(1), "path"))),
-                    Boolean.TRUE::equals);
+                    () -> GuiRobotWait.onEdt(() -> {
+                        if (isMvpChooserVisible(app)) return "CHOOSER_STILL_OPEN";
+                        if (items.size() != 2) return "QUEUE_SIZE_" + items.size();
+                        if (items.get(0) != survivor) return "ORIGINAL_CARD_CHANGED";
+                        if (!approved.equals(field(items.get(1), "path")))
+                            return "APPROVED_PATH_MISMATCH";
+                        return "APPROVED";
+                    }), "APPROVED"::equals);
             GuiRobotWait.until(Duration.ofSeconds(8), Duration.ofMillis(60),
                     () -> GuiRobotWait.onEdt(() -> {
                         JPanel current = DesktopApp.existingAddTile(grid);
