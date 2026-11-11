@@ -2,6 +2,8 @@ package com.embasic.publicapp;
 
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.zip.CRC32;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
@@ -194,11 +196,65 @@ public final class DocumentElements {
      * ImageBlock is a public record and can be constructed without XML parsing;
      * a tiny compressed PNG must never allocate an unbounded raster there.
      */
+    /**
+     * ImageIO can silently render only the first APNG frame or ignore bytes
+     * after IEND. Both would misrepresent a synthetic source in a static PDF.
+     * Validate framing and CRC before allocating the image raster.
+     */
+    private static void requireSingleFramePng(byte[] bytes) {
+        if (bytes.length < 8 || (bytes[0] & 255) != 0x89
+                || bytes[1] != 'P' || bytes[2] != 'N' || bytes[3] != 'G'
+                || bytes[4] != 13 || bytes[5] != 10
+                || bytes[6] != 26 || bytes[7] != 10)
+            throw new IllegalArgumentException("PNG imzası geçersiz");
+        int offset = 8;
+        boolean ihdr = false, idat = false, idatEnded = false, iend = false;
+        while (offset < bytes.length) {
+            if (bytes.length - offset < 12)
+                throw new IllegalArgumentException("PNG parçası eksik");
+            int length = java.nio.ByteBuffer.wrap(bytes, offset, 4).getInt();
+            if (length < 0 || length > bytes.length - offset - 12)
+                throw new IllegalArgumentException("PNG parça boyutu geçersiz");
+            String type = new String(bytes, offset + 4, 4, StandardCharsets.US_ASCII);
+            if (!type.matches("[A-Za-z]{4}"))
+                throw new IllegalArgumentException("PNG parça türü geçersiz");
+            if (!ihdr && (!"IHDR".equals(type) || length != 13))
+                throw new IllegalArgumentException("PNG IHDR eksik veya geçersiz");
+            if ("IHDR".equals(type)) {
+                if (ihdr || length != 13)
+                    throw new IllegalArgumentException("Tekrarlanan PNG IHDR");
+                ihdr = true;
+            }
+            if ("acTL".equals(type) || "fcTL".equals(type) || "fdAT".equals(type))
+                throw new IllegalArgumentException("Animasyonlu PNG PDF'ye sessizce düzleştirilemez");
+            if ("IDAT".equals(type)) {
+                if (idatEnded) throw new IllegalArgumentException("PNG IDAT sırası geçersiz");
+                idat = true;
+            } else if (idat) idatEnded = true;
+            int crcAt = offset + 8 + length;
+            CRC32 crc = new CRC32();
+            crc.update(bytes, offset + 4, length + 4);
+            long declared = Integer.toUnsignedLong(
+                    java.nio.ByteBuffer.wrap(bytes, crcAt, 4).getInt());
+            if (crc.getValue() != declared)
+                throw new IllegalArgumentException("PNG CRC doğrulaması başarısız");
+            if ("IEND".equals(type)) {
+                if (length != 0 || !idat || crcAt + 4 != bytes.length)
+                    throw new IllegalArgumentException("PNG IEND sonrası veri veya eksik görüntü");
+                iend = true;
+            }
+            offset = crcAt + 4;
+            if (iend) break;
+        }
+        if (!iend) throw new IllegalArgumentException("PNG IEND eksik");
+    }
+
     static BufferedImage decodeBoundedPng(byte[] bytes) throws java.io.IOException {
         if (bytes == null || bytes.length < 24 || bytes.length > 1_048_576
                 || (bytes[0] & 0xff) != 0x89 || bytes[1] != 'P'
                 || bytes[2] != 'N' || bytes[3] != 'G')
             throw new IllegalArgumentException("PNG biçimi veya boyutu geçersiz");
+        requireSingleFramePng(bytes);
         try (var input = ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))) {
             if (input == null) throw new IllegalArgumentException("PNG akışı açılamadı");
             var readers = ImageIO.getImageReaders(input);

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -31,6 +32,27 @@ final class ReferencedMediaRegressionTest {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         assertTrue(ImageIO.write(image,"PNG",output));
         return output.toByteArray();
+    }
+    private static byte[] insertPngChunk(byte[] original, String type, byte[] payload)
+            throws Exception {
+        // Java ImageIO emits an eight-byte PNG signature and 25-byte IHDR.
+        assertEquals(13, java.nio.ByteBuffer.wrap(original, 8, 4).getInt());
+        ByteArrayOutputStream chunk = new ByteArrayOutputStream();
+        try (DataOutputStream data = new DataOutputStream(chunk)) {
+            byte[] name = type.getBytes(StandardCharsets.US_ASCII);
+            data.writeInt(payload.length);
+            data.write(name);
+            data.write(payload);
+            var crc = new java.util.zip.CRC32();
+            crc.update(name);
+            crc.update(payload);
+            data.writeInt((int) crc.getValue());
+        }
+        ByteArrayOutputStream result = new ByteArrayOutputStream();
+        result.write(original, 0, 33);
+        result.write(chunk.toByteArray());
+        result.write(original, 33, original.length - 33);
+        return result.toByteArray();
     }
     private static String page(String imageElement, String size) {
         return "<template format_id='1.0'><content>BEFORE AFTER</content>"
@@ -139,6 +161,27 @@ final class ReferencedMediaRegressionTest {
     }
 
     @Test void directImageBlocksObeyPngByteAndPixelBudgetsBeforePdfPublication() throws Exception {
+        // Reject animation that ImageIO could flatten to its first frame,
+        // and trailing bytes that ImageIO could silently ignore after IEND.
+        byte[] canonical = png();
+        byte[] animated = insertPngChunk(canonical, "acTL",
+                new byte[]{0, 0, 0, 2, 0, 0, 0, 0});
+        byte[] trailing = java.util.Arrays.copyOf(canonical, canonical.length + 3);
+        trailing[canonical.length] = 42;
+        for (int index = 0; index < 2; index++) {
+            byte[] invalid = index == 0 ? animated : trailing;
+            String name = index == 0 ? "animated" : "trailing";
+            assertThrows(IllegalArgumentException.class, () -> UdfReader.read(
+                    archive(name + ".udf", items(page(ref("media/logo.png"), "A4"),
+                            "media/logo.png", invalid))), name);
+            var direct = new UdfReader.DocumentSpec(name + ".udf", "1.0",
+                    List.of(), List.of(new DocumentElements.ImageBlock(invalid, 40f, 40f)),
+                    DocumentElements.PageSpec.a4());
+            Path rejected = folder.resolve(name + ".pdf");
+            assertThrows(IllegalArgumentException.class,
+                    () -> PdfExporter.save(List.of(direct), rejected, false), name);
+            assertFalse(Files.exists(rejected), name + " must not publish a partial PDF");
+        }
         // Public ImageBlock constructors bypass XML parsing. A valid direct
         // PNG still renders, but oversized or dimension-forged PNGs must not
         // allocate a huge raster or publish a misleading partial PDF.
