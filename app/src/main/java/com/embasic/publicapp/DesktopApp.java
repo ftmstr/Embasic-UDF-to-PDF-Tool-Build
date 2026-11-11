@@ -818,6 +818,15 @@ public final class DesktopApp extends JFrame {
     private Color foreground() { return dark ? new Color(225, 231, 240) : new Color(33, 47, 66); }
     private Color accent() { return ACCENT; }
 
+    /** The scroll pane and viewport are separate opaque Swing surfaces.
+     *  Without updating both, the empty area around a short UDF grid stays
+     *  Look-and-Feel white when the user switches to the dark theme.
+     */
+    static void styleScrollBackground(JScrollPane pane, Color background) {
+        pane.setBackground(background);
+        pane.getViewport().setBackground(background);
+    }
+
     /**
      * Filenames and parser errors are untrusted text. Swing interprets strings
      * beginning with <html> as markup, including remote <img> resources.
@@ -1330,6 +1339,7 @@ public final class DesktopApp extends JFrame {
         Color bg=background(), fg=foreground();
         getContentPane().setBackground(bg);
         grid.setBackground(bg);
+        styleScrollBackground(scroll, bg);
         addButton.setEnabled(canAddMore(items.size(), converting));
         retryButton.setEnabled(!converting && selected.stream().anyMatch(item ->
                 items.contains(item) && (isFailedImport(item.document != null, item.info)
