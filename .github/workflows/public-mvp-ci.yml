@@ -80,14 +80,17 @@ jobs:
         run: python app/scripts/profile_fontcache_default.py
 
       # Robot is never part of the default/scheduled CI gate: hosted runners
-      # may not expose a real interactive desktop. Opt-in runs fail when
-      # there is no desktop rather than falsely reporting GUI acceptance.
+      # may not expose a real interactive desktop. A Maven exit code of zero
+      # is insufficient: JUnit may have SKIPPED the only physical GUI test.
+      # Reuse the public local acceptance script, which deletes stale Surefire
+      # evidence and requires a non-skipped, zero-failure XML test suite.
       - name: Opt-in interactive Windows Robot acceptance (no release)
         if: runner.os == 'Windows' && github.event_name == 'workflow_dispatch' && inputs.run_gui_robot
         shell: pwsh
         run: |
-          & mvn -B -ntp -f app/pom.xml "-Dtest=GuiRobotSmokeTest" "-Dembasic.gui.robot=true" test
-          if ($LASTEXITCODE -ne 0) { throw "Physical Windows GUI acceptance failed or no interactive desktop" }
+          $ErrorActionPreference = "Stop"
+          & pwsh -NoProfile -File app/scripts/Run-Windows-GuiRobotSmoke.ps1 -AllowGui
+          if ($LASTEXITCODE -ne 0) { throw "Physical Windows GUI acceptance not verified (failed, skipped or noninteractive)" }
 
 
       - name: Validate colorful PowerShell dashboard, JSON score and forecast
