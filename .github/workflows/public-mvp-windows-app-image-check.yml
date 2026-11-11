@@ -109,6 +109,7 @@ jobs:
             $process = Start-Process -FilePath $exe -PassThru -ErrorAction Stop
             $deadline = (Get-Date).AddSeconds(25)
             $visible = $false
+            $matchedWindowPid = $null
             while ((Get-Date) -lt $deadline) {
               $process.Refresh()
               if ($process.HasExited) { throw "Packaged GUI process exited before a visible window appeared" }
@@ -123,7 +124,7 @@ jobs:
                 }
               }
               foreach ($candidateId in $candidateIds) {
-                if ([EmbasicWindowProbe]::HasVisibleWindow($candidateId)) { $visible = $true; break }
+                if ([EmbasicWindowProbe]::HasVisibleWindow($candidateId)) { $visible = $true; $matchedWindowPid = $candidateId; break }
               }
               if ($visible) { break }
               Start-Sleep -Milliseconds 500
@@ -140,7 +141,7 @@ jobs:
               }
               throw "No visible top-level window within 25 seconds (WINDOW_NOT_VERIFIED; hosted runner may be noninteractive). GUI acceptance FAIL"
             }
-            Write-Host "Visible top-level window verified for packaged launcher PID $($process.Id). No user interaction or UYAP compatibility implied."
+            Write-Host "Visible top-level window verified for owner PID $matchedWindowPid (launcher PID $($process.Id)). No user interaction or UYAP compatibility implied."
           } finally {
             if ($null -ne $process) {
               $process.Refresh()
