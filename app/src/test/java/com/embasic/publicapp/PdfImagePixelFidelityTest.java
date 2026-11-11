@@ -154,4 +154,62 @@ final class PdfImagePixelFidelityTest {
                     "Failed conversion must clean staging files");
         }
     }
+    /**
+     * A transparent 8-bit RGBA PNG must not silently lose its alpha channel
+     * when PDFBox embeds it. Inspect the serialized PDF and independently
+     * calculate white-page compositing from the original synthetic ARGB pixels.
+     * This is a bounded, rights-clean fixture, not native UYAP parity.
+     */
+    @Test void rgbaPngPreservesAlphaThroughEmbeddedSoftMaskAndRenderedPage()
+            throws Exception {
+        Color[] sourceColors = {
+            new Color(220, 20, 40, 255), new Color(20, 180, 70, 128),
+            new Color(35, 55, 215, 64), new Color(180, 30, 90, 0)
+        };
+        BufferedImage source = new BufferedImage(8, 8, BufferedImage.TYPE_INT_ARGB);
+        for (int y = 0; y < 8; y++)
+            for (int x = 0; x < 8; x++)
+                source.setRGB(x, y,
+                        sourceColors[(y >= 4 ? 2 : 0) + (x >= 4 ? 1 : 0)].getRGB());
+        ByteArrayOutputStream encoded = new ByteArrayOutputStream();
+        assertTrue(ImageIO.write(source, "PNG", encoded));
+        byte[] png = encoded.toByteArray();
+        // PNG IHDR: color type 6 is RGBA, bit depth 8; no ancillary
+        // color-management or transparency chunks are needed.
+        assertEquals(8, png[24] & 255);
+        assertEquals(6, png[25] & 255);
+        Path output = folder.resolve("rgba-compositing.pdf");
+        assertEquals(1, PdfExporter.save(List.of(
+                imageOnly("rgba-synthetic.udf", png, DocumentElements.PageSpec.a4())),
+                output, false));
+
+        try (PDDocument pdf = Loader.loadPDF(output.toFile())) {
+            assertEquals(1, pdf.getNumberOfPages());
+            List<PDImageXObject> images = new ArrayList<>();
+            var resources = pdf.getPage(0).getResources();
+            for (var name : resources.getXObjectNames()) {
+                var object = resources.getXObject(name);
+                if (object instanceof PDImageXObject image) images.add(image);
+            }
+            assertEquals(1, images.size());
+            assertNotNull(images.get(0).getCOSObject()
+                    .getDictionaryObject(org.apache.pdfbox.cos.COSName.SMASK),
+                    "Embedded RGBA must retain a PDF soft mask");
+            BufferedImage page = new PDFRenderer(pdf).renderImageWithDPI(0, 72);
+            int[][] centers = {{68, 68}, {108, 68}, {68, 108}, {108, 108}};
+            for (int i = 0; i < centers.length; i++) {
+                Color sourceColor = sourceColors[i];
+                int alpha = sourceColor.getAlpha();
+                Color onWhite = new Color(
+                        (sourceColor.getRed() * alpha + 255 * (255 - alpha) + 127) / 255,
+                        (sourceColor.getGreen() * alpha + 255 * (255 - alpha) + 127) / 255,
+                        (sourceColor.getBlue() * alpha + 255 * (255 - alpha) + 127) / 255);
+                assertSameRgb(onWhite, page.getRGB(centers[i][0], centers[i][1]),
+                        "RGBA source-to-PDF white compositing quadrant " + i);
+            }
+        }
+        System.out.println("EMBASIC_RGBA_PDF_PARITY softMask=PRESENT"
+                + " alpha=0,64,128,255 compositing=PASS pages=1");
+    }
+
 }
