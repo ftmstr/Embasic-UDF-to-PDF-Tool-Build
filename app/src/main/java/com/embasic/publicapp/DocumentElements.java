@@ -227,6 +227,21 @@ public final class DocumentElements {
                 ihdr = true;
                 bitDepth = bytes[offset + 16] & 0xff;
                 colorType = bytes[offset + 17] & 0xff;
+                int pixelWidth = java.nio.ByteBuffer.wrap(bytes, offset + 8, 4).getInt();
+                int pixelHeight = java.nio.ByteBuffer.wrap(bytes, offset + 12, 4).getInt();
+                // ImageIO can normalize unsupported/high-precision source samples
+                // without preserving their exact PDF appearance. This audited
+                // synthetic subset accepts only 8-bit, non-interlaced PNGs.
+                // Validate the IHDR before any raster allocation or PDF staging.
+                if (pixelWidth <= 0 || pixelHeight <= 0
+                        || (long) pixelWidth * pixelHeight > 4_000_000L
+                        || bitDepth != 8
+                        || !(colorType == 0 || colorType == 2 || colorType == 3
+                                || colorType == 4 || colorType == 6)
+                        || bytes[offset + 18] != 0  // compression method
+                        || bytes[offset + 19] != 0  // filter method
+                        || bytes[offset + 20] != 0) // Adam7 not yet pixel-audited
+                    throw new IllegalArgumentException("Desteklenmeyen PNG IHDR geometrisi veya örnekleme biçimi");
             }
             if ("acTL".equals(type) || "fcTL".equals(type) || "fdAT".equals(type))
                 throw new IllegalArgumentException("Animasyonlu PNG PDF'ye sessizce düzleştirilemez");
