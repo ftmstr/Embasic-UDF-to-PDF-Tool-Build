@@ -399,13 +399,17 @@ public final class PdfExporter {
         Path staging = Files.createTempFile(folder, ".embasic-pending-", ".pdf");
         try {
             int pages;
+            List<float[]> expectedGeometry;
             try (PDDocument pdf = render(docs)) {
                 pages = pdf.getNumberOfPages();
+                // Record every page's original media/crop boxes and rotation
+                // before serialization. A successful reopen and matching page
+                // count alone cannot detect silently changed page geometry.
+                expectedGeometry = snapshotPageGeometry(pdf);
                 pdf.save(staging.toFile());
             }
             try (PDDocument reloaded = Loader.loadPDF(staging.toFile())) {
-                if (reloaded.getNumberOfPages() != pages || pages < 1)
-                    throw new IOException("PDF sayfa doğrulaması başarısız");
+                verifyStagedPageGeometry(expectedGeometry, reloaded);
             }
             // A source may change during a long 160-document render. Keep the
             // validated PDF private until the caller confirms the same bytes
@@ -416,6 +420,46 @@ public final class PdfExporter {
             return pages;
         } finally {
             Files.deleteIfExists(staging);
+        }
+    }
+
+    /** Exact ordered geometry captured before PDFBox serializes the staged PDF. */
+    static List<float[]> snapshotPageGeometry(PDDocument pdf) {
+        List<float[]> result = new ArrayList<>(pdf.getNumberOfPages());
+        for (PDPage page : pdf.getPages()) {
+            PDRectangle media = page.getMediaBox();
+            PDRectangle crop = page.getCropBox();
+            result.add(new float[]{
+                    media.getLowerLeftX(), media.getLowerLeftY(),
+                    media.getUpperRightX(), media.getUpperRightY(),
+                    crop.getLowerLeftX(), crop.getLowerLeftY(),
+                    crop.getUpperRightX(), crop.getUpperRightY(),
+                    page.getRotation()});
+        }
+        return result;
+    }
+
+    /**
+     * Fail closed before publication if serialization changed a page's size,
+     * crop, origin, orientation, order, or count. This is a structural guard,
+     * not proof of native UYAP visual equivalence.
+     */
+    static void verifyStagedPageGeometry(List<float[]> expected, PDDocument reloaded)
+            throws IOException {
+        if (expected == null || expected.isEmpty()
+                || reloaded.getNumberOfPages() != expected.size())
+            throw new IOException("PDF sayfa sayısı/geometrisi doğrulaması başarısız");
+        List<float[]> actual = snapshotPageGeometry(reloaded);
+        for (int page = 0; page < expected.size(); page++) {
+            float[] before = expected.get(page), after = actual.get(page);
+            if (before.length != after.length)
+                throw new IOException("PDF sayfa geometrisi doğrulaması başarısız: " + (page + 1));
+            for (int coordinate = 0; coordinate < before.length; coordinate++)
+                if (!Float.isFinite(before[coordinate])
+                        || !Float.isFinite(after[coordinate])
+                        || Math.abs(before[coordinate] - after[coordinate]) > 0.01f)
+                    throw new IOException("PDF sayfa geometrisi doğrulaması başarısız: "
+                            + (page + 1));
         }
     }
 
