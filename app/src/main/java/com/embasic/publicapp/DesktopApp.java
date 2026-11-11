@@ -503,7 +503,7 @@ public final class DesktopApp extends JFrame {
 
     private void chooseFiles() { chooseFiles(null); }
 
-    /** Only the in-grid tile restores its own focus after a cancelled chooser. */
+    /** Only the in-grid tile restores its own focus after a chooser closes. */
     private void chooseFiles(JPanel addTile) {
         // A full 160-card grid must not open a chooser that cannot add files.
         if (!canAddMore(items.size(), converting)) return;
@@ -511,27 +511,31 @@ public final class DesktopApp extends JFrame {
         chooser.setMultiSelectionEnabled(true);
         chooser.setAcceptAllFileFilterUsed(false);
         chooser.setFileFilter(new FileNameExtensionFilter("UYAP UDF (*.udf)", "udf"));
-        if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) {
-            if (addTile != null) restoreAddTileFocusAfterCancel(addTile);
-            return;
-        }
-        List<Path> paths = new ArrayList<>();
-        for (java.io.File file : chooser.getSelectedFiles()) paths.add(file.toPath());
         try {
-            addFiles(paths);
-        } catch (IllegalArgumentException ex) {
-            // A multi-selection is one action. Never silently omit files from
-            // the PDF queue when the chooser exceeds capacity or has duplicates.
-            showError(ex);
+            if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
+            List<Path> paths = new ArrayList<>();
+            for (java.io.File file : chooser.getSelectedFiles()) paths.add(file.toPath());
+            try {
+                addFiles(paths);
+            } catch (IllegalArgumentException ex) {
+                // A multi-selection is one action. Never silently omit files from
+                // the PDF queue when the chooser exceeds capacity or has duplicates.
+                showError(ex);
+            }
+        } finally {
+            // The modal chooser takes focus on both Cancel and Approve.
+            // Return keyboard access to the same in-grid tile only when it
+            // still exists and this application regains window focus.
+            if (addTile != null) restoreAddTileFocusAfterChooser(addTile);
         }
     }
 
     /**
      * A modal native chooser can close before Windows returns focus to its owner.
-     * Restore keyboard access to the actual + tile after cancellation, without
+     * Restore keyboard access to the actual + tile after Cancel or Approve, without
      * stealing focus from other windows or resurrecting a virtualized tile.
      */
-    private void restoreAddTileFocusAfterCancel(JPanel tile) {
+    private void restoreAddTileFocusAfterChooser(JPanel tile) {
         java.awt.event.WindowAdapter restore = new java.awt.event.WindowAdapter() {
             @Override public void windowGainedFocus(java.awt.event.WindowEvent event) {
                 removeWindowFocusListener(this);
