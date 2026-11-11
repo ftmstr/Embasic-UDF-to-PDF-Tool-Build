@@ -501,14 +501,20 @@ public final class DesktopApp extends JFrame {
         });
     }
 
-    private void chooseFiles() {
+    private void chooseFiles() { chooseFiles(null); }
+
+    /** Only the in-grid tile restores its own focus after a cancelled chooser. */
+    private void chooseFiles(JPanel addTile) {
         // A full 160-card grid must not open a chooser that cannot add files.
         if (!canAddMore(items.size(), converting)) return;
         JFileChooser chooser = new JFileChooser();
         chooser.setMultiSelectionEnabled(true);
         chooser.setAcceptAllFileFilterUsed(false);
         chooser.setFileFilter(new FileNameExtensionFilter("UYAP UDF (*.udf)", "udf"));
-        if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
+        if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) {
+            if (addTile != null) restoreAddTileFocusAfterCancel(addTile);
+            return;
+        }
         List<Path> paths = new ArrayList<>();
         for (java.io.File file : chooser.getSelectedFiles()) paths.add(file.toPath());
         try {
@@ -518,6 +524,33 @@ public final class DesktopApp extends JFrame {
             // the PDF queue when the chooser exceeds capacity or has duplicates.
             showError(ex);
         }
+    }
+
+    /**
+     * A modal native chooser can close before Windows returns focus to its owner.
+     * Restore keyboard access to the actual + tile after cancellation, without
+     * stealing focus from other windows or resurrecting a virtualized tile.
+     */
+    private void restoreAddTileFocusAfterCancel(JPanel tile) {
+        java.awt.event.WindowAdapter restore = new java.awt.event.WindowAdapter() {
+            @Override public void windowGainedFocus(java.awt.event.WindowEvent event) {
+                removeWindowFocusListener(this);
+                SwingUtilities.invokeLater(() -> {
+                    if (isFocused() && tile.getParent() == grid
+                            && tile.isShowing() && tile.isEnabled())
+                        tile.requestFocusInWindow();
+                });
+            }
+        };
+        addWindowFocusListener(restore);
+        // The owner may already have regained focus before showOpenDialog returns.
+        SwingUtilities.invokeLater(() -> {
+            if (isFocused()) {
+                removeWindowFocusListener(restore);
+                if (tile.getParent() == grid && tile.isShowing() && tile.isEnabled())
+                    tile.requestFocusInWindow();
+            }
+        });
     }
 
     private boolean addFiles(List<Path> paths) {
@@ -1112,11 +1145,11 @@ public final class DesktopApp extends JFrame {
     private JPanel addCard() {
         JPanel plus = new JPanel(new BorderLayout());
         plus.putClientProperty("udf-add-card", Boolean.TRUE);
-        installAddCardKeyboard(plus, this::chooseFiles);
+        installAddCardKeyboard(plus, () -> chooseFiles(plus));
         JLabel label = new JLabel("<html><center><span style='font-size:24pt'>+</span><br>UDF dosyası seç</center></html>", SwingConstants.CENTER);
         plus.add(label, BorderLayout.CENTER);
         styleAddCard(plus);
-        installAddCardMouse(plus, label, this::chooseFiles);
+        installAddCardMouse(plus, label, () -> chooseFiles(plus));
         installFileDrop(plus, fileDrop);
         return plus;
     }
@@ -1127,7 +1160,12 @@ public final class DesktopApp extends JFrame {
     static void installAddCardMouse(JPanel plus, JLabel label, Runnable chooseFiles) {
         MouseAdapter click = new MouseAdapter() {
             @Override public void mouseClicked(MouseEvent event) {
-                if (plus.isEnabled() && isPrimaryCardPress(event)) chooseFiles.run();
+                if (plus.isEnabled() && isPrimaryCardPress(event)) {
+                    // A click on the child label must also establish keyboard
+                    // focus on the parent tile before opening a modal chooser.
+                    plus.requestFocusInWindow();
+                    chooseFiles.run();
+                }
             }
         };
         plus.addMouseListener(click);
