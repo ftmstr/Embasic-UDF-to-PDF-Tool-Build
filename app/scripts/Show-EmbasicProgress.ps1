@@ -19,7 +19,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $today = [DateTimeOffset]::UtcNow.ToOffset([TimeSpan]::FromHours(3))
-$reviewDate = '2026-11-11'
+$reviewDate = '2026-11-12'
 # Do not drift conditional release dates forward just because an hourly tour ran.
 $forecastBase = [DateTime]::ParseExact('2026-10-31', 'yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture)
 # Weight totals are exactly 100. Completion is engineering judgement, not telemetry.
@@ -28,8 +28,8 @@ $milestones = @(
     [pscustomobject]@{ Name='Windows launcher / smoke'; Weight=12; Complete=100; Evidence='Tur 194 Windows jpackage launcher 43094458789 ve bagimsiz app-image 43094458974 PASS; release YOK' }
     [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=73; Evidence='Tur 194: 160 kart EDT 16/16; Windows Robot 43094458789 fiziksel dosya adi yazma + fare/klavye/tema/drop PASS; tam son kullanici kabul NOT_RUN' }
     [pscustomobject]@{ Name='UDF turleri ve surumleri'; Weight=26; Complete=12; Evidence='Sentetik ZIP PNG referans, A5/LEGAL; gercek UYAP schema dogrulanmadi' }
-    [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Tur194 kod SHA 56a9859: 172 JUnit (171 PASS, 1 SKIP), 128 RGBA piksel A5/LEGAL PASS; Tur195 SHA 43b110a: 4 sayfa RGB/RGBA x 72/144 DPI 512 piksel + sirali font/tablo/fail-closed testleri eklendi, CI QUEUED/NOT_VERIFIED; native UYAP golden YOK' }
-    [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Tur194 fiziksel Windows chooser 8.3 alias smoke 43094458789 PASS; Tur195 sirali PDF bozuk son PNG muhafaza testi CI NOT_VERIFIED; SHA denetimi upstream SUCCESS, dagitim lisans/onay YOK, SOURCE_GATE BLOCKED; atomik Windows TOCTOU NO-GO' }
+    [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Tur194 kod SHA 56a9859: 172 JUnit (171 PASS, 1 SKIP), 128 RGBA piksel A5/LEGAL PASS; Tur195 SHA ad66b08: Win/Linux 174 JUnit (173 PASS, 1 SKIP), 4 sayfa RGB/RGBA x 72/144 DPI 512 piksel + sirali font/tablo/fail-closed PASS, MVP 43098916670 SUCCESS; fiziksel Robot bu SHA'da NOT_RUN; native UYAP golden YOK' }
+    [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Tur194 fiziksel Windows chooser 8.3 alias smoke 43094458789 PASS; Tur195 SHA ad66b08 sirali PDF bozuk son PNG: eski PDF korundu, staging temiz, Win/Linux PASS; upstream 43098916695 SUCCESS, app-image 43098916674 SUCCESS; Secure Bootstrap 43098916875 FAILURE/SOURCE_GATE BLOCKED; lisans/onay YOK, atomik Windows TOCTOU NO-GO' }
     [pscustomobject]@{ Name='Beta kabul / dagitim'; Weight=8; Complete=10; Evidence='Paket CI ici; indirme paketi yayinlanmadi' }
 )
 if ((($milestones | Measure-Object -Property Weight -Sum).Sum) -ne 100) {
