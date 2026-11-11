@@ -79,13 +79,13 @@ jobs:
         if: github.event_name == 'push' && contains(github.event.head_commit.message, '[fontcache-default-4x]')
         run: python app/scripts/profile_fontcache_default.py
 
-      # Robot is never part of the default/scheduled CI gate: hosted runners
-      # may not expose a real interactive desktop. A Maven exit code of zero
-      # is insufficient: JUnit may have SKIPPED the only physical GUI test.
-      # Reuse the public local acceptance script, which deletes stale Surefire
-      # evidence and requires a non-skipped, zero-failure XML test suite.
+      # Robot remains opt-in: a deliberate [gui-robot] push on this Public
+      # branch, or a manual workflow_dispatch input, runs the actual Windows
+      # keyboard/mouse acceptance on the hosted desktop. Default CI skips it.
+      # A noninteractive/locked desktop or JUnit skip MUST fail this opt-in job;
+      # the script deletes stale XML and checks non-skipped Surefire evidence.
       - name: Opt-in interactive Windows Robot acceptance (no release)
-        if: runner.os == 'Windows' && github.event_name == 'workflow_dispatch' && inputs.run_gui_robot
+        if: runner.os == 'Windows' && ((github.event_name == 'workflow_dispatch' && inputs.run_gui_robot) || (github.event_name == 'push' && github.ref == 'refs/heads/ci/secure-windows-bootstrap-20261018' && contains(github.event.head_commit.message, '[gui-robot]')))
         shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
