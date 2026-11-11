@@ -73,7 +73,9 @@ jobs:
             if ($null -ne $process) {
               $process.Refresh()
               if (-not $process.HasExited) {
-                Stop-Process -Id $process.Id -Force -ErrorAction Stop
+                # Kill the launcher process tree, including jpackage's GUI child.
+                & taskkill.exe /PID $process.Id /T /F | Out-Null
+                if ($LASTEXITCODE -ne 0) { throw "Unable to clean up packaged GUI process tree" }
                 $process.WaitForExit(10000) | Out-Null
               }
             }
@@ -112,7 +114,20 @@ jobs:
             while ((Get-Date) -lt $deadline) {
               $process.Refresh()
               if ($process.HasExited) { throw "Packaged GUI process exited before a visible window appeared" }
-              if ([EmbasicWindowProbe]::HasVisibleWindow([uint32]$process.Id)) { $visible = $true; break }
+              # jpackage may spawn a second same-name GUI process. Accept only
+              # direct descendants of this launcher, never arbitrary same-name processes.
+              $candidateIds = @([uint32]$process.Id)
+              $children = @(Get-CimInstance Win32_Process -Filter "ParentProcessId=$($process.Id)" -ErrorAction Stop)
+              foreach ($child in $children) {
+                $childProcess = Get-Process -Id $child.ProcessId -ErrorAction SilentlyContinue
+                if ($null -ne $childProcess -and -not $childProcess.HasExited -and $childProcess.SessionId -eq $process.SessionId) {
+                  $candidateIds += [uint32]$child.ProcessId
+                }
+              }
+              foreach ($candidateId in $candidateIds) {
+                if ([EmbasicWindowProbe]::HasVisibleWindow($candidateId)) { $visible = $true; break }
+              }
+              if ($visible) { break }
               Start-Sleep -Milliseconds 500
             }
             if (-not $visible) {
