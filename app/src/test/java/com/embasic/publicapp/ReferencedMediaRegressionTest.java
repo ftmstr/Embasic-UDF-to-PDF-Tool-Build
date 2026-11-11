@@ -171,18 +171,37 @@ final class ReferencedMediaRegressionTest {
         byte[] unknownCritical = insertPngChunk(canonical, "ABCD", new byte[]{42});
         byte[] badCrc = canonical.clone();
         badCrc[29] ^= 1; // IHDR CRC, leaving the pixel data unchanged.
-        for (int index = 0; index < 4; index++) {
+        // Valid CRCs alone are insufficient: PNG ancillary metadata can
+        // change transparency or pixel geometry, and duplicate/invalid PLTE
+        // entries leave the decoder's palette interpretation ambiguous.
+        byte[] pixelAspect = insertPngChunk(canonical, "pHYs",
+                new byte[]{0, 0, 0, 1, 0, 0, 0, 2, 1});
+        byte[] transparentBlue = insertPngChunk(canonical, "tRNS",
+                new byte[]{0, 0, 0, 0, 0, (byte) 255});
+        byte[] duplicatePalette = insertPngChunk(
+                insertPngChunk(canonical, "PLTE", new byte[]{0, 0, 0}),
+                "PLTE", new byte[]{1, 1, 1});
+        byte[] invalidPalette = insertPngChunk(canonical, "PLTE", new byte[]{0, 0, 0, 0});
+        for (int index = 0; index < 8; index++) {
             byte[] invalid = switch (index) {
                 case 0 -> animated;
                 case 1 -> trailing;
                 case 2 -> unknownCritical;
-                default -> badCrc;
+                case 3 -> badCrc;
+                case 4 -> pixelAspect;
+                case 5 -> transparentBlue;
+                case 6 -> duplicatePalette;
+                default -> invalidPalette;
             };
             String name = switch (index) {
                 case 0 -> "animated";
                 case 1 -> "trailing";
                 case 2 -> "unknown-critical";
-                default -> "bad-crc";
+                case 3 -> "bad-crc";
+                case 4 -> "pixel-aspect";
+                case 5 -> "transparency-metadata";
+                case 6 -> "duplicate-palette";
+                default -> "invalid-palette";
             };
             assertThrows(IllegalArgumentException.class, () -> UdfReader.read(
                     archive(name + ".udf", items(page(ref("media/logo.png"), "A4"),
