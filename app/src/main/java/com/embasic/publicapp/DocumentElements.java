@@ -241,7 +241,7 @@ public final class DocumentElements {
                         || bytes[offset + 18] != 0  // compression method
                         || bytes[offset + 19] != 0  // filter method
                         || bytes[offset + 20] != 0) // Adam7 not yet pixel-audited
-                    throw new IllegalArgumentException("Desteklenmeyen PNG IHDR geometrisi veya örnekleme biçimi");
+                    throw new IllegalArgumentException("Desteklenmeyen PNG IHDR piksel geometrisi veya örnekleme biçimi");
             }
             if ("acTL".equals(type) || "fcTL".equals(type) || "fdAT".equals(type))
                 throw new IllegalArgumentException("Animasyonlu PNG PDF'ye sessizce düzleştirilemez");
