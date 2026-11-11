@@ -400,16 +400,22 @@ public final class PdfExporter {
         try {
             int pages;
             List<float[]> expectedGeometry;
+            List<String> expectedPageContents;
             try (PDDocument pdf = render(docs)) {
                 pages = pdf.getNumberOfPages();
                 // Record every page's original media/crop boxes and rotation
                 // before serialization. A successful reopen and matching page
                 // count alone cannot detect silently changed page geometry.
                 expectedGeometry = snapshotPageGeometry(pdf);
+                // Distinct pages can have identical boxes and rotation. Keep a
+                // decoded content-stream fingerprint per page as an additional
+                // ordering/integrity guard before PDFBox serialization.
+                expectedPageContents = snapshotPageContentHashes(pdf);
                 pdf.save(staging.toFile());
             }
             try (PDDocument reloaded = Loader.loadPDF(staging.toFile())) {
                 verifyStagedPageGeometry(expectedGeometry, reloaded);
+                verifyStagedPageContentHashes(expectedPageContents, reloaded);
             }
             // A source may change during a long 160-document render. Keep the
             // validated PDF private until the caller confirms the same bytes
@@ -461,6 +467,46 @@ public final class PdfExporter {
                     throw new IOException("PDF sayfa geometrisi doğrulaması başarısız: "
                             + (page + 1));
         }
+    }
+
+    /**
+     * Hash decoded page drawing commands, not compressed PDF bytes: PDFBox may
+     * legitimately change stream compression when saving. The ordered hashes
+     * detect loss, mutation or reordering of distinct same-size page content.
+     * This does not prove font-resource or raster/real-UYAP equivalence.
+     */
+    static List<String> snapshotPageContentHashes(PDDocument pdf) throws IOException {
+        List<String> hashes = new ArrayList<>(pdf.getNumberOfPages());
+        for (PDPage page : pdf.getPages()) {
+            java.security.MessageDigest digest;
+            try {
+                digest = java.security.MessageDigest.getInstance("SHA-256");
+            } catch (java.security.NoSuchAlgorithmException e) {
+                throw new IllegalStateException("SHA-256 kullanılamıyor", e);
+            }
+            try (java.io.InputStream content = page.getContents()) {
+                if (content != null) {
+                    byte[] buffer = new byte[8192];
+                    int count;
+                    while ((count = content.read(buffer)) != -1)
+                        digest.update(buffer, 0, count);
+                }
+            }
+            hashes.add(java.util.HexFormat.of().formatHex(digest.digest()));
+        }
+        return hashes;
+    }
+
+    static void verifyStagedPageContentHashes(List<String> expected, PDDocument reloaded)
+            throws IOException {
+        if (expected == null || expected.isEmpty()
+                || expected.size() != reloaded.getNumberOfPages())
+            throw new IOException("PDF sayfa içerik bütünlüğü doğrulaması başarısız");
+        List<String> actual = snapshotPageContentHashes(reloaded);
+        for (int page = 0; page < expected.size(); page++)
+            if (!java.util.Objects.equals(expected.get(page), actual.get(page)))
+                throw new IOException("PDF sayfa içerik/sıra doğrulaması başarısız: "
+                        + (page + 1));
     }
 
     /**
