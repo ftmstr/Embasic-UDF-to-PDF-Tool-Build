@@ -115,7 +115,18 @@ jobs:
               if ([EmbasicWindowProbe]::HasVisibleWindow([uint32]$process.Id)) { $visible = $true; break }
               Start-Sleep -Milliseconds 500
             }
-            if (-not $visible) { throw "No visible top-level window for packaged launcher within 25 seconds; GUI acceptance FAIL" }
+            if (-not $visible) {
+              # Hosted runners may lack an interactive desktop. Diagnose without treating
+              # a surviving process as proof that the Swing window was rendered.
+              $session = [System.Diagnostics.Process]::GetCurrentProcess().SessionId
+              $process.Refresh()
+              Write-Host "WINDOW_DIAGNOSTIC: runnerSession=$session launcherSession=$($process.SessionId) launcherPID=$($process.Id) mainWindowHandle=$($process.MainWindowHandle) mainWindowTitle=$($process.MainWindowTitle)"
+              $related = Get-CimInstance Win32_Process -Filter "ParentProcessId=$($process.Id)" -ErrorAction SilentlyContinue
+              foreach ($child in $related) {
+                Write-Host "WINDOW_DIAGNOSTIC: childPID=$($child.ProcessId) childName=$($child.Name)"
+              }
+              throw "No visible top-level window within 25 seconds (WINDOW_NOT_VERIFIED; hosted runner may be noninteractive). GUI acceptance FAIL"
+            }
             Write-Host "Visible top-level window verified for packaged launcher PID $($process.Id). No user interaction or UYAP compatibility implied."
           } finally {
             if ($null -ne $process) {
