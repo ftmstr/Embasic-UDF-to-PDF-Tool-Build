@@ -513,8 +513,13 @@ public final class DesktopApp extends JFrame {
         chooser.setFileFilter(new FileNameExtensionFilter("UYAP UDF (*.udf)", "udf"));
         try {
             if (chooser.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return;
-            List<Path> paths = new ArrayList<>();
-            for (java.io.File file : chooser.getSelectedFiles()) paths.add(file.toPath());
+            // Some Windows file chooser implementations return a selected
+            // single file but an empty multi-selection array after manual
+            // filename entry. Never silently discard that approved UDF.
+            // A nonempty multi-selection remains authoritative: the import
+            // policy must validate the entire batch, not a single fallback.
+            List<Path> paths = chooserPaths(chooser.getSelectedFiles(),
+                    chooser.getSelectedFile());
             try {
                 addFiles(paths);
             } catch (IllegalArgumentException ex) {
@@ -528,6 +533,25 @@ public final class DesktopApp extends JFrame {
             // still exists and this application regains window focus.
             if (addTile != null) restoreAddTileFocusAfterChooser(addTile);
         }
+    }
+
+    /**
+     * Preserve the complete chooser batch. A single manually entered filename
+     * can be reported only by getSelectedFile() despite multi-select being on.
+     * Never replace a nonempty multi-selection with its first selected file.
+     */
+    static List<Path> chooserPaths(java.io.File[] multiple, java.io.File single) {
+        if (multiple != null && multiple.length > 0) {
+            List<Path> paths = new ArrayList<>(multiple.length);
+            for (java.io.File file : multiple) {
+                if (file == null)
+                    throw new IllegalArgumentException(
+                            "Dosya seçimi geçersiz; hiçbir dosya eklenmedi");
+                paths.add(file.toPath());
+            }
+            return List.copyOf(paths);
+        }
+        return single == null ? List.of() : List.of(single.toPath());
     }
 
     /**
