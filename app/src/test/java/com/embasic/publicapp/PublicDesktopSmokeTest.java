@@ -239,6 +239,28 @@ final class PublicDesktopSmokeTest {
             assertEquals(1, opened.get(), "Ctrl+O must use the existing file chooser action");
             assertEquals(1, saved.get(), "Ctrl+S must use the existing PDF save action");
         });
+        // A Windows chooser may report a manually typed single filename only
+        // through getSelectedFile(), even with multi-selection enabled.
+        // A real multi-selection must remain complete and authoritative.
+        var single = new java.io.File("manual-entry.udf");
+        var first = new java.io.File("first.udf");
+        var second = new java.io.File("second.udf");
+        assertEquals(List.of(single.toPath()),
+                DesktopApp.chooserPaths(new java.io.File[0], single));
+        assertEquals(List.of(single.toPath()),
+                DesktopApp.chooserPaths(null, single));
+        assertEquals(List.of(first.toPath(), second.toPath()),
+                DesktopApp.chooserPaths(new java.io.File[]{first, second}, single));
+        assertEquals(List.of(), DesktopApp.chooserPaths(new java.io.File[0], null));
+        assertThrows(IllegalArgumentException.class,
+                () -> DesktopApp.chooserPaths(new java.io.File[]{first, null}, single),
+                "Malformed multi-selection must not fall back to one file");
+        var mixed = DesktopApp.chooserPaths(
+                new java.io.File[]{first, new java.io.File("notes.txt")}, single);
+        assertThrows(IllegalArgumentException.class,
+                () -> DesktopApp.requireCompleteChooserSelection(
+                        FileImportPolicy.plan(List.of(), mixed)),
+                "An unsupported member must reject the entire approved batch");
     }
 
     @Test void addTileKeepsIdentityAndKeyboardBindingsAcrossVirtualRefresh() throws Exception {
