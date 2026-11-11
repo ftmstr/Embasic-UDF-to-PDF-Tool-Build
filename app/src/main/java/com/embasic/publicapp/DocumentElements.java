@@ -208,7 +208,8 @@ public final class DocumentElements {
                 || bytes[6] != 26 || bytes[7] != 10)
             throw new IllegalArgumentException("PNG imzası geçersiz");
         int offset = 8;
-        boolean ihdr = false, idat = false, idatEnded = false, iend = false;
+        boolean ihdr = false, palette = false, idat = false, idatEnded = false, iend = false;
+        int colorType = -1, bitDepth = -1;
         while (offset < bytes.length) {
             if (bytes.length - offset < 12)
                 throw new IllegalArgumentException("PNG parçası eksik");
@@ -224,6 +225,8 @@ public final class DocumentElements {
                 if (ihdr || length != 13)
                     throw new IllegalArgumentException("Tekrarlanan PNG IHDR");
                 ihdr = true;
+                bitDepth = bytes[offset + 16] & 0xff;
+                colorType = bytes[offset + 17] & 0xff;
             }
             if ("acTL".equals(type) || "fcTL".equals(type) || "fdAT".equals(type))
                 throw new IllegalArgumentException("Animasyonlu PNG PDF'ye sessizce düzleştirilemez");
@@ -240,9 +243,22 @@ public final class DocumentElements {
                     && !("IHDR".equals(type) || "PLTE".equals(type)
                             || "IDAT".equals(type) || "IEND".equals(type)))
                 throw new IllegalArgumentException("Desteklenmeyen kritik PNG parçası");
-            if ("PLTE".equals(type) && idat)
-                throw new IllegalArgumentException("PNG palet sırası geçersiz");
+            // The synthetic PDF subset has no audited interpretation for
+            // ancillary chunks (including transparency, pixel aspect and EXIF).
+            // Reject rather than silently discard appearance-affecting metadata.
+            if (type.charAt(0) >= 'a' && type.charAt(0) <= 'z')
+                throw new IllegalArgumentException("Desteklenmeyen PNG yardımcı parçası: " + type);
+            if ("PLTE".equals(type)) {
+                if (palette || idat || colorType == 0 || colorType == 4
+                        || length < 3 || length > 768 || length % 3 != 0
+                        || (colorType == 3 && (bitDepth > 8
+                                || length / 3 > (1 << bitDepth))))
+                    throw new IllegalArgumentException("PNG paleti geçersiz veya tekrarlanmış");
+                palette = true;
+            }
             if ("IDAT".equals(type)) {
+                if (colorType == 3 && !palette)
+                    throw new IllegalArgumentException("İndeksli PNG paleti eksik");
                 if (idatEnded) throw new IllegalArgumentException("PNG IDAT sırası geçersiz");
                 idat = true;
             } else if (idat) idatEnded = true;
