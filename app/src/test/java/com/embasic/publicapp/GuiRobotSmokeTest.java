@@ -566,9 +566,18 @@ final class GuiRobotSmokeTest {
                         if (items.get(0) != survivor) return "ORIGINAL_CARD_CHANGED";
                         if (!approved.equals(field(items.get(1), "path")))
                             return "PREVIOUS_APPROVAL_CHANGED";
-                        if (!typed.equals(field(items.get(2), "path")))
-                            return "TYPED_PATH_MISMATCH actual="
-                                    + field(items.get(2), "path") + " expected=" + typed;
+                        // Windows JFileChooser may return the long profile
+                        // spelling (runneradmin) while JUnit @TempDir uses its
+                        // valid 8.3 short alias (RUNNER~1). String/Path equality
+                        // cannot prove two spellings name different files.
+                        // Files.isSameFile checks the actual filesystem object;
+                        // selection of another physical UDF still fails closed.
+                        Path imported = (Path) field(items.get(2), "path");
+                        if (!Files.isRegularFile(imported))
+                            return "TYPED_IMPORTED_NOT_REGULAR_FILE";
+                        if (!Files.isSameFile(typed, imported))
+                            return "TYPED_DIFFERENT_PHYSICAL_FILE_"
+                                    + imported.getFileName();
                         return "TYPED_APPROVED";
                     }), "TYPED_APPROVED"::equals);
             GuiRobotWait.until(Duration.ofSeconds(8), Duration.ofMillis(60),
