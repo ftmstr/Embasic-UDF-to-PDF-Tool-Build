@@ -214,6 +214,47 @@ final class ReferencedMediaRegressionTest {
                     () -> PdfExporter.save(List.of(direct), rejected, false), name);
             assertFalse(Files.exists(rejected), name + " must not publish a partial PDF");
         }
+        // A genuinely 16-bit PNG is valid input for ImageIO, but the
+        // synthetic PDF raster path has not proven 16-bit sample fidelity.
+        // Mutated headers below have correct CRCs: reject at our IHDR gate,
+        // not through a decoder's potentially lenient interpretation.
+        Map<String, byte[]> invalidHeaders = new LinkedHashMap<>();
+        BufferedImage highPrecision = new BufferedImage(8, 8, BufferedImage.TYPE_USHORT_GRAY);
+        ByteArrayOutputStream highPrecisionBytes = new ByteArrayOutputStream();
+        assertTrue(ImageIO.write(highPrecision, "PNG", highPrecisionBytes));
+        byte[] sixteenBit = highPrecisionBytes.toByteArray();
+        assertEquals(16, sixteenBit[24] & 255, "fixture must truly be 16-bit");
+        invalidHeaders.put("16-bit-gray", sixteenBit);
+        Map<String, int[]> mutations = new LinkedHashMap<>();
+        mutations.put("adam7-interlace", new int[]{28, 1});
+        mutations.put("unknown-compression", new int[]{26, 1});
+        mutations.put("unknown-filter", new int[]{27, 1});
+        mutations.put("invalid-color-type", new int[]{25, 1});
+        for (var mutation : mutations.entrySet()) {
+            byte[] altered = canonical.clone();
+            altered[mutation.getValue()[0]] = (byte) mutation.getValue()[1];
+            var checksum = new java.util.zip.CRC32();
+            checksum.update(altered, 12, 17);
+            java.nio.ByteBuffer.wrap(altered).putInt(29, (int) checksum.getValue());
+            invalidHeaders.put(mutation.getKey(), altered);
+        }
+        for (var entry : invalidHeaders.entrySet()) {
+            String name = "ihdr-" + entry.getKey();
+            byte[] invalid = entry.getValue();
+            var readError = assertThrows(IllegalArgumentException.class,
+                    () -> UdfReader.read(archive(name + ".udf",
+                            items(page(ref("media/logo.png"), "A4"),
+                                    "media/logo.png", invalid))), name);
+            assertTrue(readError.getMessage().contains("PNG IHDR"), name);
+            var direct = new UdfReader.DocumentSpec(name + ".udf", "1.0",
+                    List.of(), List.of(new DocumentElements.ImageBlock(invalid, 40f, 40f)),
+                    DocumentElements.PageSpec.a4());
+            Path rejectedHeader = folder.resolve(name + ".pdf");
+            var exportError = assertThrows(IllegalArgumentException.class,
+                    () -> PdfExporter.save(List.of(direct), rejectedHeader, false), name);
+            assertTrue(exportError.getMessage().contains("PNG IHDR"), name);
+            assertFalse(Files.exists(rejectedHeader), name + " must not publish a partial PDF");
+        }
         // Color-managed PNGs may change appearance if ImageIO or the PDF
         // raster exporter ignores their color metadata. The synthetic subset
         // rejects them until a reproducible color transform is verified.
