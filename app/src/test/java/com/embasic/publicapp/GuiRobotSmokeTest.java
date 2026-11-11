@@ -219,9 +219,56 @@ final class GuiRobotSmokeTest {
                                 && selection.size()==source.size()
                                 && count.getText().equals("Seçili: 40 / 40");
                     }),Boolean.TRUE::equals);
+
+            // WGUI-02: actual Ctrl+Space must toggle the focused first card
+            // without clearing the other 39 cards. A second toggle restores it.
+            // The test deliberately checks the live selection and status label;
+            // a mere ActionMap binding would not prove physical key delivery.
+            chord(robot,KeyEvent.VK_CONTROL,KeyEvent.VK_SPACE);
+            GuiRobotWait.until(Duration.ofSeconds(5),Duration.ofMillis(60),
+                    ()->GuiRobotWait.onEdt(()->{
+                        @SuppressWarnings("unchecked")
+                        java.util.Set<Object> selection=(java.util.Set<Object>)field(app,"selected");
+                        return selection.size()==source.size()-1
+                                && !selection.contains(items.get(0))
+                                && count.getText().equals("Seçili: 39 / 40");
+                    }),Boolean.TRUE::equals);
+            chord(robot,KeyEvent.VK_CONTROL,KeyEvent.VK_SPACE);
+            GuiRobotWait.until(Duration.ofSeconds(5),Duration.ofMillis(60),
+                    ()->GuiRobotWait.onEdt(()->{
+                        @SuppressWarnings("unchecked")
+                        java.util.Set<Object> selection=(java.util.Set<Object>)field(app,"selected");
+                        return selection.size()==source.size()
+                                && selection.contains(items.get(0))
+                                && count.getText().equals("Seçili: 40 / 40");
+                    }),Boolean.TRUE::equals);
+
+            // A plain arrow must collapse selection to the next card, while
+            // Shift+End selects the full logical range through offscreen cards.
+            robot.keyPress(KeyEvent.VK_RIGHT);
+            robot.keyRelease(KeyEvent.VK_RIGHT);
+            GuiRobotWait.until(Duration.ofSeconds(5),Duration.ofMillis(60),
+                    ()->GuiRobotWait.onEdt(()->{
+                        @SuppressWarnings("unchecked")
+                        java.util.Set<Object> selection=(java.util.Set<Object>)field(app,"selected");
+                        return selection.size()==1 && selection.contains(items.get(1))
+                                && field(app,"focused")==items.get(1);
+                    }),Boolean.TRUE::equals);
+            chord(robot,KeyEvent.VK_SHIFT,KeyEvent.VK_END);
+            GuiRobotWait.until(Duration.ofSeconds(5),Duration.ofMillis(60),
+                    ()->GuiRobotWait.onEdt(()->{
+                        @SuppressWarnings("unchecked")
+                        java.util.Set<Object> selection=(java.util.Set<Object>)field(app,"selected");
+                        return selection.size()==source.size()-1
+                                && !selection.contains(items.get(0))
+                                && selection.contains(items.get(items.size()-1))
+                                && field(app,"focused")==items.get(items.size()-1)
+                                && count.getText().equals("Seçili: 39 / 40");
+                    }),Boolean.TRUE::equals);
             System.out.println("WINDOWS-GUI-ROBOT-PASS: real DesktopApp mouse drag,"
                     +" edge scroll, target hint, drop order, Ctrl+A, Ctrl+End/Home,"
-                    +" Ctrl+minus/zero thumbnail zoom and selection preservation");
+                    +" Ctrl+minus/zero thumbnail zoom, Ctrl+Space toggle,"
+                    +" plain-arrow collapse and Shift+End offscreen range");
         } finally {
             if (pressed) robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);
             DesktopApp app=appRef.get();
