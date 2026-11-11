@@ -73,6 +73,23 @@ final class GuiRobotSmokeTest {
         }
     }
 
+    /** Detect only the file chooser owned by this MVP window, never another app dialog. */
+    private static boolean containsFileChooser(java.awt.Component component) {
+        if (component instanceof javax.swing.JFileChooser) return true;
+        if (component instanceof java.awt.Container container) {
+            for (java.awt.Component child : container.getComponents())
+                if (containsFileChooser(child)) return true;
+        }
+        return false;
+    }
+    private static boolean isMvpChooserVisible(DesktopApp app) {
+        for (java.awt.Window window : java.awt.Window.getWindows())
+            if (window instanceof javax.swing.JDialog dialog && dialog.isShowing()
+                    && dialog.getOwner() == app && containsFileChooser(dialog))
+                return true;
+        return false;
+    }
+
     @Test @Timeout(65)
     void realWindowDragAutoScrollAndAccessibleTarget() throws Exception {
         Assumptions.assumeTrue(Boolean.getBoolean("embasic.gui.robot"),
@@ -314,11 +331,67 @@ final class GuiRobotSmokeTest {
                                 && themeButton.getText().equals("Aydınlık tema");
                     }),Boolean.TRUE::equals);
 
+            // WGUI-07: the in-grid + UDF tile must remain reachable after
+            // Delete, thumbnail zoom and theme rebuild. Verify a real pointer
+            // click and real Enter/Space key events open the actual JFileChooser,
+            // then cancel each dialog without importing any user files.
+            JPanel plus=GuiRobotWait.onEdt(()->DesktopApp.existingAddTile(grid));
+            assertNotNull(plus,"The + UDF tile must remain in the short grid");
+            assertTrue(GuiRobotWait.onEdt(plus::isEnabled),
+                    "The + tile must be enabled with only one UDF card");
+            assertEquals("+ UDF ekle",GuiRobotWait.onEdt(
+                    ()->plus.getAccessibleContext().getAccessibleName()));
+            GuiRobotWait.onEdt(()->{
+                plus.scrollRectToVisible(new Rectangle(0,0,plus.getWidth(),plus.getHeight()));
+                return true;
+            });
+            GuiRobotWait.until(Duration.ofSeconds(5),Duration.ofMillis(60),
+                    ()->GuiRobotWait.onEdt(()->{
+                        Rectangle tile=plus.getBounds();
+                        Rectangle visible=scroll.getViewport().getViewRect();
+                        return plus.isShowing() && tile.width>0 && tile.height>0
+                                && visible.contains(tile);
+                    }),Boolean.TRUE::equals);
+            Point addScreen=GuiRobotWait.onEdt(()->{
+                Point p=plus.getLocationOnScreen();
+                return new Point(p.x+plus.getWidth()/2,p.y+plus.getHeight()/2);
+            });
+            robot.mouseMove(addScreen.x,addScreen.y);
+            robot.mousePress(InputEvent.BUTTON1_DOWN_MASK);
+            robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);
+            GuiRobotWait.until(Duration.ofSeconds(5),Duration.ofMillis(60),
+                    ()->GuiRobotWait.onEdt(()->isMvpChooserVisible(app)),
+                    Boolean.TRUE::equals);
+            robot.keyPress(KeyEvent.VK_ESCAPE);
+            robot.keyRelease(KeyEvent.VK_ESCAPE);
+            GuiRobotWait.until(Duration.ofSeconds(5),Duration.ofMillis(60),
+                    ()->GuiRobotWait.onEdt(()->!isMvpChooserVisible(app)),
+                    Boolean.TRUE::equals);
+            for(int activationKey : new int[]{KeyEvent.VK_ENTER,KeyEvent.VK_SPACE}) {
+                assertTrue(GuiRobotWait.onEdt(plus::requestFocusInWindow),
+                        "The + tile must accept keyboard focus after chooser cancellation");
+                GuiRobotWait.until(Duration.ofSeconds(5),Duration.ofMillis(60),
+                        ()->GuiRobotWait.onEdt(plus::isFocusOwner),
+                        Boolean.TRUE::equals);
+                robot.keyPress(activationKey);
+                robot.keyRelease(activationKey);
+                GuiRobotWait.until(Duration.ofSeconds(5),Duration.ofMillis(60),
+                        ()->GuiRobotWait.onEdt(()->isMvpChooserVisible(app)),
+                        Boolean.TRUE::equals);
+                robot.keyPress(KeyEvent.VK_ESCAPE);
+                robot.keyRelease(KeyEvent.VK_ESCAPE);
+                GuiRobotWait.until(Duration.ofSeconds(5),Duration.ofMillis(60),
+                        ()->GuiRobotWait.onEdt(()->!isMvpChooserVisible(app)),
+                        Boolean.TRUE::equals);
+            }
+            assertEquals(1,GuiRobotWait.onEdt(items::size),
+                    "Cancelling all + tile choosers must leave the UDF queue unchanged");
+
             System.out.println("WINDOWS-GUI-ROBOT-PASS: real DesktopApp mouse drag,"
                     +" edge scroll, target hint, drop order, Ctrl+A, Ctrl+End/Home,"
                     +" Ctrl+minus/zero thumbnail zoom, Ctrl+Space toggle,"
                     +" plain-arrow collapse, Shift+End offscreen range, Delete to one card,"
-                    +" and physical light/dark theme toggle with viewport palette");
+                    +" physical light/dark theme toggle and + tile chooser click/Enter/Space");
         } finally {
             if (pressed) robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);
             DesktopApp app=appRef.get();
