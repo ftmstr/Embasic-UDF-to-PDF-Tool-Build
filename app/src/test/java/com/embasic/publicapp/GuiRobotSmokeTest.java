@@ -7,6 +7,7 @@ import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.Robot;
 import java.awt.event.InputEvent;
+import java.awt.event.KeyEvent;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -58,6 +59,18 @@ final class GuiRobotSmokeTest {
     }
     private static void edt(Runnable action) throws Exception {
         SwingUtilities.invokeAndWait(action);
+    }
+
+    // Physical key delivery, not Swing ActionMap invocation: prove the actual
+    // Windows keyboard shortcuts reach the focused, packaged-style frame.
+    private static void chord(Robot robot, int modifier, int key) {
+        robot.keyPress(modifier);
+        try {
+            robot.keyPress(key);
+            robot.keyRelease(key);
+        } finally {
+            robot.keyRelease(modifier);
+        }
     }
 
     @Test @Timeout(65)
@@ -170,8 +183,45 @@ final class GuiRobotSmokeTest {
                     ()->GuiRobotWait.onEdt(
                         ()->items.indexOf(first)>0 && feedback.getText().isEmpty()),
                     Boolean.TRUE::equals);
-            System.out.println("WINDOWS-GUI-ROBOT-PASS: real DesktopApp mouse press/drag,"
-                    +" edge scroll, target marker, accessible hint and drop order");
+
+            // WGUI-02/03: after a real pointer reorder, exercise the actual
+            // keyboard route through the 40-card logical (partly virtual) grid.
+            // Do not substitute direct ActionMap calls for physical key events.
+            javax.swing.JSlider zoom=(javax.swing.JSlider)field(app,"thumbnailZoom");
+            JLabel count=(JLabel)field(app,"selectionCount");
+            int originalZoom=GuiRobotWait.onEdt(zoom::getValue);
+            chord(robot,KeyEvent.VK_CONTROL,KeyEvent.VK_A);
+            GuiRobotWait.until(Duration.ofSeconds(5),Duration.ofMillis(60),
+                    ()->GuiRobotWait.onEdt(()->{
+                        @SuppressWarnings("unchecked")
+                        java.util.Set<Object> selection=(java.util.Set<Object>)field(app,"selected");
+                        return selection.size()==source.size()
+                                && count.getText().equals("Seçili: 40 / 40");
+                    }),Boolean.TRUE::equals);
+            chord(robot,KeyEvent.VK_CONTROL,KeyEvent.VK_END);
+            GuiRobotWait.until(Duration.ofSeconds(5),Duration.ofMillis(60),
+                    ()->GuiRobotWait.onEdt(()->field(app,"focused")==items.get(items.size()-1)),
+                    Boolean.TRUE::equals);
+            chord(robot,KeyEvent.VK_CONTROL,KeyEvent.VK_HOME);
+            GuiRobotWait.until(Duration.ofSeconds(5),Duration.ofMillis(60),
+                    ()->GuiRobotWait.onEdt(()->field(app,"focused")==items.get(0)),
+                    Boolean.TRUE::equals);
+            chord(robot,KeyEvent.VK_CONTROL,KeyEvent.VK_MINUS);
+            GuiRobotWait.until(Duration.ofSeconds(5),Duration.ofMillis(60),
+                    ()->GuiRobotWait.onEdt(()->zoom.getValue()<originalZoom),
+                    Boolean.TRUE::equals);
+            chord(robot,KeyEvent.VK_CONTROL,KeyEvent.VK_0);
+            GuiRobotWait.until(Duration.ofSeconds(5),Duration.ofMillis(60),
+                    ()->GuiRobotWait.onEdt(()->{
+                        @SuppressWarnings("unchecked")
+                        java.util.Set<Object> selection=(java.util.Set<Object>)field(app,"selected");
+                        return zoom.getValue()==originalZoom
+                                && selection.size()==source.size()
+                                && count.getText().equals("Seçili: 40 / 40");
+                    }),Boolean.TRUE::equals);
+            System.out.println("WINDOWS-GUI-ROBOT-PASS: real DesktopApp mouse drag,"
+                    +" edge scroll, target hint, drop order, Ctrl+A, Ctrl+End/Home,"
+                    +" Ctrl+minus/zero thumbnail zoom and selection preservation");
         } finally {
             if (pressed) robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);
             DesktopApp app=appRef.get();
