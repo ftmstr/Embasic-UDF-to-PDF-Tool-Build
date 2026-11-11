@@ -518,9 +518,9 @@ public final class DesktopApp extends JFrame {
             // filename entry. Never silently discard that approved UDF.
             // A nonempty multi-selection remains authoritative: the import
             // policy must validate the entire batch, not a single fallback.
-            List<Path> paths = chooserPaths(chooser.getSelectedFiles(),
-                    chooser.getSelectedFile());
             try {
+                List<Path> paths = chooserPaths(chooser.getSelectedFiles(),
+                        chooser.getSelectedFile());
                 addFiles(paths);
             } catch (IllegalArgumentException ex) {
                 // A multi-selection is one action. Never silently omit files from
