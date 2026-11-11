@@ -118,6 +118,39 @@ final class GuiRobotSmokeTest {
         return null;
     }
 
+    /**
+     * The actual Windows chooser filename editor, not a synthetic selectedFile
+     * injection. Never fall back to an arbitrary search/address text field.
+     */
+    private static javax.swing.JTextField fileNameField(java.awt.Component root) {
+        if (root instanceof javax.swing.JTextField text && text.isShowing() && text.isEnabled()) {
+            String name = text.getName();
+            var context = text.getAccessibleContext();
+            String accessible = context == null ? null : context.getAccessibleName();
+            if ("FileNameTextField".equals(name)
+                    || (accessible != null && accessible.toLowerCase(java.util.Locale.ROOT)
+                            .contains("file name")))
+                return text;
+        }
+        if (root instanceof java.awt.Container container)
+            for (java.awt.Component child : container.getComponents()) {
+                javax.swing.JTextField found = fileNameField(child);
+                if (found != null) return found;
+            }
+        return null;
+    }
+
+    private static void typeAsciiFilename(Robot robot, String name) {
+        for (char ch : name.toCharArray()) {
+            assertTrue((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '.',
+                    "Robot fixture filename must be layout-stable ASCII");
+            int key = ch == '.' ? KeyEvent.VK_PERIOD : KeyEvent.getExtendedKeyCodeForChar(ch);
+            assertNotEquals(KeyEvent.VK_UNDEFINED, key);
+            robot.keyPress(key);
+            robot.keyRelease(key);
+        }
+    }
+
     @Test @Timeout(85)
     void realWindowDragAutoScrollAndAccessibleTarget() throws Exception {
         Assumptions.assumeTrue(Boolean.getBoolean("embasic.gui.robot"),
@@ -475,11 +508,82 @@ final class GuiRobotSmokeTest {
             assertEquals(2, GuiRobotWait.onEdt(items::size),
                     "Approved synthetic UDF must be added exactly once");
 
+            // WGUI-07: real keyboard entry in the *multi-select* Windows
+            // JFileChooser. This is the missing physical path from TUR 192:
+            // unlike the earlier approve test, do not setSelectedFile(s).
+            // The filename editor receives actual Robot key events.
+            Path typed = folder.resolve("typedfile.udf");
+            Files.copy(makeFixture(41), typed);
+            robot.keyPress(KeyEvent.VK_ENTER);
+            robot.keyRelease(KeyEvent.VK_ENTER);
+            GuiRobotWait.until(Duration.ofSeconds(5), Duration.ofMillis(60),
+                    () -> GuiRobotWait.onEdt(() -> isMvpChooserVisible(app)),
+                    Boolean.TRUE::equals);
+            Point filenameScreen = GuiRobotWait.until(Duration.ofSeconds(5),
+                    Duration.ofMillis(60), () -> GuiRobotWait.onEdt(() -> {
+                        javax.swing.JFileChooser chooser = activeMvpChooser(app);
+                        if (chooser == null) return null;
+                        chooser.setCurrentDirectory(folder.toFile());
+                        chooser.setSelectedFiles(new java.io.File[0]);
+                        chooser.setSelectedFile(null);
+                        javax.swing.JTextField editor = fileNameField(chooser);
+                        if (editor == null) return null;
+                        Point point = editor.getLocationOnScreen();
+                        return new Point(point.x + editor.getWidth()/2,
+                                point.y + editor.getHeight()/2);
+                    }), java.util.Objects::nonNull);
+            robot.mouseMove(filenameScreen.x, filenameScreen.y);
+            robot.mousePress(InputEvent.BUTTON1_DOWN_MASK);
+            robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);
+            chord(robot, KeyEvent.VK_CONTROL, KeyEvent.VK_A);
+            typeAsciiFilename(robot, "typedfile.udf");
+            GuiRobotWait.until(Duration.ofSeconds(5), Duration.ofMillis(60),
+                    () -> GuiRobotWait.onEdt(() -> {
+                        javax.swing.JFileChooser chooser = activeMvpChooser(app);
+                        javax.swing.JTextField editor =
+                                chooser == null ? null : fileNameField(chooser);
+                        return editor == null ? null : editor.getText();
+                    }), "typedfile.udf"::equals);
+            Point typedApproveScreen = GuiRobotWait.onEdt(() -> {
+                javax.swing.JFileChooser chooser = activeMvpChooser(app);
+                assertNotNull(chooser, "Owned chooser closed before physical approval");
+                assertTrue(chooser.isMultiSelectionEnabled(),
+                        "Physical filename entry must exercise multi-select chooser");
+                javax.swing.JButton button = approveButton(
+                        chooser, chooser.getUI().getApproveButtonText(chooser));
+                assertNotNull(button, "Physical approve control missing");
+                Point point = button.getLocationOnScreen();
+                return new Point(point.x + button.getWidth()/2,
+                        point.y + button.getHeight()/2);
+            });
+            robot.mouseMove(typedApproveScreen.x, typedApproveScreen.y);
+            robot.mousePress(InputEvent.BUTTON1_DOWN_MASK);
+            robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);
+            GuiRobotWait.until(Duration.ofSeconds(8), Duration.ofMillis(60),
+                    () -> GuiRobotWait.onEdt(() -> {
+                        if (isMvpChooserVisible(app)) return "CHOOSER_STILL_OPEN";
+                        if (items.size() != 3) return "QUEUE_SIZE_" + items.size();
+                        if (items.get(0) != survivor) return "ORIGINAL_CARD_CHANGED";
+                        if (!approved.equals(field(items.get(1), "path")))
+                            return "PREVIOUS_APPROVAL_CHANGED";
+                        if (!typed.equals(field(items.get(2), "path")))
+                            return "TYPED_PATH_MISMATCH";
+                        return "TYPED_APPROVED";
+                    }), "TYPED_APPROVED"::equals);
+            GuiRobotWait.until(Duration.ofSeconds(8), Duration.ofMillis(60),
+                    () -> GuiRobotWait.onEdt(() -> {
+                        JPanel current = DesktopApp.existingAddTile(grid);
+                        return app.isFocused() && current != null && current.isShowing()
+                                && current.isEnabled() && current.isFocusOwner();
+                    }), Boolean.TRUE::equals);
+            assertEquals(3, GuiRobotWait.onEdt(items::size),
+                    "Physical filename entry must add exactly one synthetic UDF");
+
             System.out.println("WINDOWS-GUI-ROBOT-PASS: real DesktopApp mouse drag,"
                     +" edge scroll, target hint, drop order, Ctrl+A, Ctrl+End/Home,"
                     +" Ctrl+minus/zero thumbnail zoom, Ctrl+Space toggle,"
                     +" plain-arrow collapse, Shift+End offscreen range, Delete to one card,"
-                    +" physical light/dark theme toggle and + tile chooser click/Enter/Space/Approve");
+                    +" physical light/dark theme toggle and + tile chooser click/Enter/Space/Approve/typed filename");
         } finally {
             if (pressed) robot.mouseRelease(InputEvent.BUTTON1_DOWN_MASK);
             DesktopApp app=appRef.get();
