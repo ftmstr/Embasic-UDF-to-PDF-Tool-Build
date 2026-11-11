@@ -28,8 +28,8 @@ $milestones = @(
     [pscustomobject]@{ Name='Windows launcher / smoke'; Weight=12; Complete=100; Evidence='Tur 194 Windows jpackage launcher 43094458789 ve bagimsiz app-image 43094458974 PASS; release YOK' }
     [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=73; Evidence='Tur 194: 160 kart EDT 16/16; Windows Robot 43094458789 fiziksel dosya adi yazma + fare/klavye/tema/drop PASS; tam son kullanici kabul NOT_RUN' }
     [pscustomobject]@{ Name='UDF turleri ve surumleri'; Weight=26; Complete=12; Evidence='Sentetik ZIP PNG referans, A5/LEGAL; gercek UYAP schema dogrulanmadi' }
-    [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Tur 194: 172 JUnit (171 PASS, 1 SKIP) Win/Linux; 2 sayfa 128 RGBA piksel paritesi, iki softmask, A5/LEGAL geometri PASS; Tur 189 sabit font metadata ve Tur 188 PNG fail-closed korunur; native UYAP golden YOK' }
-    [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Tur 194: Windows chooser 8.3/long alias fiziksel ayni dosya ile PASS, farkli dosya fail-closed; SHA PASS, license approval YOK, SOURCE_GATE BLOCKED; atomik Windows TOCTOU NO-GO' }
+    [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Tur194 kod SHA 56a9859: 172 JUnit (171 PASS, 1 SKIP), 128 RGBA piksel A5/LEGAL PASS; Tur195 SHA 43b110a: 4 sayfa RGB/RGBA x 72/144 DPI 512 piksel + sirali font/tablo/fail-closed testleri eklendi, CI QUEUED/NOT_VERIFIED; native UYAP golden YOK' }
+    [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Tur194 fiziksel Windows chooser 8.3 alias smoke 43094458789 PASS; Tur195 sirali PDF bozuk son PNG muhafaza testi CI NOT_VERIFIED; SHA denetimi upstream SUCCESS, dagitim lisans/onay YOK, SOURCE_GATE BLOCKED; atomik Windows TOCTOU NO-GO' }
     [pscustomobject]@{ Name='Beta kabul / dagitim'; Weight=8; Complete=10; Evidence='Paket CI ici; indirme paketi yayinlanmadi' }
 )
 if ((($milestones | Measure-Object -Property Weight -Sum).Sum) -ne 100) {
