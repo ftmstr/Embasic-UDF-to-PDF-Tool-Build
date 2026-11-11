@@ -567,7 +567,8 @@ final class GuiRobotSmokeTest {
                         if (!approved.equals(field(items.get(1), "path")))
                             return "PREVIOUS_APPROVAL_CHANGED";
                         if (!typed.equals(field(items.get(2), "path")))
-                            return "TYPED_PATH_MISMATCH";
+                            return "TYPED_PATH_MISMATCH actual="
+                                    + field(items.get(2), "path") + " expected=" + typed;
                         return "TYPED_APPROVED";
                     }), "TYPED_APPROVED"::equals);
             GuiRobotWait.until(Duration.ofSeconds(8), Duration.ofMillis(60),
