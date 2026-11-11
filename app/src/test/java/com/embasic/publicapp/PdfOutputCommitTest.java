@@ -1,17 +1,47 @@
 package com.embasic.publicapp;
 
 import static org.junit.jupiter.api.Assertions.*;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.awt.Color;
 import java.util.List;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /** Regression for a PDF target appearing after the initial overwrite check. */
 final class PdfOutputCommitTest {
     @TempDir Path folder;
+
+    @Test void stagedPageGeometryRejectsChangedCropRotationAndPageCount() throws Exception {
+        // A successful PDF reload is insufficient: a silently changed page
+        // crop, orientation or page count must prevent publication.
+        try (PDDocument original = new PDDocument();
+             PDDocument staged = new PDDocument()) {
+            original.addPage(new PDPage(new PDRectangle(595.28f, 841.89f)));
+            original.addPage(new PDPage(new PDRectangle(1008f, 612f)));
+            staged.addPage(new PDPage(new PDRectangle(595.28f, 841.89f)));
+            staged.addPage(new PDPage(new PDRectangle(1008f, 612f)));
+            List<float[]> expected = PdfExporter.snapshotPageGeometry(original);
+            assertDoesNotThrow(() -> PdfExporter.verifyStagedPageGeometry(expected, staged));
+            staged.getPage(1).setCropBox(new PDRectangle(1007f, 612f));
+            IOException crop = assertThrows(IOException.class,
+                    () -> PdfExporter.verifyStagedPageGeometry(expected, staged));
+            assertTrue(crop.getMessage().contains("2"));
+            staged.getPage(1).setCropBox(new PDRectangle(1008f, 612f));
+            staged.getPage(1).setRotation(90);
+            assertThrows(IOException.class,
+                    () -> PdfExporter.verifyStagedPageGeometry(expected, staged));
+            staged.getPage(1).setRotation(0);
+            staged.removePage(1);
+            assertThrows(IOException.class,
+                    () -> PdfExporter.verifyStagedPageGeometry(expected, staged));
+        }
+    }
 
     @Test void lateCreatedTargetCannotBeClobberedWithoutConsent() throws Exception {
         Path staging = folder.resolve(".embasic-pending.pdf");
