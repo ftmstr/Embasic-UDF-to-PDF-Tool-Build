@@ -168,9 +168,22 @@ final class ReferencedMediaRegressionTest {
                 new byte[]{0, 0, 0, 2, 0, 0, 0, 0});
         byte[] trailing = java.util.Arrays.copyOf(canonical, canonical.length + 3);
         trailing[canonical.length] = 42;
-        for (int index = 0; index < 2; index++) {
-            byte[] invalid = index == 0 ? animated : trailing;
-            String name = index == 0 ? "animated" : "trailing";
+        byte[] unknownCritical = insertPngChunk(canonical, "ABCD", new byte[]{42});
+        byte[] badCrc = canonical.clone();
+        badCrc[29] ^= 1; // IHDR CRC, leaving the pixel data unchanged.
+        for (int index = 0; index < 4; index++) {
+            byte[] invalid = switch (index) {
+                case 0 -> animated;
+                case 1 -> trailing;
+                case 2 -> unknownCritical;
+                default -> badCrc;
+            };
+            String name = switch (index) {
+                case 0 -> "animated";
+                case 1 -> "trailing";
+                case 2 -> "unknown-critical";
+                default -> "bad-crc";
+            };
             assertThrows(IllegalArgumentException.class, () -> UdfReader.read(
                     archive(name + ".udf", items(page(ref("media/logo.png"), "A4"),
                             "media/logo.png", invalid))), name);

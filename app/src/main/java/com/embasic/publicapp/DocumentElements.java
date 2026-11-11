@@ -227,6 +227,14 @@ public final class DocumentElements {
             }
             if ("acTL".equals(type) || "fcTL".equals(type) || "fdAT".equals(type))
                 throw new IllegalArgumentException("Animasyonlu PNG PDF'ye sessizce düzleştirilemez");
+            // Unknown critical chunks can alter the image interpretation.
+            // ImageIO may ignore them, so a PDF must not silently omit them.
+            if (type.charAt(0) >= 'A' && type.charAt(0) <= 'Z'
+                    && !("IHDR".equals(type) || "PLTE".equals(type)
+                            || "IDAT".equals(type) || "IEND".equals(type)))
+                throw new IllegalArgumentException("Desteklenmeyen kritik PNG parçası");
+            if ("PLTE".equals(type) && idat)
+                throw new IllegalArgumentException("PNG palet sırası geçersiz");
             if ("IDAT".equals(type)) {
                 if (idatEnded) throw new IllegalArgumentException("PNG IDAT sırası geçersiz");
                 idat = true;
