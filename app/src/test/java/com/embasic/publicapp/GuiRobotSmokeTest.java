@@ -368,18 +368,15 @@ final class GuiRobotSmokeTest {
                     ()->GuiRobotWait.onEdt(()->!isMvpChooserVisible(app)),
                     Boolean.TRUE::equals);
             for(int activationKey : new int[]{KeyEvent.VK_ENTER,KeyEvent.VK_SPACE}) {
-                // A native Windows chooser closes before the owner frame's
-                // activation/focus event necessarily reaches the Swing EDT.
-                // An immediate requestFocusInWindow() can return false even
-                // when the tile is usable. Wait for the real owner activation,
-                // then require actual tile focus before sending physical keys.
+                // The application, not the test, must restore tile focus
+                // after a cancelled native chooser. Do NOT request focus from
+                // the Robot test: that would conceal a real keyboard defect.
                 GuiRobotWait.until(Duration.ofSeconds(5),Duration.ofMillis(60),
                         ()->GuiRobotWait.onEdt(()->{
                             if (!app.isFocused()) return "OWNER_NOT_FOCUSED";
                             if (!plus.isShowing()) return "ADD_TILE_NOT_SHOWING";
                             if (!plus.isEnabled()) return "ADD_TILE_DISABLED";
-                            plus.requestFocusInWindow();
-                            return plus.isFocusOwner() ? "FOCUSED" : "FOCUS_PENDING";
+                            return plus.isFocusOwner() ? "FOCUSED" : "FOCUS_NOT_RESTORED";
                         }),"FOCUSED"::equals);
                 robot.keyPress(activationKey);
                 robot.keyRelease(activationKey);
@@ -392,6 +389,9 @@ final class GuiRobotSmokeTest {
                         ()->GuiRobotWait.onEdt(()->!isMvpChooserVisible(app)),
                         Boolean.TRUE::equals);
             }
+            GuiRobotWait.until(Duration.ofSeconds(5),Duration.ofMillis(60),
+                    ()->GuiRobotWait.onEdt(()->app.isFocused() && plus.isFocusOwner()),
+                    Boolean.TRUE::equals);
             assertEquals(1,GuiRobotWait.onEdt(items::size),
                     "Cancelling all + tile choosers must leave the UDF queue unchanged");
 
