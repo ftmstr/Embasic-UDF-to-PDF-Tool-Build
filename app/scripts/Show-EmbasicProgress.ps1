@@ -25,11 +25,11 @@ $forecastBase = [DateTime]::ParseExact('2026-10-31', 'yyyy-MM-dd', [System.Globa
 # Weight totals are exactly 100. Completion is engineering judgement, not telemetry.
 $milestones = @(
     [pscustomobject]@{ Name='Public kod tabani / Maven'; Weight=12; Complete=100; Evidence='Public kaynak + Linux/Windows Maven CI' }
-    [pscustomobject]@{ Name='Windows launcher / smoke'; Weight=12; Complete=100; Evidence='Tur 189 Windows CI jpackage launcher 43061697019 ve bagimsiz app-image 43061697350 PASS; release YOK' }
-    [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=73; Evidence='Tur 189: 160 kart EDT 16/16; opt-in fiziksel Windows Robot 43061697019 sinirli fare/klavye/tema/+ tile PASS; tam son kullanici kabul NOT_RUN' }
+    [pscustomobject]@{ Name='Windows launcher / smoke'; Weight=12; Complete=100; Evidence='Tur 194 Windows jpackage launcher 43094458789 ve bagimsiz app-image 43094458974 PASS; release YOK' }
+    [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=73; Evidence='Tur 194: 160 kart EDT 16/16; Windows Robot 43094458789 fiziksel dosya adi yazma + fare/klavye/tema/drop PASS; tam son kullanici kabul NOT_RUN' }
     [pscustomobject]@{ Name='UDF turleri ve surumleri'; Weight=26; Complete=12; Evidence='Sentetik ZIP PNG referans, A5/LEGAL; gercek UYAP schema dogrulanmadi' }
-    [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Tur 189: 170 JUnit (169 PASS, 1 SKIP) Win/Linux; sabit path+length+mtime font swap gercek gomulu font degisimi ve bozuk kaynakta mevcut PDF korunmasi PASS; Tur 188 PNG IHDR kapilari PASS; native UYAP golden YOK' }
-    [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Tur 189: path/length/mtime ayniyken valid font swap PASS, invalid font PDF fail-closed; Windows Java secure handle UNAVAILABLE ve TOCTOU NO-GO; upstream SHA PASS, license approval YOK, SOURCE_GATE BLOCKED' }
+    [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Tur 194: 172 JUnit (171 PASS, 1 SKIP) Win/Linux; 2 sayfa 128 RGBA piksel paritesi, iki softmask, A5/LEGAL geometri PASS; Tur 189 sabit font metadata ve Tur 188 PNG fail-closed korunur; native UYAP golden YOK' }
+    [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Tur 194: Windows chooser 8.3/long alias fiziksel ayni dosya ile PASS, farkli dosya fail-closed; SHA PASS, license approval YOK, SOURCE_GATE BLOCKED; atomik Windows TOCTOU NO-GO' }
     [pscustomobject]@{ Name='Beta kabul / dagitim'; Weight=8; Complete=10; Evidence='Paket CI ici; indirme paketi yayinlanmadi' }
 )
 if ((($milestones | Measure-Object -Property Weight -Sum).Sum) -ne 100) {
