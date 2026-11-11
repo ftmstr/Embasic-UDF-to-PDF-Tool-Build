@@ -368,7 +368,7 @@ final class GuiRobotSmokeTest {
                     ()->GuiRobotWait.onEdt(()->!isMvpChooserVisible(app)),
                     Boolean.TRUE::equals);
             for(int activationKey : new int[]{KeyEvent.VK_ENTER,KeyEvent.VK_SPACE}) {
-                assertTrue(GuiRobotWait.onEdt(plus::requestFocusInWindow),
+                assertTrue(Boolean.TRUE.equals(GuiRobotWait.onEdt(plus::requestFocusInWindow)),
                         "The + tile must accept keyboard focus after chooser cancellation");
                 GuiRobotWait.until(Duration.ofSeconds(5),Duration.ofMillis(60),
                         ()->GuiRobotWait.onEdt(plus::isFocusOwner),
