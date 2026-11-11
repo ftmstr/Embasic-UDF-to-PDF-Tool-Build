@@ -7,8 +7,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.awt.Color;
 import java.util.List;
+import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -40,6 +42,44 @@ final class PdfOutputCommitTest {
             staged.removePage(1);
             assertThrows(IOException.class,
                     () -> PdfExporter.verifyStagedPageGeometry(expected, staged));
+        }
+    }
+
+    @Test void sameGeometryPageReorderingCannotPassStagedContentValidation() throws Exception {
+        // Two same-size pages have indistinguishable MediaBox/CropBox/rotation.
+        // Distinct synthetic drawing commands must still retain their order
+        // after serialization and reload, before the PDF can be published.
+        Path staged = folder.resolve("synthetic-same-geometry.pdf");
+        try (PDDocument original = new PDDocument()) {
+            for (int index = 0; index < 2; index++) {
+                PDPage page = new PDPage(PDRectangle.A4);
+                original.addPage(page);
+                try (PDPageContentStream stream = new PDPageContentStream(original, page)) {
+                    float y = 90 + index * 40;
+                    stream.moveTo(60, y);
+                    stream.lineTo(160, y);
+                    stream.stroke();
+                }
+            }
+            List<float[]> expectedGeometry = PdfExporter.snapshotPageGeometry(original);
+            List<String> expectedContents = PdfExporter.snapshotPageContentHashes(original);
+            assertNotEquals(expectedContents.get(0), expectedContents.get(1));
+            original.save(staged.toFile());
+            try (PDDocument reloaded = Loader.loadPDF(staged.toFile())) {
+                assertDoesNotThrow(() ->
+                        PdfExporter.verifyStagedPageGeometry(expectedGeometry, reloaded));
+                assertDoesNotThrow(() ->
+                        PdfExporter.verifyStagedPageContentHashes(expectedContents, reloaded));
+                PDPage first = reloaded.getPage(0);
+                reloaded.removePage(0);
+                reloaded.addPage(first);
+                // The previous geometry-only guard cannot distinguish this swap.
+                assertDoesNotThrow(() ->
+                        PdfExporter.verifyStagedPageGeometry(expectedGeometry, reloaded));
+                IOException swapped = assertThrows(IOException.class, () ->
+                        PdfExporter.verifyStagedPageContentHashes(expectedContents, reloaded));
+                assertTrue(swapped.getMessage().contains("1"));
+            }
         }
     }
 
