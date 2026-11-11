@@ -128,4 +128,69 @@ final class PdfFontSourceChangeFailClosedTest {
         }
     }
 
+    @Test void samePathSameLengthAndMtimeStillEmbedsUpdatedValidFontAndRejectsBadBytes()
+            throws Exception {
+        // Never modify the installed font: pad two different existing, valid
+        // fonts ONLY in this disposable fixture to exactly the same length.
+        // TTF table offsets/contents stay untouched; harmless trailing bytes
+        // allow an adversarial same-length metadata replay.
+        byte[] regular = Files.readAllBytes(PdfExporter.systemFont(false));
+        byte[] bold = Files.readAllBytes(PdfExporter.systemFont(true));
+        assertFalse(java.util.Arrays.equals(regular, bold));
+        int exactSize = Math.max(regular.length, bold.length);
+        java.nio.file.attribute.FileTime fixedTime =
+                java.nio.file.attribute.FileTime.fromMillis(1_700_000_000_000L);
+        Path source = folder.resolve("same-identity-copy.ttf");
+        Path oldPdf = folder.resolve("approved-before.pdf");
+        Path newPdf = folder.resolve("approved-after.pdf");
+        Files.write(source, java.util.Arrays.copyOf(regular, exactSize));
+        Files.setLastModifiedTime(source, fixedTime);
+
+        var paragraph = new UdfReader.Paragraph(List.of(new UdfReader.Run(
+                "SYNTHETIC-VALID-FONT-SWAP",
+                new UdfReader.Style(14, false, new Color(24, 80, 145)))));
+        var doc = new UdfReader.DocumentSpec("public-synthetic.udf", "1.0",
+                List.of(paragraph));
+        String previous = System.getProperty("embasic.font.regular");
+        try {
+            System.setProperty("embasic.font.regular", source.toString());
+            assertEquals(1, PdfExporter.save(List.of(doc), oldPdf, false));
+            byte[] firstSubset = embeddedTrueType(oldPdf);
+            assertEquals(exactSize, Files.size(source));
+            assertEquals(fixedTime, Files.getLastModifiedTime(source));
+
+            // Path, file length and mtime deliberately do NOT change.
+            Files.write(source, java.util.Arrays.copyOf(bold, exactSize));
+            Files.setLastModifiedTime(source, fixedTime);
+            assertEquals(exactSize, Files.size(source));
+            assertEquals(fixedTime, Files.getLastModifiedTime(source));
+            assertEquals(1, PdfExporter.save(List.of(doc), newPdf, false));
+            byte[] changedSubset = embeddedTrueType(newPdf);
+            assertFalse(java.util.Arrays.equals(firstSubset, changedSubset),
+                    "Same-length and same-mtime source changes must not reuse "
+                    + "a stale embedded font subset");
+            byte[] approvedPdf = Files.readAllBytes(newPdf);
+
+            // Still the same length/mtime/path, but now invalid bytes. A
+            // previously approved PDF must never be silently overwritten.
+            Files.write(source, new byte[exactSize]);
+            Files.setLastModifiedTime(source, fixedTime);
+            assertEquals(exactSize, Files.size(source));
+            assertEquals(fixedTime, Files.getLastModifiedTime(source));
+            assertThrows(Exception.class,
+                    () -> PdfExporter.save(List.of(doc), newPdf, true));
+            assertArrayEquals(approvedPdf, Files.readAllBytes(newPdf));
+            try (var entries = Files.list(folder)) {
+                assertEquals(0, entries.filter(p -> p.getFileName().toString()
+                        .startsWith(".embasic-pending-")).count());
+            }
+            System.out.println("EMBASIC_FONT_STABLE_METADATA path=UNCHANGED"
+                    + " length=UNCHANGED mtime=UNCHANGED validSwap=EMBEDDED_CHANGED"
+                    + " corruptFont=REJECTED approvedPdf=UNCHANGED stagedFiles=0");
+        } finally {
+            if (previous == null) System.clearProperty("embasic.font.regular");
+            else System.setProperty("embasic.font.regular", previous);
+        }
+    }
+
 }
