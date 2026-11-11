@@ -195,6 +195,44 @@ final class ReferencedMediaRegressionTest {
                     () -> PdfExporter.save(List.of(direct), rejected, false), name);
             assertFalse(Files.exists(rejected), name + " must not publish a partial PDF");
         }
+        // Color-managed PNGs may change appearance if ImageIO or the PDF
+        // raster exporter ignores their color metadata. The synthetic subset
+        // rejects them until a reproducible color transform is verified.
+        byte[] srgbIcc = java.awt.color.ICC_Profile.getInstance(
+                java.awt.color.ColorSpace.CS_sRGB).getData();
+        ByteArrayOutputStream compressedIcc = new ByteArrayOutputStream();
+        try (var compressor = new java.util.zip.DeflaterOutputStream(compressedIcc)) {
+            compressor.write(srgbIcc);
+        }
+        ByteArrayOutputStream iccpPayload = new ByteArrayOutputStream();
+        iccpPayload.write("sRGB".getBytes(StandardCharsets.US_ASCII));
+        iccpPayload.write(0); // profile name terminator
+        iccpPayload.write(0); // deflate compression method
+        iccpPayload.write(compressedIcc.toByteArray());
+        var chromaticity = java.nio.ByteBuffer.allocate(32);
+        for (int value : new int[]{31270, 32900, 64000, 33000, 30000, 60000, 15000, 6000})
+            chromaticity.putInt(value);
+        Map<String, byte[]> colorManaged = new LinkedHashMap<>();
+        colorManaged.put("srgb", insertPngChunk(canonical, "sRGB", new byte[]{0}));
+        colorManaged.put("gamma", insertPngChunk(canonical, "gAMA", new byte[]{0, 0, (byte) 177, (byte) 143}));
+        colorManaged.put("icc", insertPngChunk(canonical, "iCCP", iccpPayload.toByteArray()));
+        colorManaged.put("chromaticity", insertPngChunk(canonical, "cHRM", chromaticity.array()));
+        colorManaged.put("significant-bits", insertPngChunk(canonical, "sBIT", new byte[]{8, 8, 8}));
+        colorManaged.put("background", insertPngChunk(canonical, "bKGD", new byte[]{0, 0, 0, 0, 0, 0}));
+        for (var entry : colorManaged.entrySet()) {
+            String name = "color-" + entry.getKey();
+            byte[] invalid = entry.getValue();
+            assertThrows(IllegalArgumentException.class, () -> UdfReader.read(
+                    archive(name + ".udf", items(page(ref("media/logo.png"), "A4"),
+                            "media/logo.png", invalid))), name);
+            var direct = new UdfReader.DocumentSpec(name + ".udf", "1.0",
+                    List.of(), List.of(new DocumentElements.ImageBlock(invalid, 40f, 40f)),
+                    DocumentElements.PageSpec.a4());
+            Path rejectedColor = folder.resolve(name + ".pdf");
+            assertThrows(IllegalArgumentException.class,
+                    () -> PdfExporter.save(List.of(direct), rejectedColor, false), name);
+            assertFalse(Files.exists(rejectedColor), name + " must not publish a partial PDF");
+        }
         // Public ImageBlock constructors bypass XML parsing. A valid direct
         // PNG still renders, but oversized or dimension-forged PNGs must not
         // allocate a huge raster or publish a misleading partial PDF.
