@@ -227,6 +227,13 @@ public final class DocumentElements {
             }
             if ("acTL".equals(type) || "fcTL".equals(type) || "fdAT".equals(type))
                 throw new IllegalArgumentException("Animasyonlu PNG PDF'ye sessizce düzleştirilemez");
+            // Color-managed PNGs may be interpreted differently by ImageIO
+            // and the PDF raster output. This synthetic subset has no audited
+            // color transform, so reject rather than silently alter colors.
+            if ("iCCP".equals(type) || "sRGB".equals(type)
+                    || "gAMA".equals(type) || "cHRM".equals(type)
+                    || "sBIT".equals(type) || "bKGD".equals(type))
+                throw new IllegalArgumentException("Desteklenmeyen PNG renk profili/metaverisi");
             // Unknown critical chunks can alter the image interpretation.
             // ImageIO may ignore them, so a PDF must not silently omit them.
             if (type.charAt(0) >= 'A' && type.charAt(0) <= 'Z'
