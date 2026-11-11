@@ -19,17 +19,17 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $today = [DateTimeOffset]::UtcNow.ToOffset([TimeSpan]::FromHours(3))
-$reviewDate = '2026-11-10'
+$reviewDate = '2026-11-11'
 # Do not drift conditional release dates forward just because an hourly tour ran.
 $forecastBase = [DateTime]::ParseExact('2026-10-31', 'yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture)
 # Weight totals are exactly 100. Completion is engineering judgement, not telemetry.
 $milestones = @(
     [pscustomobject]@{ Name='Public kod tabani / Maven'; Weight=12; Complete=100; Evidence='Public kaynak + Linux/Windows Maven CI' }
-    [pscustomobject]@{ Name='Windows launcher / smoke'; Weight=12; Complete=100; Evidence='Windows jpackage CLI launcher 42883983749 and separate app-image check 42883983821 (Tur 57 Public code HEAD e0b0959)' }
-    [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=73; Evidence='Tur 57: 160 kart EDT 16/16, klavye/fare secim-siralama sentetik PASS; fiziksel Windows Robot NOT_RUN' }
+    [pscustomobject]@{ Name='Windows launcher / smoke'; Weight=12; Complete=100; Evidence='Tur 189 Windows CI jpackage launcher 43061697019 ve bagimsiz app-image 43061697350 PASS; release YOK' }
+    [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=73; Evidence='Tur 189: 160 kart EDT 16/16; opt-in fiziksel Windows Robot 43061697019 sinirli fare/klavye/tema/+ tile PASS; tam son kullanici kabul NOT_RUN' }
     [pscustomobject]@{ Name='UDF turleri ve surumleri'; Weight=26; Complete=12; Evidence='Sentetik ZIP PNG referans, A5/LEGAL; gercek UYAP schema dogrulanmadi' }
-    [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Tur 57: 169 JUnit (168 PASS, 1 SKIP) Win/Linux; 4 JVM default cache font update/metadata corrupt/invalid font PASS; PNG, renk, tablo ve fail-closed sentetik PASS; native UYAP golden YOK' }
-    [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Tur 57: 4 JVM default PDFBox cache Windows/Linux PASS, 3 JVM explicit cache Win PASS, checksums ON; Windows Java handle UNAVAILABLE, atomic TOCTOU NO-GO; upstream SHA SUCCESS, SOURCE_GATE BLOCKED' }
+    [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Tur 189: 170 JUnit (169 PASS, 1 SKIP) Win/Linux; sabit path+length+mtime font swap gercek gomulu font degisimi ve bozuk kaynakta mevcut PDF korunmasi PASS; Tur 188 PNG IHDR kapilari PASS; native UYAP golden YOK' }
+    [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Tur 189: path/length/mtime ayniyken valid font swap PASS, invalid font PDF fail-closed; Windows Java secure handle UNAVAILABLE ve TOCTOU NO-GO; upstream SHA PASS, license approval YOK, SOURCE_GATE BLOCKED' }
     [pscustomobject]@{ Name='Beta kabul / dagitim'; Weight=8; Complete=10; Evidence='Paket CI ici; indirme paketi yayinlanmadi' }
 )
 if ((($milestones | Measure-Object -Property Weight -Sum).Sum) -ne 100) {
