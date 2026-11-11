@@ -162,6 +162,21 @@ final class PdfMultipageCompositeRegressionTest {
                     "Merged left cell must not have a phantom horizontal seam");
             assertTrue(darkNear(pageTwo, 48 + 110 + 55, 48 + 120),
                     "Unmerged right-column row boundary must be present");
+            // Independent 72-DPI geometry oracle for the complete page-two table:
+            // the merged group ends at y=288, the final row ends at y=408,
+            // and the 8pt gap before the image must remain blank. These
+            // coordinates come from A5 margins and declared row heights,
+            // not from the PDF exporter's own layout calculations.
+            assertTrue(darkNear(pageTwo, 48 + 55, 288),
+                    "Merged group bottom border missing at y=288");
+            assertTrue(darkNear(pageTwo, 48 + 55, 408),
+                    "Final table row bottom border missing at y=408");
+            assertTrue(darkNear(pageTwo, 48, 200),
+                    "Page-two table left border missing");
+            assertTrue(darkNear(pageTwo, 48 + 220, 200),
+                    "Page-two table right border missing");
+            assertFalse(darkNear(pageTwo, 48 + 55, 412),
+                    "Table must not paint a phantom border into the 8pt image gap");
             int[][] centers = {{68, 436}, {108, 436}, {68, 476}, {108, 476}};
             for (int quadrant = 0; quadrant < centers.length; quadrant++)
                 assertRgb(COLORS[quadrant],
