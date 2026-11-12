@@ -182,6 +182,21 @@ final class PdfOutputCommitTest {
                 assertDoesNotThrow(() ->
                         PdfExporter.verifyStagedPageFontResources(expected, reloaded));
 
+                // The embedded font program and CID widths can stay unchanged
+                // while descriptor ascent alters glyph geometry or clipping.
+                var descriptor = (org.apache.pdfbox.cos.COSDictionary)
+                        descendant.getDictionaryObject(org.apache.pdfbox.cos.COSName.FONT_DESC);
+                var ascentKey = org.apache.pdfbox.cos.COSName.getPDFName("Ascent");
+                var originalAscent = descriptor.getDictionaryObject(ascentKey);
+                descriptor.setItem(ascentKey, org.apache.pdfbox.cos.COSInteger.get(-999999));
+                assertThrows(IOException.class, () ->
+                        PdfExporter.verifyStagedPageFontResources(expected, reloaded),
+                        "Changed font descriptor ascent must not survive staging");
+                if (originalAscent == null) descriptor.removeItem(ascentKey);
+                else descriptor.setItem(ascentKey, originalAscent);
+                assertDoesNotThrow(() ->
+                        PdfExporter.verifyStagedPageFontResources(expected, reloaded));
+
                 // A different CMap must not pass merely because the PDF's
                 // page geometry and /F1 drawing command are unchanged.
                 var replacement = reloaded.getDocument().createCOSStream();
