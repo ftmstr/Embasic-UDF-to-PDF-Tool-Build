@@ -402,6 +402,7 @@ public final class PdfExporter {
             List<float[]> expectedGeometry;
             List<String> expectedPageContents;
             List<List<String>> expectedImageResources;
+            List<List<String>> expectedFontResources;
             try (PDDocument pdf = render(docs)) {
                 pages = pdf.getNumberOfPages();
                 // Record every page's original media/crop boxes and rotation
@@ -417,11 +418,16 @@ public final class PdfExporter {
                 // otherwise pass the page-content SHA guard unchanged.
                 expectedImageResources = snapshotPageImageResources(pdf);
                 pdf.save(staging.toFile());
+                // PDFBox finalizes Type0 subsets during save(). Snapshot only
+                // after serialization so the embedded font bytes and ToUnicode
+                // CMaps are compared against their finalized in-memory values.
+                expectedFontResources = snapshotPageFontResources(pdf);
             }
             try (PDDocument reloaded = Loader.loadPDF(staging.toFile())) {
                 verifyStagedPageGeometry(expectedGeometry, reloaded);
                 verifyStagedPageContentHashes(expectedPageContents, reloaded);
                 verifyStagedPageImageResources(expectedImageResources, reloaded);
+                verifyStagedPageFontResources(expectedFontResources, reloaded);
             }
             // A source may change during a long 160-document render. Keep the
             // validated PDF private until the caller confirms the same bytes
@@ -584,6 +590,81 @@ public final class PdfExporter {
         for (int page = 0; page < expected.size(); page++)
             if (!expected.get(page).equals(actual.get(page)))
                 throw new IOException("PDF görüntü kaynağı doğrulaması başarısız: "
+                        + (page + 1));
+    }
+
+    /**
+     * The content stream records only /F1 Tf; swapping /F1's embedded font
+     * program or ToUnicode CMap can silently alter visible text or extraction
+     * without changing any page-content hash. Only the renderer's embedded
+     * Type0 TrueType subset is admitted. PDFBox writes its font subsets during
+     * save(), so call this on the saved in-memory document and on the reloaded
+     * staged file, never on an unfinalized font.
+     *
+     * This is a resource integrity check, not a guarantee of native UYAP
+     * typography or glyph positioning.
+     */
+    static List<List<String>> snapshotPageFontResources(PDDocument pdf) throws IOException {
+        List<List<String>> pages = new ArrayList<>(pdf.getNumberOfPages());
+        Map<org.apache.pdfbox.cos.COSStream, String> digests =
+                new java.util.IdentityHashMap<>();
+        for (PDPage page : pdf.getPages()) {
+            var resources = page.getResources();
+            List<org.apache.pdfbox.cos.COSName> names = new ArrayList<>();
+            if (resources != null)
+                for (var name : resources.getFontNames()) names.add(name);
+            names.sort(java.util.Comparator.comparing(org.apache.pdfbox.cos.COSName::getName));
+            List<String> fonts = new ArrayList<>(names.size());
+            for (var name : names) {
+                var font = resources.getFont(name);
+                if (!(font instanceof PDType0Font type0) || !type0.isEmbedded())
+                    throw new IOException("PDF desteklenmeyen veya gömülmemiş font kaynağı");
+                var dictionary = type0.getCOSObject();
+                var unicode = dictionary.getDictionaryObject(
+                        org.apache.pdfbox.cos.COSName.TO_UNICODE);
+                var descendants = dictionary.getDictionaryObject(
+                        org.apache.pdfbox.cos.COSName.DESCENDANT_FONTS);
+                if (!(unicode instanceof org.apache.pdfbox.cos.COSStream unicodeStream)
+                        || !(descendants instanceof org.apache.pdfbox.cos.COSArray array)
+                        || array.size() != 1
+                        || !(array.getObject(0) instanceof org.apache.pdfbox.cos.COSDictionary descendant)
+                        || !(descendant.getDictionaryObject(
+                                org.apache.pdfbox.cos.COSName.FONT_DESC)
+                                instanceof org.apache.pdfbox.cos.COSDictionary descriptor)
+                        || !(descriptor.getDictionaryObject(
+                                org.apache.pdfbox.cos.COSName.FONT_FILE2)
+                                instanceof org.apache.pdfbox.cos.COSStream fontStream))
+                    throw new IOException("PDF gömülü font/ToUnicode kaynağı eksik");
+                String fontHash = cachedDecodedStreamSha256(fontStream, digests);
+                String unicodeHash = cachedDecodedStreamSha256(unicodeStream, digests);
+                fonts.add(name.getName() + "|" + dictionary.getNameAsString(
+                        org.apache.pdfbox.cos.COSName.BASE_FONT) + "|"
+                        + fontHash + "|" + unicodeHash);
+            }
+            pages.add(List.copyOf(fonts));
+        }
+        return List.copyOf(pages);
+    }
+
+    private static String cachedDecodedStreamSha256(
+            org.apache.pdfbox.cos.COSStream stream,
+            Map<org.apache.pdfbox.cos.COSStream, String> digests) throws IOException {
+        String existing = digests.get(stream);
+        if (existing != null) return existing;
+        String hash = decodedStreamSha256(stream);
+        digests.put(stream, hash);
+        return hash;
+    }
+
+    static void verifyStagedPageFontResources(List<List<String>> expected,
+                                               PDDocument reloaded) throws IOException {
+        if (expected == null || expected.isEmpty()
+                || expected.size() != reloaded.getNumberOfPages())
+            throw new IOException("PDF font kaynak bütünlüğü doğrulaması başarısız");
+        List<List<String>> actual = snapshotPageFontResources(reloaded);
+        for (int page = 0; page < expected.size(); page++)
+            if (!expected.get(page).equals(actual.get(page)))
+                throw new IOException("PDF font/ToUnicode kaynağı doğrulaması başarısız: "
                         + (page + 1));
     }
 
