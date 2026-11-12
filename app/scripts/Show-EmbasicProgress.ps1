@@ -25,11 +25,11 @@ $forecastBase = [DateTime]::ParseExact('2026-10-31', 'yyyy-MM-dd', [System.Globa
 # Weight totals are exactly 100. Completion is engineering judgement, not telemetry.
 $milestones = @(
     [pscustomobject]@{ Name='Public kod tabani / Maven'; Weight=12; Complete=100; Evidence='Public kaynak + Linux/Windows Maven CI' }
-    [pscustomobject]@{ Name='Windows launcher / smoke'; Weight=12; Complete=100; Evidence='Tur208 final d122044a: jpackage physical packaged EXE Ctrl+O/Escape and Ctrl+T theme return PASS in run 43197455768; no ZIP, installer or release' }
-    [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=73; Evidence='Tur208 packaged Windows physical theme Robot PASS (43197455768), 160 card EDT virtual grid preserved; Tur209 real 160-card wheel down/up and bounded live mount test SHA 279e62a added, physical CI PENDING, full beta GUI NOT_RUN' }
+    [pscustomobject]@{ Name='Windows launcher / smoke'; Weight=12; Complete=100; Evidence='Tur209 SHA 419e446 Windows independent jpackage app-image and packaged EXE physical Ctrl+O/Escape, Ctrl+T twice SUCCESS, run 43200971670; no publication' }
+    [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=73; Evidence='Tur209 SHA 419e446 Windows physical 160-card wheel down=174ms up=248ms mounted<=24 in run 43200971654, separate Robot 1/1 PASS; full real-user beta GUI NOT_RUN' }
     [pscustomobject]@{ Name='UDF turleri ve surumleri'; Weight=26; Complete=12; Evidence='Sentetik ZIP PNG referans, A5/LEGAL; gercek UYAP schema dogrulanmadi' }
-    [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Tur208 final d122044a: Windows/Linux 181 JUnit (180 PASS, 1 normal Robot SKIP), RGB/RGBA dual DPI, font/tablo, ordered PDF and late-failure intact (43197455757); no native UYAP golden' }
-    [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Tur208 final d122044a PDF Engine 43197455734 SUCCESS, SHA audit 43197455859 SUCCESS, Secure Bootstrap 43197455767 FAILURE due to unapproved source gate; Tur209 exact SHA CI PENDING, redistribution unapproved, Windows atomic TOCTOU NO-GO' }
+    [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Tur209 SHA 419e446 Windows/Linux 181 JUnit (180 PASS, 1 normal-suite Robot SKIP), source-pixel RGB/RGBA, ordered PDF and fail-closed controls PASS, MVP 43200971654; native UYAP golden unavailable' }
+    [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Tur209 SHA 419e446 PDF Engine 43200971565 SUCCESS, upstream SHA audit 43200971684 SUCCESS; Secure Bootstrap 43200971778 FAILURE due to unapproved source, SOURCE_GATE BLOCKED; licensing and Windows atomic TOCTOU NO-GO' }
     [pscustomobject]@{ Name='Beta kabul / dagitim'; Weight=8; Complete=10; Evidence='Paket CI ici; indirme paketi yayinlanmadi' }
 )
 if ((($milestones | Measure-Object -Property Weight -Sum).Sum) -ne 100) {
