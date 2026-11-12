@@ -117,6 +117,14 @@ public final class PackagedInputRobot {
                     robot.keyRelease(KeyEvent.VK_CONTROL);
                 }
             }
+            case "confirmyes" -> {
+                if (args.length != 1) throw new IllegalArgumentException("confirmyes");
+                // Physical Enter on the foreground JOptionPane's default YES
+                // button. The caller must independently verify the resulting
+                // error dialog and unchanged destination, never assume consent.
+                robot.keyPress(KeyEvent.VK_ENTER);
+                robot.keyRelease(KeyEvent.VK_ENTER);
+            }
             case "selectall" -> {
                 if (args.length != 1) throw new IllegalArgumentException("selectall");
                 robot.keyPress(KeyEvent.VK_CONTROL);
