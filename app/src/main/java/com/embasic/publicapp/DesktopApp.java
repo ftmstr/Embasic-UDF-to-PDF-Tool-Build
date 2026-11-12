@@ -182,7 +182,10 @@ public final class DesktopApp extends JFrame {
                 zoomAnchorOffset = virtualGrid.topRowOffset(y);
             }
             updateZoomLabel();
-            zoomRefresh.restart(); // Collapse a fast slider drag into a single grid rebuild.
+            // A sustained slider drag must show intermediate zoom updates. Restarting
+            // the one-shot timer on every mouse movement could defer all painting
+            // until the user releases the slider; retain the first deadline.
+            requestCoalescedWorkspaceRefresh(zoomRefresh);
         });
         actions.add(zoomLabel);
         actions.add(thumbnailZoom);
