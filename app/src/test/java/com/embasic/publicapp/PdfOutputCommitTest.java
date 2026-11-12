@@ -126,6 +126,54 @@ final class PdfOutputCommitTest {
         }
     }
 
+    @Test void sameAlphaSamplesCannotHideChangedSoftMaskGeometryOrDecode() throws Exception {
+        // Synthetic 2x2 RGBA: unchanged /Im Do commands and alpha bytes do not
+        // prove unchanged opacity if SMask width or Decode is redirected.
+        Path staged = folder.resolve("synthetic-alpha-resource.pdf");
+        try (PDDocument original = new PDDocument()) {
+            PDPage page = new PDPage(PDRectangle.A4);
+            original.addPage(page);
+            BufferedImage rgba = new BufferedImage(2, 2, BufferedImage.TYPE_INT_ARGB);
+            for (int y = 0; y < 2; y++)
+                for (int x = 0; x < 2; x++)
+                    rgba.setRGB(x, y, new Color(30, 90, 180, 128).getRGB());
+            PDImageXObject image = LosslessFactory.createFromImage(original, rgba);
+            try (PDPageContentStream stream = new PDPageContentStream(original, page)) {
+                stream.drawImage(image, 48, 48, 20, 20);
+            }
+            List<String> commands = PdfExporter.snapshotPageContentHashes(original);
+            List<List<String>> expected = PdfExporter.snapshotPageImageResources(original);
+            original.save(staged.toFile());
+            try (PDDocument reloaded = Loader.loadPDF(staged.toFile())) {
+                assertDoesNotThrow(() -> PdfExporter.verifyStagedPageImageResources(expected, reloaded));
+                var resources = reloaded.getPage(0).getResources();
+                var imageName = resources.getXObjectNames().iterator().next();
+                var imageStream = resources.getXObject(imageName).getCOSObject();
+                var mask = (org.apache.pdfbox.cos.COSStream) imageStream.getDictionaryObject(
+                        org.apache.pdfbox.cos.COSName.SMASK);
+                assertNotNull(mask, "Synthetic RGBA must embed a soft mask");
+                int originalWidth = mask.getInt(org.apache.pdfbox.cos.COSName.WIDTH);
+                mask.setInt(org.apache.pdfbox.cos.COSName.WIDTH, originalWidth + 1);
+                assertDoesNotThrow(() -> PdfExporter.verifyStagedPageContentHashes(commands, reloaded));
+                assertThrows(IOException.class,
+                        () -> PdfExporter.verifyStagedPageImageResources(expected, reloaded));
+                mask.setInt(org.apache.pdfbox.cos.COSName.WIDTH, originalWidth);
+                assertDoesNotThrow(() -> PdfExporter.verifyStagedPageImageResources(expected, reloaded));
+                var decodeKey = org.apache.pdfbox.cos.COSName.getPDFName("Decode");
+                var originalDecode = mask.getDictionaryObject(decodeKey);
+                var inverted = new org.apache.pdfbox.cos.COSArray();
+                inverted.add(org.apache.pdfbox.cos.COSInteger.ONE);
+                inverted.add(org.apache.pdfbox.cos.COSInteger.ZERO);
+                mask.setItem(decodeKey, inverted);
+                assertThrows(IOException.class,
+                        () -> PdfExporter.verifyStagedPageImageResources(expected, reloaded));
+                if (originalDecode == null) mask.removeItem(decodeKey);
+                else mask.setItem(decodeKey, originalDecode);
+                assertDoesNotThrow(() -> PdfExporter.verifyStagedPageImageResources(expected, reloaded));
+            }
+        }
+    }
+
     @Test void finalizedFontProgramAndToUnicodeCannotBeSilentlyRedirected() throws Exception {
         // Synthetic text embeds a Type0 font. A /F1 Tf content command can
         // remain identical even if the font resource's CMap changes.
