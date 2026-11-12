@@ -430,6 +430,55 @@ try {
     }
     Write-Host 'PACKAGED-PDF-OVERWRITE-REFUSAL-PASS: existing synthetic PDF SHA-256 preserved.'
 
+    # TUR217: after a successful save, replace one imported synthetic UDF
+    # with different rights-clean bytes at the SAME path. Restore its mtime
+    # to exercise the source SHA gate rather than relying on timestamps.
+    # Physical overwrite consent must never authorize a stale PDF export.
+    $sourceShaBefore = (Get-FileHash -LiteralPath $first -Algorithm SHA256).Hash
+    $originalSourceTime = (Get-Item -LiteralPath $first).LastWriteTimeUtc
+    $replacement = Join-Path $fixtureDir '01-ALPHA-ONE-replacement.udf'
+    if (Test-Path -LiteralPath $replacement) {
+        throw 'Unexpected pre-existing TUR217 replacement fixture.'
+    }
+    New-SyntheticUdf $replacement 'ALPHA-TWO'
+    [System.IO.File]::Move($replacement, $first, $true)
+    [System.IO.File]::SetLastWriteTimeUtc($first, $originalSourceTime)
+    $sourceShaAfter = (Get-FileHash -LiteralPath $first -Algorithm SHA256).Hash
+    if ($sourceShaAfter -eq $sourceShaBefore) {
+        throw 'Synthetic UDF mutation did not change SHA-256; test invalid.'
+    }
+    if ((Get-FileHash -LiteralPath $outputPdf -Algorithm SHA256).Hash -ne $approvedSha) {
+        throw 'Accepted PDF changed before stale-source overwrite attempt.'
+    }
+    $pendingBefore = @(Get-ChildItem -LiteralPath $outputDir -Filter '.embasic-pending-*.pdf' -File)
+    if ($pendingBefore.Count -ne 0) {
+        throw 'Unexpected staging file before TUR217 physical overwrite test.'
+    }
+    & java -cp $classes PackagedInputRobot save
+    if ($LASTEXITCODE -ne 0) { throw 'Physical stale-source Ctrl+S failed.' }
+    $staleChooser = Wait-DialogTitle 'PDF olarak kaydet' 15
+    & java -cp $classes PackagedInputRobot choosepdf $outputPdf
+    if ($LASTEXITCODE -ne 0) { throw 'Physical stale-source PDF target selection failed.' }
+    $staleOverwrite = Wait-DialogTitle 'Dosya mevcut' 15
+    & java -cp $classes PackagedInputRobot confirmyes
+    if ($LASTEXITCODE -ne 0) { throw 'Physical overwrite YES input failed.' }
+    # This is an error path: a success dialog or silent dismissal is a failure.
+    $sourceError = Wait-DialogTitle 'Embasic UDF hatası' 45
+    if ((Get-FileHash -LiteralPath $outputPdf -Algorithm SHA256).Hash -ne $approvedSha) {
+        throw 'Accepted PDF was modified after changed-source overwrite consent.'
+    }
+    if (@(Get-ChildItem -LiteralPath $outputDir -Filter '.embasic-pending-*.pdf' -File).Count -ne 0) {
+        throw 'PDF staging file leaked after changed-source rejection.'
+    }
+    & java -cp $classes PackagedInputRobot cancel
+    if ($LASTEXITCODE -ne 0) { throw 'Physical changed-source error dismissal failed.' }
+    Wait-NoOwnedDialog 10
+    if ((Get-FileHash -LiteralPath $outputPdf -Algorithm SHA256).Hash -ne $approvedSha) {
+        throw 'Accepted PDF changed after changed-source error dismissal.'
+    }
+    Write-Host 'PACKAGED-STALE-SOURCE-OVERWRITE-REJECTED-PASS: same-path synthetic UDF SHA changed, physical YES, error dialog, original PDF SHA preserved, no staging leak.'
+
+
     Write-Host 'PACKAGED-GUI-ROBOT-PASS: ephemeral EXE, physical chooser, theme, zoom, two synthetic imports, multi-selection and keyboard reorder and Ctrl+S PDF order.'
 
 } finally {
