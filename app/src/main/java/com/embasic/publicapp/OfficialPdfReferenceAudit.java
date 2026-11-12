@@ -86,8 +86,19 @@ public final class OfficialPdfReferenceAudit {
     }
 
     private static boolean geometryEquals(PDPage a, PDPage b) {
-        return boxEquals(a.getMediaBox(), b.getMediaBox())
+        // Raster pixels and extracted text do not establish physical print size:
+        // /UserUnit changes the physical scale even when MediaBox is unchanged.
+        // Trim/Bleed/Art boxes likewise affect print and production workflows
+        // without necessarily changing the 96-DPI on-screen raster.
+        float unitA = a.getUserUnit(), unitB = b.getUserUnit();
+        return Float.isFinite(unitA) && Float.isFinite(unitB)
+                && unitA > 0 && unitB > 0
+                && Float.compare(unitA, unitB) == 0
+                && boxEquals(a.getMediaBox(), b.getMediaBox())
                 && boxEquals(a.getCropBox(), b.getCropBox())
+                && boxEquals(a.getTrimBox(), b.getTrimBox())
+                && boxEquals(a.getBleedBox(), b.getBleedBox())
+                && boxEquals(a.getArtBox(), b.getArtBox())
                 && a.getRotation() == b.getRotation();
     }
 
