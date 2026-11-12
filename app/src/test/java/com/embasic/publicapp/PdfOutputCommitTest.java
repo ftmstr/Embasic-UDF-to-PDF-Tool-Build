@@ -275,6 +275,51 @@ final class PdfOutputCommitTest {
         assertEquals("VALIDATED-PDF", Files.readString(staging));
     }
 
+    @Test void overwriteConsentForAbsentTargetCannotClobberLateExternalPdf() throws Exception {
+        // A user can select overwrite=true while the target does not yet exist.
+        // Deterministically create a real synthetic PDF AFTER the final
+        // TargetSnapshot.verifyUnchanged check, just before the filesystem move.
+        // The old REPLACE_EXISTING path silently clobbered that new document.
+        Path external = folder.resolve("independent-valid.pdf");
+        try (PDDocument pdf = new PDDocument()) {
+            pdf.addPage(new PDPage(PDRectangle.A4));
+            pdf.save(external.toFile());
+        }
+        byte[] externalBytes = Files.readAllBytes(external);
+        Path target = folder.resolve("late-created.pdf");
+        var style = new UdfReader.Style(11, false, Color.BLACK);
+        var paragraph = new UdfReader.Paragraph(List.of(
+                new UdfReader.Run("Original public synthetic page", style)));
+        var doc = new UdfReader.DocumentSpec("original.udf", "1.0", List.of(paragraph));
+
+        IllegalArgumentException refused = assertThrows(IllegalArgumentException.class,
+                () -> PdfExporter.save(List.of(doc), target, true, () -> {},
+                        completed -> {}, () -> {
+                            assertFalse(Files.exists(target),
+                                    "Barrier must run after the final absent-target check");
+                            Files.copy(external, target);
+                        }));
+        assertTrue(refused.getMessage().contains("onayı"));
+        assertArrayEquals(externalBytes, Files.readAllBytes(target),
+                "A late-created external PDF must survive without overwrite consent");
+        try (PDDocument retained = Loader.loadPDF(target.toFile())) {
+            assertEquals(1, retained.getNumberOfPages());
+        }
+        try (var entries = Files.list(folder)) {
+            assertEquals(0, entries.filter(p -> p.getFileName().toString()
+                    .startsWith(".embasic-pending-")).count());
+        }
+        // Overwrite=true against an initially absent path must still succeed
+        // when nobody creates a competing file during the final move.
+        Path fresh = folder.resolve("uncontended.pdf");
+        assertEquals(1, PdfExporter.save(List.of(doc), fresh, true));
+        try (PDDocument written = Loader.loadPDF(fresh.toFile())) {
+            assertEquals(1, written.getNumberOfPages());
+        }
+        System.out.println("EMBASIC_TUR221_LATE_CREATE_NO_CLOBBER"
+                + " postCheckExternal=RETAINED staging=CLEAN uncontended=PASS");
+    }
+
     @Test void approvedOverwriteCanReplaceExistingTarget() throws Exception {
         Path staging = folder.resolve(".embasic-pending.pdf");
         Path target = folder.resolve("case.pdf");
