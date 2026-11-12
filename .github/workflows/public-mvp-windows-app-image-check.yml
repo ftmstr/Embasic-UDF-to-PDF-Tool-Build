@@ -167,3 +167,12 @@ jobs:
               }
             }
           }
+      - name: Physical packaged EXE mouse and keyboard acceptance (no publication)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          & pwsh -NoProfile -File app/scripts/Assert-PackagedGuiInput.ps1 -AllowGui
+          if ($LASTEXITCODE -ne 0) {
+            throw "Packaged EXE physical Robot failed or was not verified"
+          }
+
