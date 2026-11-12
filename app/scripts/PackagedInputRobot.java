@@ -7,6 +7,8 @@ import java.util.HexFormat;
 import java.awt.Robot;
 import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
+import java.awt.Toolkit;
+import java.awt.datatransfer.StringSelection;
 
 /**
  * Real OS mouse/keyboard input against a separately launched jpackage EXE.
@@ -20,7 +22,7 @@ public final class PackagedInputRobot {
         if (GraphicsEnvironment.isHeadless())
             throw new IllegalStateException("Physical Windows desktop unavailable");
         if (args.length < 1)
-            throw new IllegalArgumentException("Expected focus x y, open, cancel, theme, zoom, resetzoom, pixel x y, or region x y w h");
+            throw new IllegalArgumentException("Expected focus x y, open, cancel, theme, zoom, resetzoom, choose path, selectall, movedown, moveup, pixel x y, or region x y w h");
         Robot robot = new Robot();
         robot.setAutoDelay(60);
         switch (args[0]) {
@@ -73,6 +75,56 @@ public final class PackagedInputRobot {
                     robot.keyRelease(KeyEvent.VK_0);
                 } finally {
                     robot.keyRelease(KeyEvent.VK_CONTROL);
+                }
+            }
+            case "choose" -> {
+                if (args.length != 2 || !args[1].toLowerCase(java.util.Locale.ROOT).endsWith(".udf"))
+                    throw new IllegalArgumentException("choose requires one synthetic .udf path");
+                // The Windows JFileChooser's File name mnemonic is Alt+N. Use
+                // clipboard paste instead of keyboard layout-dependent typing.
+                // This is a separate physical Robot JVM, not a Swing test hook.
+                Toolkit.getDefaultToolkit().getSystemClipboard().setContents(
+                        new StringSelection(args[1]), null);
+                robot.keyPress(KeyEvent.VK_ALT);
+                try {
+                    robot.keyPress(KeyEvent.VK_N);
+                    robot.keyRelease(KeyEvent.VK_N);
+                } finally {
+                    robot.keyRelease(KeyEvent.VK_ALT);
+                }
+                robot.delay(200);
+                robot.keyPress(KeyEvent.VK_CONTROL);
+                try {
+                    robot.keyPress(KeyEvent.VK_A);
+                    robot.keyRelease(KeyEvent.VK_A);
+                    robot.keyPress(KeyEvent.VK_V);
+                    robot.keyRelease(KeyEvent.VK_V);
+                } finally {
+                    robot.keyRelease(KeyEvent.VK_CONTROL);
+                }
+                robot.delay(300);
+                robot.keyPress(KeyEvent.VK_ENTER);
+                robot.keyRelease(KeyEvent.VK_ENTER);
+            }
+            case "selectall" -> {
+                if (args.length != 1) throw new IllegalArgumentException("selectall");
+                robot.keyPress(KeyEvent.VK_CONTROL);
+                try {
+                    robot.keyPress(KeyEvent.VK_A);
+                    robot.keyRelease(KeyEvent.VK_A);
+                } finally {
+                    robot.keyRelease(KeyEvent.VK_CONTROL);
+                }
+            }
+            case "movedown", "moveup" -> {
+                if (args.length != 1) throw new IllegalArgumentException("moveup/movedown");
+                robot.keyPress(KeyEvent.VK_ALT);
+                try {
+                    int key = args[0].equals("movedown") ? KeyEvent.VK_DOWN : KeyEvent.VK_UP;
+                    robot.keyPress(key);
+                    robot.keyRelease(key);
+                } finally {
+                    robot.keyRelease(KeyEvent.VK_ALT);
                 }
             }
             case "region" -> {
