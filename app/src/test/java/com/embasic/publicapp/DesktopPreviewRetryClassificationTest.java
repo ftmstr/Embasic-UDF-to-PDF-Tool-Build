@@ -45,6 +45,37 @@ final class DesktopPreviewRetryClassificationTest {
         }
     }
 
+    @Test void sustainedCallbacksDoNotRestartPendingWorkspaceRefresh() throws Exception {
+        // A continuous stream of parse/thumbnail completions used to restart
+        // the 110 ms timer each time, postponing the first visible update.
+        // Keep this deterministic: the EDT processes all callbacks in one event.
+        AtomicInteger starts = new AtomicInteger();
+        Timer refresh = new Timer(10_000, event -> {}) {
+            @Override public void start() {
+                starts.incrementAndGet();
+                super.start();
+            }
+            @Override public void restart() {
+                fail("pending refresh must not be postponed by a later callback");
+            }
+        };
+        refresh.setRepeats(false);
+        try {
+            SwingUtilities.invokeAndWait(() -> {
+                for (int i = 0; i < 160; i++)
+                    DesktopApp.requestCoalescedWorkspaceRefresh(refresh);
+                assertEquals(1, starts.get(),
+                        "the first callback must set the refresh deadline");
+                refresh.stop(); // Simulate the one-shot timer having fired.
+                DesktopApp.requestCoalescedWorkspaceRefresh(refresh);
+                assertEquals(2, starts.get(),
+                        "the next burst must still schedule a new refresh");
+            });
+        } finally {
+            SwingUtilities.invokeAndWait(refresh::stop);
+        }
+    }
+
     @Test void failedPreviewIsRetryableOnlyAfterSuccessfulParse() {
         assertTrue(DesktopApp.isFailedPreview(true, "Önizleme yok: sentetik raster hatası"));
         assertFalse(DesktopApp.isFailedPreview(false, "Önizleme yok: sentetik raster hatası"));
