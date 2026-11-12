@@ -937,6 +937,11 @@ public final class PdfExporter {
                 throw new IllegalArgumentException("PDF zaten var, üzerine yazma onayı gerekli", e);
             } catch (UnsupportedOperationException e) {
                 throw new IOException("Dosya sistemi güvenli PDF oluşturmayı desteklemiyor; hedef korunuyor", e);
+            } catch (IOException e) {
+                // Windows and network filesystem providers commonly report
+                // unsupported hard links as FileSystemException/AccessDeniedException,
+                // not UnsupportedOperationException. Never attempt a racy copy.
+                throw new IOException("Güvenli PDF oluşturulamadı; hedef korunuyor (dosya sistemi veya erişim izni)", e);
             }
             // The target now names the fully staged bytes. Removing only the
             // temporary name cannot alter the published PDF's content.
