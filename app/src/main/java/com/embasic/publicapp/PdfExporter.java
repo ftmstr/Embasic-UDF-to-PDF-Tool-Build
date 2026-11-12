@@ -401,6 +401,7 @@ public final class PdfExporter {
             int pages;
             List<float[]> expectedGeometry;
             List<String> expectedPageContents;
+            List<List<String>> expectedImageResources;
             try (PDDocument pdf = render(docs)) {
                 pages = pdf.getNumberOfPages();
                 // Record every page's original media/crop boxes and rotation
@@ -411,11 +412,16 @@ public final class PdfExporter {
                 // decoded content-stream fingerprint per page as an additional
                 // ordering/integrity guard before PDFBox serialization.
                 expectedPageContents = snapshotPageContentHashes(pdf);
+                // Content commands reference image resources by name. Hash the
+                // decoded XObject streams too: a swapped same-size image can
+                // otherwise pass the page-content SHA guard unchanged.
+                expectedImageResources = snapshotPageImageResources(pdf);
                 pdf.save(staging.toFile());
             }
             try (PDDocument reloaded = Loader.loadPDF(staging.toFile())) {
                 verifyStagedPageGeometry(expectedGeometry, reloaded);
                 verifyStagedPageContentHashes(expectedPageContents, reloaded);
+                verifyStagedPageImageResources(expectedImageResources, reloaded);
             }
             // A source may change during a long 160-document render. Keep the
             // validated PDF private until the caller confirms the same bytes
@@ -506,6 +512,78 @@ public final class PdfExporter {
         for (int page = 0; page < expected.size(); page++)
             if (!java.util.Objects.equals(expected.get(page), actual.get(page)))
                 throw new IOException("PDF sayfa içerik/sıra doğrulaması başarısız: "
+                        + (page + 1));
+    }
+
+    /**
+     * Snapshot each page's image XObjects independently of drawing commands.
+     * PDF content streams contain only names such as /Im1 Do; a resource
+     * dictionary can redirect that name to a different image without changing
+     * any page content bytes. Compare decoded streams (not Flate container
+     * bytes) because PDFBox may re-encode streams during serialization.
+     *
+     * Only the synthetic renderer's image XObjects are supported. An unknown
+     * resource type fails closed; this is not font-program or UYAP parity.
+     */
+    static List<List<String>> snapshotPageImageResources(PDDocument pdf) throws IOException {
+        List<List<String>> pages = new ArrayList<>(pdf.getNumberOfPages());
+        for (PDPage page : pdf.getPages()) {
+            var resources = page.getResources();
+            List<org.apache.pdfbox.cos.COSName> names = new ArrayList<>();
+            if (resources != null)
+                for (var name : resources.getXObjectNames()) names.add(name);
+            names.sort(java.util.Comparator.comparing(org.apache.pdfbox.cos.COSName::getName));
+            List<String> images = new ArrayList<>(names.size());
+            for (var name : names) {
+                var xobject = resources.getXObject(name);
+                if (!(xobject instanceof PDImageXObject image))
+                    throw new IOException("PDF desteklenmeyen XObject kaynağı");
+                var imageStream = image.getCOSObject();
+                var mask = imageStream.getDictionaryObject(org.apache.pdfbox.cos.COSName.SMASK);
+                if (mask != null && !(mask instanceof org.apache.pdfbox.cos.COSStream))
+                    throw new IOException("PDF desteklenmeyen görüntü maskesi");
+                // An explicit /Mask or alternate image mask is outside the
+                // verified synthetic PNG subset; never silently ignore it.
+                if (imageStream.getDictionaryObject(org.apache.pdfbox.cos.COSName.MASK) != null)
+                    throw new IOException("PDF desteklenmeyen görüntü maskesi");
+                String maskDigest = mask == null ? "-" :
+                        decodedStreamSha256((org.apache.pdfbox.cos.COSStream) mask);
+                images.add(name.getName() + "|" + image.getWidth() + "x" + image.getHeight()
+                        + "|" + image.getBitsPerComponent() + "|"
+                        + image.getColorSpace().getName() + "|"
+                        + decodedStreamSha256(imageStream) + "|" + maskDigest);
+            }
+            pages.add(List.copyOf(images));
+        }
+        return List.copyOf(pages);
+    }
+
+    private static String decodedStreamSha256(org.apache.pdfbox.cos.COSStream stream)
+            throws IOException {
+        java.security.MessageDigest digest;
+        try {
+            digest = java.security.MessageDigest.getInstance("SHA-256");
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 kullanılamıyor", e);
+        }
+        try (java.io.InputStream input = stream.createInputStream()) {
+            byte[] buffer = new byte[8192];
+            int count;
+            while ((count = input.read(buffer)) != -1)
+                digest.update(buffer, 0, count);
+        }
+        return java.util.HexFormat.of().formatHex(digest.digest());
+    }
+
+    static void verifyStagedPageImageResources(List<List<String>> expected,
+                                               PDDocument reloaded) throws IOException {
+        if (expected == null || expected.isEmpty()
+                || expected.size() != reloaded.getNumberOfPages())
+            throw new IOException("PDF görüntü kaynak bütünlüğü doğrulaması başarısız");
+        List<List<String>> actual = snapshotPageImageResources(reloaded);
+        for (int page = 0; page < expected.size(); page++)
+            if (!expected.get(page).equals(actual.get(page)))
+                throw new IOException("PDF görüntü kaynağı doğrulaması başarısız: "
                         + (page + 1));
     }
 
