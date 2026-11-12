@@ -208,6 +208,24 @@ public final class PdfExporter {
 
     private static PDDocument renderInternal(List<UdfReader.DocumentSpec> docs,
                                              boolean previewOnly) throws Exception {
+        return renderInternal(docs, previewOnly, completed -> {});
+    }
+
+    /**
+     * Bounded regression seam: runs after an entire document is laid out but
+     * before the next document is rendered. The ordinary UI/CLI passes a no-op.
+     * It is deliberately package-private and must never bypass the mandatory
+     * source validation immediately before publishing the staged PDF.
+     */
+    @FunctionalInterface
+    interface RenderBoundary {
+        void afterDocument(int completedDocuments) throws Exception;
+    }
+
+    private static PDDocument renderInternal(List<UdfReader.DocumentSpec> docs,
+                                             boolean previewOnly,
+                                             RenderBoundary boundary) throws Exception {
+        if (boundary == null) throw new IllegalArgumentException("PDF render sınır kontrolü eksik");
         if (docs == null || docs.isEmpty()) throw new IllegalArgumentException("PDF için en az bir UDF gerekli");
         // Match the 160-card desktop limit for direct API/CLI merges as well.
         // Reject before PDF allocation, font discovery, or output staging.
@@ -271,6 +289,7 @@ public final class PdfExporter {
             // for a bold font used exclusively on a later page.
             FontSet fonts = new FontSet(pdf);
             try {
+                int completedDocuments = 0;
                 for (UdfReader.DocumentSpec document : docs) {
                 try (Layout layout = new Layout(pdf, fonts, document.page(), previewOnly)) {
                     layout.newPage();
@@ -311,6 +330,7 @@ public final class PdfExporter {
                         } else throw new IllegalArgumentException("Desteklenmeyen belge bloğu");
                     }
                 }
+                if (!previewOnly) boundary.afterDocument(++completedDocuments);
                 }
             } catch (PreviewPageComplete complete) {
                 if (!previewOnly) throw complete;
@@ -388,8 +408,16 @@ public final class PdfExporter {
 
     static int save(List<UdfReader.DocumentSpec> docs, Path target, boolean overwrite,
                     BeforePublishCheck beforePublish) throws Exception {
+        return save(docs, target, overwrite, beforePublish, completed -> {});
+    }
+
+    /** Regression-only injection seam. UI and CLI retain mandatory pre/post SHA gates. */
+    static int save(List<UdfReader.DocumentSpec> docs, Path target, boolean overwrite,
+                    BeforePublishCheck beforePublish, RenderBoundary boundary) throws Exception {
         if (beforePublish == null)
             throw new IllegalArgumentException("PDF son kaynak doğrulaması eksik");
+        if (boundary == null)
+            throw new IllegalArgumentException("PDF render sınır kontrolü eksik");
         Path abs = preflightTarget(target, overwrite);
         // Overwrite consent applies to the PDF the user actually inspected.
         // Do not silently replace a newer file written by another application
@@ -403,7 +431,7 @@ public final class PdfExporter {
             List<String> expectedPageContents;
             List<List<String>> expectedImageResources;
             List<List<String>> expectedFontResources;
-            try (PDDocument pdf = render(docs)) {
+            try (PDDocument pdf = renderInternal(docs, false, boundary)) {
                 pages = pdf.getNumberOfPages();
                 // Record every page's original media/crop boxes and rotation
                 // before serialization. A successful reopen and matching page
