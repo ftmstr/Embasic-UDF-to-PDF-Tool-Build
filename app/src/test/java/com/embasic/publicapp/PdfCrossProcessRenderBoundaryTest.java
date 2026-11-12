@@ -202,4 +202,51 @@ final class PdfCrossProcessRenderBoundaryTest {
                 + " independentProcess=PASS noConsent=REJECT"
                 + " target=UNTOUCHED staging=CLEAN noNativeUyap=true");
     }
+    @Test void independentJvmClaimsPdfNameAfterFinalCheckAndAtomicLinkNeverClobbers()
+            throws Exception {
+        // TUR223: not a mid-render callback. Inject a genuine external OS
+        // process AFTER source integrity + optimistic target verification,
+        // immediately BEFORE the atomic hard-link no-clobber publish syscall.
+        // Prior TUR220 simulated creation DURING render; TUR221 used a
+        // same-JVM copy at this final window. This validates both boundaries.
+        Inputs inputs = makeInputs();
+        Path external = folder.resolve("external-valid.pdf");
+        assertEquals(1, PdfExporter.save(
+                List.of(inputs.documents().get(0)), external, false));
+        byte[] externalBytes = Files.readAllBytes(external);
+        for (boolean overwriteSelected : new boolean[]{false, true}) {
+            Path target = folder.resolve(overwriteSelected
+                    ? "late-target-overwrite-selected.pdf" : "late-target-new.pdf");
+            assertFalse(Files.exists(target));
+            int[] observed = {0};
+            IllegalArgumentException refused = assertThrows(
+                    IllegalArgumentException.class,
+                    () -> PdfExporter.save(inputs.documents(), target,
+                            overwriteSelected,
+                            () -> DesktopApp.verifySourceFingerprints(
+                                    inputs.files(), inputs.fingerprints()),
+                            completed -> {},
+                            () -> {
+                                observed[0]++;
+                                assertFalse(Files.exists(target),
+                                        "Final barrier must precede link claim");
+                                invokeChild("newtarget",
+                                        external.toString(), target.toString());
+                            }));
+            assertEquals(1, observed[0],
+                    "Exactly one deterministic prepublish window must run");
+            assertTrue(refused.getMessage().contains("onayı"));
+            assertArrayEquals(externalBytes, Files.readAllBytes(target),
+                    "A different OS process's PDF must never be replaced");
+            try (var retained = Loader.loadPDF(target.toFile())) {
+                assertEquals(1, retained.getNumberOfPages());
+            }
+            assertNoStaging();
+        }
+        System.out.println("EMBASIC_TUR223_POSTCHECK_PROCESS_CLAIM"
+                + " independentProcess=PASS noConsent=REJECT"
+                + " overwriteAbsent=REJECT externalPDF=UNCHANGED"
+                + " staging=CLEAN physicalEXE=NOT_RUN noNativeUyap=true");
+    }
+
 }
