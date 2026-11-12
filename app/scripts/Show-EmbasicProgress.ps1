@@ -26,10 +26,10 @@ $forecastBase = [DateTime]::ParseExact('2026-10-31', 'yyyy-MM-dd', [System.Globa
 $milestones = @(
     [pscustomobject]@{ Name='Public kod tabani / Maven'; Weight=12; Complete=100; Evidence='Public kaynak + Linux/Windows Maven CI' }
     [pscustomobject]@{ Name='Windows launcher / smoke'; Weight=12; Complete=100; Evidence='Tur209 SHA 419e446 Windows independent jpackage app-image and packaged EXE physical Ctrl+O/Escape, Ctrl+T twice SUCCESS, run 43200971670; no publication' }
-    [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=73; Evidence='Tur214 exact SHA 98cd38e: packaged Windows EXE two synthetic UDF chooser, Ctrl+A/Alt+arrows reorder physical Robot PASS, run 43234117391; final-user beta NOT_RUN' }
+    [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=73; Evidence='Tur214 packaged Windows two rights-clean UDF chooser and Ctrl+A/Alt-arrows reorder physical Robot 43234117391 PASS; Tur215 exact test SHA cee8749 packaged EXE Robot 43239867905 SUCCESS; full beta NOT_RUN' }
     [pscustomobject]@{ Name='UDF turleri ve surumleri'; Weight=26; Complete=12; Evidence='Sentetik ZIP PNG referans, A5/LEGAL; gercek UYAP schema dogrulanmadi' }
-    [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Tur213 comparator print UserUnit/TrimBox and 8 synthetic tests PASS; Tur215 offline PDF font glyph positions, hidden substitution and vector table-line raster row/column bands synthetic tests added; exact SHA CI PENDING, native UYAP golden NOT_RUN' }
-    [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Tur215 read-only local reference audit source text snapshots not printable; UYAP official manual export only, no CLI/API or binaries; source approval/NOTICE/Win32 atomic TOCTOU NO-GO; Secure Bootstrap expected SOURCE_GATE BLOCKED' }
+    [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Tur215 test SHA cee8749 Windows/Linux 192 JUnit (191 PASS, 1 normal Robot SKIP), 3/3 new offline font/glyph and table-line pixel-band tests PASS; 160 synthetic UDF CI 43239869218 SUCCESS; no native UYAP golden' }
+    [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Tur215 test SHA cee8749 upstream SHA 43239868815 SUCCESS, PDF Engine 43239867939 SUCCESS, Secure Bootstrap 43239868263 FAILURE source approval BLOCKED; no native UYAP API/CLI, license/NOTICE or Win32 atomic TOCTOU approval' }
     [pscustomobject]@{ Name='Beta kabul / dagitim'; Weight=8; Complete=10; Evidence='Paket CI ici; indirme paketi yayinlanmadi' }
 )
 if ((($milestones | Measure-Object -Property Weight -Sum).Sum) -ne 100) {
