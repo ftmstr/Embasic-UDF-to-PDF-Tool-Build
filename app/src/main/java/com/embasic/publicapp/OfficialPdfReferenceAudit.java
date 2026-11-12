@@ -15,7 +15,6 @@ import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.rendering.ImageType;
 import org.apache.pdfbox.rendering.PDFRenderer;
-import org.apache.pdfbox.text.PDFTextStripper;
 
 /**
  * TUR 211: offline, read-only comparison of two user-owned local PDFs.
@@ -38,9 +37,13 @@ public final class OfficialPdfReferenceAudit {
     /** Aggregates only: never retain source text or raster images in this record. */
     public record PageCheck(int oneBasedPage, boolean geometryMatches,
                             boolean extractedTextMatches, long differentPixels,
-                            long renderedPixels, int maximumChannelDifference) {
+                            long renderedPixels, int maximumChannelDifference,
+                            int glyphCount, int differentFontGlyphs,
+                            int differentTextPositions, int changedRasterRows,
+                            int changedRasterColumns) {
         public boolean matches() {
             return geometryMatches && extractedTextMatches
+                    && differentFontGlyphs == 0 && differentTextPositions == 0
                     && renderedPixels > 0 && differentPixels == 0;
         }
     }
@@ -143,13 +146,6 @@ public final class OfficialPdfReferenceAudit {
             throw new IOException("Page rasterization exceeds audit budget");
     }
 
-    private static String extractPage(PDFTextStripper stripper,
-                                      PDDocument pdf, int page) throws IOException {
-        stripper.setStartPage(page + 1);
-        stripper.setEndPage(page + 1);
-        return stripper.getText(pdf);
-    }
-
     /**
      * Fail-closed on malformed/oversized files; no output files are created.
      * Full raster samples use deterministic PDFBox RGB at 96 DPI with a
@@ -170,16 +166,24 @@ public final class OfficialPdfReferenceAudit {
             requireStaticPdf(second);
             PDFRenderer rasterA = new PDFRenderer(first);
             PDFRenderer rasterB = new PDFRenderer(second);
-            PDFTextStripper textA = new PDFTextStripper();
-            PDFTextStripper textB = new PDFTextStripper();
+            OfflinePdfGlyphAudit textA = new OfflinePdfGlyphAudit();
+            OfflinePdfGlyphAudit textB = new OfflinePdfGlyphAudit();
             List<PageCheck> checks = new ArrayList<>();
             for (int page = 0; page < Math.min(a, b); page++) {
                 PDPage one = first.getPage(page), two = second.getPage(page);
                 boolean geometry = geometryEquals(one, two);
-                boolean textEqual = extractPage(textA, first, page)
-                        .equals(extractPage(textB, second, page));
+                // Glyph metrics are collected only in this method scope and
+                // never exposed in the result. Extraction must be bounded and
+                // fail closed on missing font metadata or invalid coordinates.
+                var referenceGlyphs = textA.inspectPage(first, page);
+                var candidateGlyphs = textB.inspectPage(second, page);
+                var glyphs = OfflinePdfGlyphAudit.compare(
+                        referenceGlyphs, candidateGlyphs);
+                boolean textEqual = glyphs.textMatches();
                 if (!geometry) {
-                    checks.add(new PageCheck(page + 1, false, textEqual, 0, 0, 0));
+                    checks.add(new PageCheck(page + 1, false, textEqual, 0, 0, 0,
+                            glyphs.maximumGlyphs(), glyphs.differentFontGlyphs(),
+                            glyphs.differentPositionGlyphs(), 0, 0));
                     continue;
                 }
                 requireBoundedRaster(one);
@@ -188,26 +192,42 @@ public final class OfficialPdfReferenceAudit {
                 BufferedImage imageB = rasterB.renderImageWithDPI(page, DPI, ImageType.RGB);
                 if (imageA.getWidth() != imageB.getWidth()
                         || imageA.getHeight() != imageB.getHeight()) {
-                    checks.add(new PageCheck(page + 1, false, textEqual, 0, 0, 0));
+                    checks.add(new PageCheck(page + 1, false, textEqual, 0, 0, 0,
+                            glyphs.maximumGlyphs(), glyphs.differentFontGlyphs(),
+                            glyphs.differentPositionGlyphs(), 0, 0));
                     continue;
                 }
                 long pixels = (long) imageA.getWidth() * imageA.getHeight();
                 if (pixels > MAX_PAGE_PIXELS)
                     throw new IOException("Rendered PDF page exceeded audit pixel limit");
                 long different = 0;
-                int maximum = 0;
-                for (int y = 0; y < imageA.getHeight(); y++)
+                int maximum = 0, changedRows = 0;
+                boolean[] changedColumns = new boolean[imageA.getWidth()];
+                for (int y = 0; y < imageA.getHeight(); y++) {
+                    boolean changedRow = false;
                     for (int x = 0; x < imageA.getWidth(); x++) {
                         int rgbA = imageA.getRGB(x, y), rgbB = imageB.getRGB(x, y);
                         int red = Math.abs(((rgbA >>> 16) & 255) - ((rgbB >>> 16) & 255));
                         int green = Math.abs(((rgbA >>> 8) & 255) - ((rgbB >>> 8) & 255));
                         int blue = Math.abs((rgbA & 255) - (rgbB & 255));
                         int worst = Math.max(red, Math.max(green, blue));
-                        if (worst > CHANNEL_TOLERANCE) different++;
+                        if (worst > CHANNEL_TOLERANCE) {
+                            different++;
+                            changedRow = true;
+                            changedColumns[x] = true;
+                        }
                         maximum = Math.max(maximum, worst);
                     }
+                    if (changedRow) changedRows++;
+                }
+                int changedColumnCount = 0;
+                for (boolean changed : changedColumns)
+                    if (changed) changedColumnCount++;
                 checks.add(new PageCheck(page + 1, true, textEqual,
-                        different, pixels, maximum));
+                        different, pixels, maximum,
+                        glyphs.maximumGlyphs(), glyphs.differentFontGlyphs(),
+                        glyphs.differentPositionGlyphs(),
+                        changedRows, changedColumnCount));
             }
             return new Result(a, b, checks);
         }
@@ -237,12 +257,18 @@ public final class OfficialPdfReferenceAudit {
             for (PageCheck page : result.pages()) {
                 System.out.printf(Locale.ROOT,
                         "REFERENCE_AUDIT_PAGE: page=%d geometry=%s text=%s "
-                        + "differentPixels=%d renderedPixels=%d maximumChannelDelta=%d%n",
+                        + "differentPixels=%d renderedPixels=%d maximumChannelDelta=%d "
+                        + "glyphCount=%d fontGlyphDifferences=%d "
+                        + "textPositionDifferences=%d changedRasterRows=%d "
+                        + "changedRasterColumns=%d%n",
                         page.oneBasedPage(),
                         page.geometryMatches() ? "MATCH" : "DIFFERENCE",
                         page.extractedTextMatches() ? "MATCH" : "DIFFERENCE",
                         page.differentPixels(), page.renderedPixels(),
-                        page.maximumChannelDifference());
+                        page.maximumChannelDifference(),
+                        page.glyphCount(), page.differentFontGlyphs(),
+                        page.differentTextPositions(), page.changedRasterRows(),
+                        page.changedRasterColumns());
             }
             if (!result.matches()) System.exit(2);
         } catch (Exception ex) {
