@@ -3,6 +3,8 @@ package com.embasic.publicapp;
 import static org.junit.jupiter.api.Assertions.*;
 import org.junit.jupiter.api.Test;
 import java.util.concurrent.CountDownLatch;
+import javax.swing.SwingUtilities;
+import javax.swing.Timer;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -15,6 +17,34 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Synthetic status strings only; no native UYAP compatibility claim.
  */
 final class DesktopPreviewRetryClassificationTest {
+    @Test void parseCompletionBurstUsesSingleEdtRefresh() throws Exception {
+        // 160 parsed UDF callbacks can arrive in one EDT burst. Rebuilding the
+        // entire virtual grid for each callback causes visible UI stalls.
+        CountDownLatch refreshed = new CountDownLatch(1);
+        AtomicInteger rebuilds = new AtomicInteger();
+        Timer refresh = new Timer(90, event -> {
+            rebuilds.incrementAndGet();
+            refreshed.countDown();
+        });
+        refresh.setRepeats(false);
+        try {
+            SwingUtilities.invokeAndWait(() -> {
+                for (int i = 0; i < 160; i++)
+                    DesktopApp.requestCoalescedWorkspaceRefresh(refresh);
+                assertTrue(refresh.isRunning());
+                assertEquals(0, rebuilds.get(),
+                        "callbacks must not synchronously rebuild the grid");
+            });
+            assertTrue(refreshed.await(5, TimeUnit.SECONDS),
+                    "debounced EDT refresh did not execute");
+            SwingUtilities.invokeAndWait(() ->
+                    assertEquals(1, rebuilds.get(),
+                            "all parsed UDFs must share one workspace refresh"));
+        } finally {
+            SwingUtilities.invokeAndWait(refresh::stop);
+        }
+    }
+
     @Test void failedPreviewIsRetryableOnlyAfterSuccessfulParse() {
         assertTrue(DesktopApp.isFailedPreview(true, "Önizleme yok: sentetik raster hatası"));
         assertFalse(DesktopApp.isFailedPreview(false, "Önizleme yok: sentetik raster hatası"));
