@@ -414,10 +414,27 @@ public final class PdfExporter {
     /** Regression-only injection seam. UI and CLI retain mandatory pre/post SHA gates. */
     static int save(List<UdfReader.DocumentSpec> docs, Path target, boolean overwrite,
                     BeforePublishCheck beforePublish, RenderBoundary boundary) throws Exception {
+        return save(docs, target, overwrite, beforePublish, boundary, () -> {});
+    }
+
+    /**
+     * Regression-only barrier after the final optimistic target check. It
+     * exposes the check-to-move window without sleeps or shipped debug hooks.
+     */
+    @FunctionalInterface
+    interface BeforeMoveBoundary {
+        void beforeMove() throws Exception;
+    }
+
+    static int save(List<UdfReader.DocumentSpec> docs, Path target, boolean overwrite,
+                    BeforePublishCheck beforePublish, RenderBoundary boundary,
+                    BeforeMoveBoundary beforeMove) throws Exception {
         if (beforePublish == null)
             throw new IllegalArgumentException("PDF son kaynak doğrulaması eksik");
         if (boundary == null)
             throw new IllegalArgumentException("PDF render sınır kontrolü eksik");
+        if (beforeMove == null)
+            throw new IllegalArgumentException("PDF son yayın sınır kontrolü eksik");
         Path abs = preflightTarget(target, overwrite);
         // Overwrite consent applies to the PDF the user actually inspected.
         // Do not silently replace a newer file written by another application
@@ -462,7 +479,11 @@ public final class PdfExporter {
             // still back its parsed documents; finally always cleans staging.
             beforePublish.verify();
             if (overwrite) TargetSnapshot.verifyUnchanged(abs, originalTarget);
-            publishValidated(staging, abs, overwrite);
+            beforeMove.beforeMove();
+            // Overwrite consent for a missing target does not authorize
+            // replacing a file another process creates after this check.
+            // Preserve the no-replace move semantics for that case.
+            publishValidated(staging, abs, overwrite && originalTarget != null);
             return pages;
         } finally {
             Files.deleteIfExists(staging);
