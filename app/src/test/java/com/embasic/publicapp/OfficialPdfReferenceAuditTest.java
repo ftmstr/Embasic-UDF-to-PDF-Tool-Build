@@ -160,6 +160,41 @@ final class OfficialPdfReferenceAuditTest {
                 + " catalogAction=REJECT noNativeUyap=true");
     }
 
+    @Test void physicalPageScaleAndPrintBoxesCannotHideBehindEqualRaster() throws Exception {
+        Path reference = pdf("reference.pdf", PDRectangle.A4, "PRINT", Color.BLUE, 1);
+        Path baseline = pdf("baseline.pdf", PDRectangle.A4, "PRINT", Color.BLUE, 1);
+        byte[] original = Files.readAllBytes(reference);
+        assertTrue(OfficialPdfReferenceAudit.audit(reference, baseline).matches());
+
+        // The same page content and MediaBox have different physical size
+        // when /UserUnit differs. PDF raster and extracted text may still match.
+        Path scaled = folder.resolve("scaled.pdf");
+        try (PDDocument document = Loader.loadPDF(baseline.toFile())) {
+            document.getPage(0).getCOSObject().setFloat(
+                    COSName.getPDFName("UserUnit"), 2.0f);
+            document.save(scaled.toFile());
+        }
+        var unit = OfficialPdfReferenceAudit.audit(reference, scaled);
+        assertFalse(unit.matches());
+        assertFalse(unit.pages().get(0).geometryMatches());
+        assertEquals(0, unit.pages().get(0).renderedPixels());
+
+        // Print trim is a production-page boundary, not necessarily visible
+        // in an ordinary on-screen render.
+        Path trimmed = folder.resolve("trimmed.pdf");
+        try (PDDocument document = Loader.loadPDF(baseline.toFile())) {
+            document.getPage(0).setTrimBox(new PDRectangle(30, 40, 400, 600));
+            document.save(trimmed.toFile());
+        }
+        var trim = OfficialPdfReferenceAudit.audit(reference, trimmed);
+        assertFalse(trim.matches());
+        assertFalse(trim.pages().get(0).geometryMatches());
+        assertEquals(0, trim.pages().get(0).renderedPixels());
+        assertArrayEquals(original, Files.readAllBytes(reference));
+        System.out.println("EMBASIC_TUR213_PRINT_GEOMETRY userUnit=DIFFERENCE"
+                + " trimBox=DIFFERENCE sourceUnchanged=true noNativeUyap=true");
+    }
+
     @Test void hugePageGeometryFailsBeforeAllocatingRasterMemory() throws Exception {
         PDRectangle huge = new PDRectangle(12000, 12000);
         Path expected = pdf("ref.pdf", huge, "SYNTHETIC", Color.RED, 1);
