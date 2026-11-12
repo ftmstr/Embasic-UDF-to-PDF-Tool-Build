@@ -8,6 +8,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.cos.COSDictionary;
+import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
@@ -89,6 +91,30 @@ public final class OfficialPdfReferenceAudit {
                 && a.getRotation() == b.getRotation();
     }
 
+    /**
+     * Raster and extracted-text parity cannot see invisible annotations,
+     * interactive form fields, catalog actions or embedded-file name trees.
+     * Reject them before reporting MATCH: this comparator supports only a
+     * deliberately bounded static-PDF subset, not general PDF semantics.
+     * This is not an exhaustive PDF security scanner.
+     */
+    private static void requireStaticPdf(PDDocument pdf) throws IOException {
+        COSDictionary catalog = pdf.getDocumentCatalog().getCOSObject();
+        for (String key : new String[]{
+                "OpenAction", "AA", "AcroForm", "Names", "Outlines",
+                "Perms", "Collection", "OCProperties"}) {
+            if (catalog.containsKey(COSName.getPDFName(key)))
+                throw new IOException("Interactive PDF catalog feature unsupported");
+        }
+        for (PDPage page : pdf.getPages()) {
+            COSDictionary dictionary = page.getCOSObject();
+            for (String key : new String[]{"Annots", "AA", "PresSteps"}) {
+                if (dictionary.containsKey(COSName.getPDFName(key)))
+                    throw new IOException("Interactive PDF page feature unsupported");
+            }
+        }
+    }
+
     private static void requireBoundedRaster(PDPage page) throws IOException {
         PDRectangle crop = page.getCropBox();
         if (crop == null || !Float.isFinite(crop.getWidth())
@@ -129,6 +155,8 @@ public final class OfficialPdfReferenceAudit {
             int a = first.getNumberOfPages(), b = second.getNumberOfPages();
             if (a < 1 || b < 1 || a > MAX_PAGES || b > MAX_PAGES)
                 throw new IOException("Unsupported page count for bounded audit");
+            requireStaticPdf(first);
+            requireStaticPdf(second);
             PDFRenderer rasterA = new PDFRenderer(first);
             PDFRenderer rasterB = new PDFRenderer(second);
             PDFTextStripper textA = new PDFTextStripper();
