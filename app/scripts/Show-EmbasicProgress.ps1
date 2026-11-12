@@ -28,8 +28,8 @@ $milestones = @(
     [pscustomobject]@{ Name='Windows launcher / smoke'; Weight=12; Complete=100; Evidence='Tur209 SHA 419e446 Windows independent jpackage app-image and packaged EXE physical Ctrl+O/Escape, Ctrl+T twice SUCCESS, run 43200971670; no publication' }
     [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=73; Evidence='Tur209 SHA 419e446 Windows physical 160-card wheel down=174ms up=248ms mounted<=24 in run 43200971654, separate Robot 1/1 PASS; full real-user beta GUI NOT_RUN' }
     [pscustomobject]@{ Name='UDF turleri ve surumleri'; Weight=26; Complete=12; Evidence='Sentetik ZIP PNG referans, A5/LEGAL; gercek UYAP schema dogrulanmadi' }
-    [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Tur209 SHA 419e446 Windows/Linux 181 JUnit (180 PASS, 1 normal-suite Robot SKIP), source-pixel RGB/RGBA, ordered PDF and fail-closed controls PASS, MVP 43200971654; native UYAP golden unavailable' }
-    [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Tur209 SHA 419e446 PDF Engine 43200971565 SUCCESS, upstream SHA audit 43200971684 SUCCESS; Secure Bootstrap 43200971778 FAILURE due to unapproved source, SOURCE_GATE BLOCKED; licensing and Windows atomic TOCTOU NO-GO' }
+    [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Tur210 exact HEAD 36786fd: Windows/Linux 181 JUnit (180 PASS, normal Robot 1 SKIP); Tur211 offline official-Editor manual PDF reference comparison added, 6 rights-clean synthetic tests, no native UYAP parity claim; exact-final-HEAD CI PENDING' }
+    [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Tur211 read-only local PDF reference audit (no UYAP binary), source/NOTICE/distribution not approved, SOURCE_GATE BLOCKED; no native UYAP API/CLI claimed; Win32 atomic TOCTOU NO-GO; release NOT_AUTHORIZED' }
     [pscustomobject]@{ Name='Beta kabul / dagitim'; Weight=8; Complete=10; Evidence='Paket CI ici; indirme paketi yayinlanmadi' }
 )
 if ((($milestones | Measure-Object -Property Weight -Sum).Sum) -ne 100) {
