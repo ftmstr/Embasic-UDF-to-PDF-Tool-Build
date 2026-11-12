@@ -6,7 +6,7 @@
   The target must be the launched app-image's visible, enabled MVP JFrame.
   Physical mouse focus, Ctrl+O/Escape and Ctrl+T are delivered by java.awt.Robot
   in a separate JVM. The chooser must close and the empty grid background must
-  visibly change and restore across a theme round-trip. No UDF is imported,
+  visibly change and restore across theme and thumbnail-zoom round-trips. No UDF is imported,
   no user files are read, and no executable or archive is published.
 #>
 [CmdletBinding()]
@@ -82,6 +82,15 @@ public static class PackagedGuiWindows {
         // Empty workspace: center-right grid, away from toolbar and add tile.
         return new int[] { r.Left + (r.Right - r.Left) * 3 / 4,
                            r.Top + (r.Bottom - r.Top) * 3 / 5 };
+    }
+
+    public static int[] ZoomTileRegion(IntPtr hwnd) {
+        RECT r;
+        if (!GetWindowRect(hwnd, out r) || r.Right - r.Left < 850 ||
+            r.Bottom - r.Top < 610) return null;
+        // Bounded top-left viewport region containing the in-grid + UDF tile.
+        // Excludes the title bar, toolbar, status row and moving mouse cursor.
+        return new int[] { r.Left + 35, r.Top + 145, 300, 320 };
     }
 
     public static int[] TitleClickPoint(IntPtr hwnd) {
@@ -193,7 +202,56 @@ try {
         throw 'Ctrl+T did not restore the original workspace background.'
     }
     Write-Host "PACKAGED-THEME-ROBOT-PASS: physical Ctrl+T twice, grid $before -> $after -> $restored; no files imported."
-    Write-Host 'PACKAGED-GUI-ROBOT-PASS: ephemeral EXE, physical mouse focus, Ctrl+O, owned chooser, Escape and theme round-trip; no UDF imported.'
+
+    # Compare rendered pixels, not a synthetic Swing action invocation: this
+    # verifies that the packaged EXE responds to Ctrl+= and Ctrl+0 while the
+    # real Windows desktop owns keyboard focus. No UDF fixture is required.
+    $region = [PackagedGuiWindows]::ZoomTileRegion($main)
+    if ($null -eq $region) { throw 'Packaged zoom region has invalid geometry.' }
+    function Get-ZoomRegionSha([int[]]$bounds) {
+        $hash = & java -cp $classes PackagedInputRobot region $bounds[0] $bounds[1] $bounds[2] $bounds[3]
+        if ($LASTEXITCODE -ne 0 -or $hash -notmatch '^[0-9a-f]{64}
+} finally {
+    if ($null -ne $process) {
+        $process.Refresh()
+        if (-not $process.HasExited) {
+            & taskkill.exe /PID $process.Id /T /F | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                throw 'Packaged GUI process tree cleanup failed.'
+            }
+            $process.WaitForExit(10000) | Out-Null
+        }
+    }
+}
+) {
+            throw 'Physical packaged zoom screenshot probe failed; zoom NOT_VERIFIED.'
+        }
+        return $hash
+    }
+    if ([PackagedGuiWindows]::GetForegroundWindow() -ne $main) {
+        throw 'Packaged MVP lost foreground before physical zoom acceptance.'
+    }
+    $zoomBefore = Get-ZoomRegionSha $region
+    & java -cp $classes PackagedInputRobot zoom
+    if ($LASTEXITCODE -ne 0) { throw 'Physical Ctrl+= zoom failed.' }
+    Start-Sleep -Milliseconds 800
+    if ([PackagedGuiWindows]::GetForegroundWindow() -ne $main -or
+        [PackagedGuiWindows]::FindOwnedDialog($main) -ne [IntPtr]::Zero) {
+        throw 'Unexpected window focus or modal dialog during packaged zoom.'
+    }
+    $zoomAfter = Get-ZoomRegionSha $region
+    if ($zoomAfter -eq $zoomBefore) {
+        throw 'Physical Ctrl+= did not change the rendered + UDF tile region.'
+    }
+    & java -cp $classes PackagedInputRobot resetzoom
+    if ($LASTEXITCODE -ne 0) { throw 'Physical Ctrl+0 zoom reset failed.' }
+    Start-Sleep -Milliseconds 800
+    $zoomRestored = Get-ZoomRegionSha $region
+    if ($zoomRestored -ne $zoomBefore) {
+        throw 'Physical Ctrl+0 did not restore the rendered + UDF tile region.'
+    }
+    Write-Host 'PACKAGED-ZOOM-ROBOT-PASS: physical Ctrl+= changed the rendered + UDF tile; Ctrl+0 restored SHA-256 pixels; no files imported.'
+    Write-Host 'PACKAGED-GUI-ROBOT-PASS: ephemeral EXE, physical mouse focus, Ctrl+O/Escape, theme and zoom round-trips; no UDF imported.'
 } finally {
     if ($null -ne $process) {
         $process.Refresh()
