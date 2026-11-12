@@ -552,8 +552,11 @@ public final class PdfExporter {
                 // verified synthetic PNG subset; never silently ignore it.
                 if (imageStream.getDictionaryObject(org.apache.pdfbox.cos.COSName.MASK) != null)
                     throw new IOException("PDF desteklenmeyen görüntü maskesi");
+                // Alpha can change even when the decoded SMask bytes do not:
+                // its geometry, bit depth, grayscale space, Decode or Matte
+                // entries can be redirected independently of the /Im Do command.
                 String maskDigest = mask == null ? "-" :
-                        decodedStreamSha256((org.apache.pdfbox.cos.COSStream) mask);
+                        softMaskFingerprint((org.apache.pdfbox.cos.COSStream) mask);
                 images.add(name.getName() + "|" + image.getWidth() + "x" + image.getHeight()
                         + "|" + image.getBitsPerComponent() + "|"
                         + image.getColorSpace().getName() + "|"
@@ -562,6 +565,31 @@ public final class PdfExporter {
             pages.add(List.copyOf(images));
         }
         return List.copyOf(pages);
+    }
+
+    /** Capture soft-mask interpretation as well as its decoded alpha samples. */
+    private static String softMaskFingerprint(org.apache.pdfbox.cos.COSStream mask)
+            throws IOException {
+        var width = mask.getDictionaryObject(org.apache.pdfbox.cos.COSName.WIDTH);
+        var height = mask.getDictionaryObject(org.apache.pdfbox.cos.COSName.HEIGHT);
+        var bits = mask.getDictionaryObject(org.apache.pdfbox.cos.COSName.BITS_PER_COMPONENT);
+        var color = mask.getDictionaryObject(org.apache.pdfbox.cos.COSName.COLORSPACE);
+        if (!(width instanceof org.apache.pdfbox.cos.COSNumber w)
+                || !(height instanceof org.apache.pdfbox.cos.COSNumber h)
+                || !(bits instanceof org.apache.pdfbox.cos.COSNumber b)
+                || !(color instanceof org.apache.pdfbox.cos.COSName colorName)
+                || w.intValue() <= 0 || h.intValue() <= 0
+                || b.intValue() <= 0 || !Float.isFinite(w.floatValue())
+                || !Float.isFinite(h.floatValue()) || !Float.isFinite(b.floatValue())
+                || !"DeviceGray".equals(colorName.getName()))
+            throw new IOException("PDF alfa maskesi geometrisi desteklenmiyor");
+        return w.floatValue() + "x" + h.floatValue() + "|"
+                + b.floatValue() + "|" + colorName.getName() + "|"
+                + fontWidthsFingerprint(mask.getDictionaryObject(
+                        org.apache.pdfbox.cos.COSName.getPDFName("Decode"))) + "|"
+                + fontWidthsFingerprint(mask.getDictionaryObject(
+                        org.apache.pdfbox.cos.COSName.getPDFName("Matte"))) + "|"
+                + decodedStreamSha256(mask);
     }
 
     private static String decodedStreamSha256(org.apache.pdfbox.cos.COSStream stream)
