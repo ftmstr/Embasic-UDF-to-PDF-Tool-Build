@@ -596,7 +596,11 @@ final class GuiRobotSmokeTest {
             // Import only after the 40-card Explorer/chooser acceptance above:
             // that path deliberately reduces its queue to three cards.
             List<Path> additional = new ArrayList<>();
-            for (int index = 40; index < 197; index++)
+            // The earlier physical chooser cases already imported fixture 40
+            // and created fixture 41 before copying its bytes to typedfile.udf.
+            // Reusing those paths is correctly rejected by FileImportPolicy.
+            // Select 157 NEW physical paths to reach 160 logical cards.
+            for (int index = 42; index < 199; index++)
                 additional.add(makeFixture(index));
             assertEquals(157, additional.size());
             GuiRobotWait.onEdt(() -> {
