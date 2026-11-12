@@ -25,11 +25,11 @@ $forecastBase = [DateTime]::ParseExact('2026-10-31', 'yyyy-MM-dd', [System.Globa
 # Weight totals are exactly 100. Completion is engineering judgement, not telemetry.
 $milestones = @(
     [pscustomobject]@{ Name='Public kod tabani / Maven'; Weight=12; Complete=100; Evidence='Public kaynak + Linux/Windows Maven CI' }
-    [pscustomobject]@{ Name='Windows launcher / smoke'; Weight=12; Complete=100; Evidence='Tur219 exact SHA 0287f27 packaged Windows physical EXE acceptance run 43275961746 SUCCESS, unchanged source after pre-save mutation; Tur220 separate-process render tests only, PHYSICAL_PACKAGED_RENDER_RACE NOT_RUN' }
+    [pscustomobject]@{ Name='Windows launcher / smoke'; Weight=12; Complete=100; Evidence='Tur220 exact test SHA 11eba044 packaged Windows physical EXE 43283394539 SUCCESS; theme/zoom/2 synthetic UDF import/reorder/Ctrl+S PDF order and stale-source YES fail-closed PASS; PHYSICAL_PACKAGED_RENDER_RACE NOT_RUN' }
     [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=73; Evidence='Tur216 physical packaged Ctrl+S save, BRAVO-TWO then ALPHA-ONE A4 order, overwrite NO SHA preservation; Tur217 stale source YES error dialog and old PDF preserved; real user beta NOT_RUN' }
     [pscustomobject]@{ Name='UDF turleri ve surumleri'; Weight=26; Complete=12; Evidence='Sentetik ZIP PNG referans, A5/LEGAL; gercek UYAP schema dogrulanmadi' }
-    [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Tur215 glyph/font/table pixel bands tested; Tur218 3/3 deterministic intra-JVM PDF render mutations PASS; Tur220 3 new independent OS process mid-render mutation tests in CI PENDING; native UYAP golden NOT_RUN' }
-    [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Tur219 non-atomic overwrite fallback disabled and Windows/Linux synthetic tests PASS; Tur220 independent JVM cross-process source+target race tests PENDING, Windows atomic check-to-move TOCTOU NO-GO; SOURCE_GATE and license/NOTICE BLOCKED' }
+    [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Tur220 test SHA 11eba044 Windows/Linux 199 JUnit each: 198 PASS + 1 normal Robot SKIP, cross-process mid-render 3/3 PASS, 160 synthetic UDF profile 43283394750 SUCCESS, native UYAP golden NOT_RUN' }
+    [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Tur219 non-atomic fallback removed; Tur220 test SHA 11eba044 PDF engine 43283394272 SUCCESS and upstream SHA 43283394259 SUCCESS; Secure Bootstrap 43283394748 FAILURE SOURCE_GATE BLOCKED; Windows atomic TOCTOU/NOTICE/release NO-GO' }
     [pscustomobject]@{ Name='Beta kabul / dagitim'; Weight=8; Complete=10; Evidence='Paket CI ici; indirme paketi yayinlanmadi' }
 )
 if ((($milestones | Measure-Object -Property Weight -Sum).Sum) -ne 100) {
