@@ -624,15 +624,13 @@ public final class DesktopApp extends JFrame {
                             item.info = DEFERRED_PREVIEW;
                             // Parsing changes export eligibility, not just the thumbnail.
                             // Refresh toolbar and aggregate status on the Swing EDT.
-                            rebuild();
-                            updateFileStatus();
+                            requestCoalescedWorkspaceRefresh(previewRefresh);
                         },
                         ex -> {
                             if (item.cancelled || !items.contains(item)
                                     || generation != item.parseGeneration) return;
                             item.info = "Desteklenmiyor: " + friendly(ex);
-                            rebuild();
-                            updateFileStatus();
+                            requestCoalescedWorkspaceRefresh(previewRefresh);
                         });
             } catch (RejectedExecutionException queueFull) {
                 item.info = "UDF okuma kuyruğu dolu — kartı seçip Yeniden dene'ye basın";
@@ -641,6 +639,18 @@ public final class DesktopApp extends JFrame {
         rebuild();
         updateFileStatus();
         return !plan.accepted().isEmpty();
+    }
+
+    /**
+     * Parsing up to 160 UDFs can complete in a burst. Publish each parse result
+     * immediately, but rebuild visible Swing cards and save eligibility only
+     * once after the short debounce. The initial import and explicit retry still
+     * update the workspace immediately; thumbnail completions share this timer.
+     */
+    static void requestCoalescedWorkspaceRefresh(Timer refresh) {
+        if (!SwingUtilities.isEventDispatchThread())
+            throw new IllegalStateException("Workspace refresh must run on the Swing EDT");
+        refresh.restart();
     }
 
     /** Preview failures remain exportable; retry only on explicit user action. */
@@ -704,15 +714,13 @@ public final class DesktopApp extends JFrame {
                             item.sourceFingerprint = parsed.fingerprint();
                             item.document = parsed.document();
                             item.info = DEFERRED_PREVIEW;
-                            rebuild();
-                            updateFileStatus();
+                            requestCoalescedWorkspaceRefresh(previewRefresh);
                         },
                         ex -> {
                             if (item.cancelled || !items.contains(item)
                                     || generation != item.parseGeneration) return;
                             item.info = "Desteklenmiyor: " + friendly(ex);
-                            rebuild();
-                            updateFileStatus();
+                            requestCoalescedWorkspaceRefresh(previewRefresh);
                         });
             } catch (RejectedExecutionException queueFull) {
                 // A rejected submission has no live parse task. Do not retain the
