@@ -209,7 +209,7 @@ public final class DesktopApp extends JFrame {
                 e.consume();
             }
         });
-        scroll.getViewport().addChangeListener(e -> viewportRefresh.restart());
+        // Continuous wheel/drag scrolling must not postpone virtual-card mounting.\n        // Keep the first 16 ms deadline, just like sustained thumbnail zoom.\n        scroll.getViewport().addChangeListener(e -> requestCoalescedWorkspaceRefresh(viewportRefresh));
 
         // Keep long import/error status text on its own row. The queue controls
         // must remain reachable even with 160 files or an unsupported UDF.
@@ -482,7 +482,7 @@ public final class DesktopApp extends JFrame {
         if(index>=0 && virtualGrid!=null) {
             // Offscreen cards have no Swing component; scrolling uses their logical bounds.
             grid.scrollRectToVisible(virtualGrid.bounds(index));
-            viewportRefresh.restart();
+            requestCoalescedWorkspaceRefresh(viewportRefresh);
         }
     }
 
