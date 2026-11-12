@@ -697,7 +697,7 @@ public final class PdfExporter {
                     throw new IOException("PDF FontBBox geometrisi desteklenmiyor");
                 appendFontWidthValue(result, bbox, 0);
             } else if (value instanceof org.apache.pdfbox.cos.COSNumber number) {
-                double numeric = number.doubleValue();
+                float numeric = number.floatValue();
                 if (!Double.isFinite(numeric))
                     throw new IOException("PDF font tanımlayıcı geometrisi sonlu değil");
                 result.append(Double.toString(numeric));
