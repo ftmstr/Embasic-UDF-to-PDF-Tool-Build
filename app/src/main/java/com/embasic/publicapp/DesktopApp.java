@@ -165,7 +165,8 @@ public final class DesktopApp extends JFrame {
         addButton.addActionListener(e -> chooseFiles());
         addButton.setToolTipText("UDF dosyalarını seç (Ctrl+O)");
         actions.add(addButton);
-        themeButton.addActionListener(e -> { dark = !dark; themeButton.setText(dark ? "Aydınlık tema" : "Karanlık tema"); rebuild(); });
+        themeButton.addActionListener(e -> toggleTheme());
+        themeButton.setToolTipText("Açık/koyu tema arasında geçiş yap (Ctrl+T)");
         actions.add(themeButton);
         thumbnailZoom.setPreferredSize(new Dimension(118, 26));
         thumbnailZoom.setToolTipText("Dosya kartlarının boyutunu değiştir (Ctrl + fare tekerleği)");
@@ -290,6 +291,11 @@ public final class DesktopApp extends JFrame {
         var input = getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW);
         var action = getRootPane().getActionMap();
         installFileShortcuts(getRootPane(), this::chooseFiles, this::save);
+        // Theme is keyboard-accessible even when the virtual grid owns focus.
+        input.put(KeyStroke.getKeyStroke(KeyEvent.VK_T, InputEvent.CTRL_DOWN_MASK), "toggleTheme");
+        action.put("toggleTheme", new javax.swing.AbstractAction() {
+            @Override public void actionPerformed(java.awt.event.ActionEvent e) { toggleTheme(); }
+        });
         input.put(KeyStroke.getKeyStroke(KeyEvent.VK_A, InputEvent.CTRL_DOWN_MASK), "selectAll");
         bindZoomShortcut(KeyEvent.VK_EQUALS, 1);
         bindZoomShortcut(KeyEvent.VK_ADD, 1);
@@ -418,6 +424,12 @@ public final class DesktopApp extends JFrame {
         Rectangle next=GridDropIndicator.bounds(virtualGrid,dropTargetIndex,dropAfter);
         if (old!=null) grid.repaint(old.x-2,old.y-2,old.width+4,old.height+4);
         if (next!=null) grid.repaint(next.x-2,next.y-2,next.width+4,next.height+4);
+    }
+
+    private void toggleTheme() {
+        dark = !dark;
+        themeButton.setText(dark ? "Aydınlık tema" : "Karanlık tema");
+        rebuild();
     }
 
     private void updateZoomLabel() {
