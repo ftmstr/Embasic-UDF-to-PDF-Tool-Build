@@ -637,13 +637,72 @@ public final class PdfExporter {
                     throw new IOException("PDF gömülü font/ToUnicode kaynağı eksik");
                 String fontHash = cachedDecodedStreamSha256(fontStream, digests);
                 String unicodeHash = cachedDecodedStreamSha256(unicodeStream, digests);
+                // Font bytes and ToUnicode alone do not define displayed glyphs:
+                // /CIDToGIDMap redirects character IDs to glyph IDs, while /W
+                // and /DW control advance widths. The page's /F1 Tf command
+                // can remain byte-identical when any of these resources change.
+                var encoding = dictionary.getDictionaryObject(
+                        org.apache.pdfbox.cos.COSName.ENCODING);
+                if (!(encoding instanceof org.apache.pdfbox.cos.COSName encodingName))
+                    throw new IOException("PDF Type0 font kodlaması desteklenmiyor");
+                var cidMap = descendant.getDictionaryObject(
+                        org.apache.pdfbox.cos.COSName.getPDFName("CIDToGIDMap"));
+                String mapping;
+                if (cidMap == null || cidMap instanceof org.apache.pdfbox.cos.COSName
+                        && "Identity".equals(((org.apache.pdfbox.cos.COSName) cidMap).getName())) {
+                    mapping = "Identity";
+                } else if (cidMap instanceof org.apache.pdfbox.cos.COSStream stream) {
+                    mapping = "stream:" + cachedDecodedStreamSha256(stream, digests);
+                } else {
+                    throw new IOException("PDF CIDToGIDMap kaynağı desteklenmiyor");
+                }
+                var defaultWidth = descendant.getDictionaryObject(
+                        org.apache.pdfbox.cos.COSName.getPDFName("DW"));
+                if (defaultWidth != null
+                        && !(defaultWidth instanceof org.apache.pdfbox.cos.COSNumber))
+                    throw new IOException("PDF varsayılan font genişliği geçersiz");
+                String dw = defaultWidth == null ? "1000" :
+                        Float.toString(((org.apache.pdfbox.cos.COSNumber) defaultWidth).floatValue());
+                String widths = fontWidthsFingerprint(descendant.getDictionaryObject(
+                        org.apache.pdfbox.cos.COSName.getPDFName("W")));
                 fonts.add(name.getName() + "|" + dictionary.getNameAsString(
                         org.apache.pdfbox.cos.COSName.BASE_FONT) + "|"
-                        + fontHash + "|" + unicodeHash);
+                        + fontHash + "|" + unicodeHash + "|"
+                        + encodingName.getName() + "|" + mapping + "|" + dw + "|" + widths);
             }
             pages.add(List.copyOf(fonts));
         }
         return List.copyOf(pages);
+    }
+
+    /** Canonical numeric /W array representation, independent of PDF object IDs. */
+    private static String fontWidthsFingerprint(org.apache.pdfbox.cos.COSBase widths)
+            throws IOException {
+        if (widths == null) return "-";
+        StringBuilder result = new StringBuilder();
+        appendFontWidthValue(result, widths, 0);
+        return result.toString();
+    }
+
+    private static void appendFontWidthValue(StringBuilder result,
+                                             org.apache.pdfbox.cos.COSBase value,
+                                             int depth) throws IOException {
+        if (depth > 6) throw new IOException("PDF font genişlik dizisi çok derin");
+        if (value instanceof org.apache.pdfbox.cos.COSArray array) {
+            result.append('[');
+            for (int i = 0; i < array.size(); i++) {
+                if (i > 0) result.append(',');
+                appendFontWidthValue(result, array.getObject(i), depth + 1);
+            }
+            result.append(']');
+        } else if (value instanceof org.apache.pdfbox.cos.COSNumber number) {
+            float width = number.floatValue();
+            if (!Float.isFinite(width))
+                throw new IOException("PDF font genişliği sonlu değil");
+            result.append(width);
+        } else {
+            throw new IOException("PDF font genişlik öğesi desteklenmiyor");
+        }
     }
 
     private static String cachedDecodedStreamSha256(
