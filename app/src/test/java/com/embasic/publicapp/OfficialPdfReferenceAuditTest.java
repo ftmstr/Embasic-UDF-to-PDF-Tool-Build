@@ -6,6 +6,11 @@ import java.awt.Color;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.cos.COSArray;
+import org.apache.pdfbox.cos.COSDictionary;
+import org.apache.pdfbox.cos.COSInteger;
+import org.apache.pdfbox.cos.COSName;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
@@ -105,6 +110,50 @@ final class OfficialPdfReferenceAuditTest {
         try (var listed = Files.list(folder)) {
             assertEquals(2L, listed.count(), "Audit must not create staging or user-content logs");
         }
+    }
+
+    @Test void invisibleLinkAndCatalogActionCannotProduceFalseParity() throws Exception {
+        Path reference = pdf("reference.pdf", PDRectangle.A4, "STATIC", Color.BLUE, 1);
+        Path plain = pdf("plain.pdf", PDRectangle.A4, "STATIC", Color.BLUE, 1);
+        assertTrue(OfficialPdfReferenceAudit.audit(reference, plain).matches());
+
+        Path linkPdf = folder.resolve("hidden-link.pdf");
+        try (PDDocument document = Loader.loadPDF(plain.toFile())) {
+            COSDictionary invisibleLink = new COSDictionary();
+            invisibleLink.setItem(COSName.getPDFName("Type"), COSName.getPDFName("Annot"));
+            invisibleLink.setItem(COSName.getPDFName("Subtype"), COSName.getPDFName("Link"));
+            COSArray rect = new COSArray();
+            for (int coordinate : new int[]{0, 0, 1, 1})
+                rect.add(COSInteger.get(coordinate));
+            invisibleLink.setItem(COSName.getPDFName("Rect"), rect);
+            COSArray annotations = new COSArray();
+            annotations.add(invisibleLink);
+            document.getPage(0).getCOSObject().setItem(
+                    COSName.getPDFName("Annots"), annotations);
+            document.save(linkPdf.toFile());
+        }
+        byte[] linkBytes = Files.readAllBytes(linkPdf);
+        assertThrows(IOException.class,
+                () -> OfficialPdfReferenceAudit.audit(reference, linkPdf));
+        assertThrows(IOException.class,
+                () -> OfficialPdfReferenceAudit.audit(linkPdf, reference));
+        assertArrayEquals(linkBytes, Files.readAllBytes(linkPdf));
+
+        Path actionPdf = folder.resolve("catalog-action.pdf");
+        try (PDDocument document = Loader.loadPDF(plain.toFile())) {
+            COSDictionary action = new COSDictionary();
+            action.setName(COSName.getPDFName("S"), "Named");
+            action.setName(COSName.getPDFName("N"), "NextPage");
+            document.getDocumentCatalog().getCOSObject().setItem(
+                    COSName.getPDFName("OpenAction"), action);
+            document.save(actionPdf.toFile());
+        }
+        assertThrows(IOException.class,
+                () -> OfficialPdfReferenceAudit.audit(reference, actionPdf));
+        assertThrows(IOException.class,
+                () -> OfficialPdfReferenceAudit.audit(actionPdf, reference));
+        System.out.println("EMBASIC_TUR212_STATIC_PDF_GATE hiddenLink=REJECT"
+                + " catalogAction=REJECT noNativeUyap=true");
     }
 
     @Test void hugePageGeometryFailsBeforeAllocatingRasterMemory() throws Exception {
