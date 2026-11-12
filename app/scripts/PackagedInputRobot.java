@@ -13,7 +13,7 @@ import java.awt.datatransfer.StringSelection;
 /**
  * Real OS mouse/keyboard input against a separately launched jpackage EXE.
  * No application classes are loaded into this probe JVM.
- * No synthetic UDF or user file is opened; Ctrl+O is cancelled with Escape.
+ * Only rights-clean temporary synthetic UDF/PDF paths are used for save acceptance.
  */
 public final class PackagedInputRobot {
     private PackagedInputRobot() {}
@@ -22,7 +22,7 @@ public final class PackagedInputRobot {
         if (GraphicsEnvironment.isHeadless())
             throw new IllegalStateException("Physical Windows desktop unavailable");
         if (args.length < 1)
-            throw new IllegalArgumentException("Expected focus x y, open, cancel, theme, zoom, resetzoom, choose path, selectall, movedown, moveup, pixel x y, or region x y w h");
+            throw new IllegalArgumentException("Expected focus x y, open, cancel, theme, zoom, resetzoom, choose path, choosepdf path, save, selectall, movedown, moveup, pixel x y, or region x y w h");
         Robot robot = new Robot();
         robot.setAutoDelay(60);
         switch (args[0]) {
@@ -77,9 +77,10 @@ public final class PackagedInputRobot {
                     robot.keyRelease(KeyEvent.VK_CONTROL);
                 }
             }
-            case "choose" -> {
-                if (args.length != 2 || !args[1].toLowerCase(java.util.Locale.ROOT).endsWith(".udf"))
-                    throw new IllegalArgumentException("choose requires one synthetic .udf path");
+            case "choose", "choosepdf" -> {
+                String suffix = args[0].equals("choosepdf") ? ".pdf" : ".udf";
+                if (args.length != 2 || !args[1].toLowerCase(java.util.Locale.ROOT).endsWith(suffix))
+                    throw new IllegalArgumentException("choose requires one synthetic " + suffix + " path");
                 // The Windows JFileChooser's File name mnemonic is Alt+N. Use
                 // clipboard paste instead of keyboard layout-dependent typing.
                 // This is a separate physical Robot JVM, not a Swing test hook.
@@ -105,6 +106,16 @@ public final class PackagedInputRobot {
                 robot.delay(300);
                 robot.keyPress(KeyEvent.VK_ENTER);
                 robot.keyRelease(KeyEvent.VK_ENTER);
+            }
+            case "save" -> {
+                if (args.length != 1) throw new IllegalArgumentException("save");
+                robot.keyPress(KeyEvent.VK_CONTROL);
+                try {
+                    robot.keyPress(KeyEvent.VK_S);
+                    robot.keyRelease(KeyEvent.VK_S);
+                } finally {
+                    robot.keyRelease(KeyEvent.VK_CONTROL);
+                }
             }
             case "selectall" -> {
                 if (args.length != 1) throw new IllegalArgumentException("selectall");
