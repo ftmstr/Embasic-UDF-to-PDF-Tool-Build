@@ -126,6 +126,45 @@ final class PdfOutputCommitTest {
         }
     }
 
+    @Test void finalizedFontProgramAndToUnicodeCannotBeSilentlyRedirected() throws Exception {
+        // Synthetic text embeds a Type0 font. A /F1 Tf content command can
+        // remain identical even if the font resource's CMap changes.
+        var style = new UdfReader.Style(11, false, Color.BLACK);
+        var paragraph = new UdfReader.Paragraph(List.of(
+                new UdfReader.Run("Public synthetic font 123", style)));
+        var doc = new UdfReader.DocumentSpec("font-synthetic.udf", "1.0",
+                List.of(paragraph));
+        Path staged = folder.resolve("synthetic-font.pdf");
+        try (PDDocument original = PdfExporter.render(List.of(doc))) {
+            original.save(staged.toFile());
+            // PDFBox materializes the subset and ToUnicode during save().
+            List<List<String>> expected = PdfExporter.snapshotPageFontResources(original);
+            assertEquals(1, expected.size());
+            assertFalse(expected.get(0).isEmpty());
+            try (PDDocument reloaded = Loader.loadPDF(staged.toFile())) {
+                assertDoesNotThrow(() ->
+                        PdfExporter.verifyStagedPageFontResources(expected, reloaded));
+                var resources = reloaded.getPage(0).getResources();
+                var fontName = resources.getFontNames().iterator().next();
+                var dictionary = resources.getFont(fontName).getCOSObject();
+                var unicodeName = org.apache.pdfbox.cos.COSName.TO_UNICODE;
+                // A different CMap must not pass merely because the PDF's
+                // page geometry and /F1 drawing command are unchanged.
+                var replacement = reloaded.getDocument().createCOSStream();
+                try (var output = replacement.createOutputStream()) {
+                    output.write("different synthetic CMap".getBytes(StandardCharsets.US_ASCII));
+                }
+                dictionary.setItem(unicodeName, replacement);
+                IOException changed = assertThrows(IOException.class, () ->
+                        PdfExporter.verifyStagedPageFontResources(expected, reloaded));
+                assertTrue(changed.getMessage().contains("1"));
+                dictionary.removeItem(unicodeName);
+                assertThrows(IOException.class, () ->
+                        PdfExporter.verifyStagedPageFontResources(expected, reloaded));
+            }
+        }
+    }
+
     @Test void lateCreatedTargetCannotBeClobberedWithoutConsent() throws Exception {
         Path staging = folder.resolve(".embasic-pending.pdf");
         Path target = folder.resolve("case.pdf");
