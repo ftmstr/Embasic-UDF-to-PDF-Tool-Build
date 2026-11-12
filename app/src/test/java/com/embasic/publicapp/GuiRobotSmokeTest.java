@@ -151,7 +151,7 @@ final class GuiRobotSmokeTest {
         }
     }
 
-    @Test @Timeout(85)
+    @Test @Timeout(115)
     void realWindowDragAutoScrollAndAccessibleTarget() throws Exception {
         Assumptions.assumeTrue(Boolean.getBoolean("embasic.gui.robot"),
                 "Real Windows Robot test is manual opt-in; do not count as GUI acceptance");
@@ -588,6 +588,102 @@ final class GuiRobotSmokeTest {
                     }), Boolean.TRUE::equals);
             assertEquals(3, GuiRobotWait.onEdt(items::size),
                     "Physical filename entry must add exactly one synthetic UDF");
+
+
+            // TUR209: physical scroll wheel against a REAL 160-UDF Swing
+            // workspace, not merely a VirtualGridLayout simulation. All
+            // files are disposable format_id=1.0 ZIP fixtures from @TempDir.
+            // Import only after the 40-card Explorer/chooser acceptance above:
+            // that path deliberately reduces its queue to three cards.
+            List<Path> additional = new ArrayList<>();
+            for (int index = 40; index < 197; index++)
+                additional.add(makeFixture(index));
+            assertEquals(157, additional.size());
+            GuiRobotWait.onEdt(() -> {
+                var importer = DesktopApp.class.getDeclaredMethod("addFiles", List.class);
+                importer.setAccessible(true);
+                assertEquals(Boolean.TRUE, importer.invoke(app, additional),
+                        "160-card test fixtures must be accepted");
+                return null;
+            });
+            GuiRobotWait.until(Duration.ofSeconds(8), Duration.ofMillis(60),
+                    () -> GuiRobotWait.onEdt(() -> {
+                        var layout = (VirtualGridLayout) field(app, "virtualGrid");
+                        return items.size() == 160 && layout != null
+                                && layout.count() == 161
+                                && scroll.getVerticalScrollBar().getMaximum()
+                                        > scroll.getVerticalScrollBar().getVisibleAmount();
+                    }), Boolean.TRUE::equals);
+            // Position reset belongs only to fixture setup. Actual movement
+            // below MUST be delivered by native Robot.mouseWheel events.
+            GuiRobotWait.onEdt(() -> {
+                scroll.getVerticalScrollBar().setValue(0);
+                return null;
+            });
+            GuiRobotWait.until(Duration.ofSeconds(5), Duration.ofMillis(35),
+                    () -> GuiRobotWait.onEdt(() -> {
+                        var range = (VirtualGridLayout.Visible) field(app, "drawnRange");
+                        return range != null && range.startInclusive() == 0
+                                && scroll.getVerticalScrollBar().getValue() == 0;
+                    }), Boolean.TRUE::equals);
+            Point wheelOrigin = GuiRobotWait.onEdt(
+                    () -> scroll.getViewport().getLocationOnScreen());
+            int wheelX = wheelOrigin.x
+                    + GuiRobotWait.onEdt(() -> scroll.getViewport().getWidth()) / 2;
+            int wheelY = wheelOrigin.y
+                    + GuiRobotWait.onEdt(() -> scroll.getViewport().getHeight()) / 2;
+            robot.mouseMove(wheelX, wheelY);
+            long downStart = System.nanoTime();
+            robot.mouseWheel(20);
+            long[] moved = GuiRobotWait.until(Duration.ofSeconds(6),
+                    Duration.ofMillis(35),
+                    () -> GuiRobotWait.onEdt(() -> {
+                        var layout = (VirtualGridLayout) field(app, "virtualGrid");
+                        var drawn = (VirtualGridLayout.Visible) field(app, "drawnRange");
+                        var viewport = scroll.getViewport().getViewRect();
+                        boolean correct = layout != null && drawn != null
+                                && drawn.equals(layout.visible(viewport));
+                        return new long[] {
+                                scroll.getVerticalScrollBar().getValue(),
+                                drawn == null ? -1 : drawn.startInclusive(),
+                                grid.getComponentCount(),
+                                layout == null ? -1 : layout.columns(),
+                                correct ? 1 : 0
+                        };
+                    }),
+                    sample -> sample[0] > 250 && sample[1] > 0
+                            && sample[4] == 1 && sample[3] > 0
+                            && sample[2] <= sample[3] * 10
+                            && sample[2] < 100);
+            long downMs = (System.nanoTime() - downStart) / 1_000_000;
+            long upStart = System.nanoTime();
+            robot.mouseWheel(-20);
+            long[] returned = GuiRobotWait.until(Duration.ofSeconds(6),
+                    Duration.ofMillis(35),
+                    () -> GuiRobotWait.onEdt(() -> {
+                        var layout = (VirtualGridLayout) field(app, "virtualGrid");
+                        var drawn = (VirtualGridLayout.Visible) field(app, "drawnRange");
+                        var viewport = scroll.getViewport().getViewRect();
+                        return new long[] {
+                                scroll.getVerticalScrollBar().getValue(),
+                                drawn == null ? -1 : drawn.startInclusive(),
+                                grid.getComponentCount(),
+                                layout == null ? -1 : layout.columns(),
+                                layout != null && drawn != null
+                                        && drawn.equals(layout.visible(viewport)) ? 1 : 0
+                        };
+                    }),
+                    sample -> sample[0] <= 30 && sample[1] == 0
+                            && sample[4] == 1 && sample[3] > 0
+                            && sample[2] <= sample[3] * 10
+                            && sample[2] < 100);
+            long upMs = (System.nanoTime() - upStart) / 1_000_000;
+            System.out.printf("EMBASIC_TUR209_PHYSICAL_SCROLL "
+                    + "logicalCards=160 source=Robot.mouseWheel "
+                    + "downMs=%d upMs=%d downStart=%d upStart=%d "
+                    + "maxMounted=%d viewportMounted=BOUNDED checks=PASS%n",
+                    downMs, upMs, moved[1], returned[1],
+                    Math.max(moved[2], returned[2]));
 
             System.out.println("WINDOWS-GUI-ROBOT-PASS: real DesktopApp mouse drag,"
                     +" edge scroll, target hint, drop order, Ctrl+A, Ctrl+End/Home,"
