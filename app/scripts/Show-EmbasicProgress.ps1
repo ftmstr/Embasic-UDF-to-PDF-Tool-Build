@@ -26,10 +26,10 @@ $forecastBase = [DateTime]::ParseExact('2026-10-31', 'yyyy-MM-dd', [System.Globa
 $milestones = @(
     [pscustomobject]@{ Name='Public kod tabani / Maven'; Weight=12; Complete=100; Evidence='Public kaynak + Linux/Windows Maven CI' }
     [pscustomobject]@{ Name='Windows launcher / smoke'; Weight=12; Complete=100; Evidence='Tur209 SHA 419e446 Windows independent jpackage app-image and packaged EXE physical Ctrl+O/Escape, Ctrl+T twice SUCCESS, run 43200971670; no publication' }
-    [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=73; Evidence='Tur209 SHA 419e446 Windows physical 160-card wheel down=174ms up=248ms mounted<=24 in run 43200971654, separate Robot 1/1 PASS; full real-user beta GUI NOT_RUN' }
+    [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=73; Evidence='Tur214 exact SHA 98cd38e: packaged Windows EXE two synthetic UDF chooser, Ctrl+A/Alt+arrows reorder physical Robot PASS, run 43234117391; final-user beta NOT_RUN' }
     [pscustomobject]@{ Name='UDF turleri ve surumleri'; Weight=26; Complete=12; Evidence='Sentetik ZIP PNG referans, A5/LEGAL; gercek UYAP schema dogrulanmadi' }
-    [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Tur210 exact HEAD 36786fd: Windows/Linux 181 JUnit (180 PASS, normal Robot 1 SKIP); Tur211 offline official-Editor manual PDF reference comparison added, 6 rights-clean synthetic tests, no native UYAP parity claim; exact-final-HEAD CI PENDING' }
-    [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Tur211 read-only local PDF reference audit (no UYAP binary), source/NOTICE/distribution not approved, SOURCE_GATE BLOCKED; no native UYAP API/CLI claimed; Win32 atomic TOCTOU NO-GO; release NOT_AUTHORIZED' }
+    [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Tur213 comparator print UserUnit/TrimBox and 8 synthetic tests PASS; Tur215 offline PDF font glyph positions, hidden substitution and vector table-line raster row/column bands synthetic tests added; exact SHA CI PENDING, native UYAP golden NOT_RUN' }
+    [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Tur215 read-only local reference audit source text snapshots not printable; UYAP official manual export only, no CLI/API or binaries; source approval/NOTICE/Win32 atomic TOCTOU NO-GO; Secure Bootstrap expected SOURCE_GATE BLOCKED' }
     [pscustomobject]@{ Name='Beta kabul / dagitim'; Weight=8; Complete=10; Evidence='Paket CI ici; indirme paketi yayinlanmadi' }
 )
 if ((($milestones | Measure-Object -Property Weight -Sum).Sum) -ne 100) {
