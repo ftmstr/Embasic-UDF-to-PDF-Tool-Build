@@ -668,11 +668,45 @@ public final class PdfExporter {
                 fonts.add(name.getName() + "|" + dictionary.getNameAsString(
                         org.apache.pdfbox.cos.COSName.BASE_FONT) + "|"
                         + fontHash + "|" + unicodeHash + "|"
-                        + encodingName.getName() + "|" + mapping + "|" + dw + "|" + widths);
+                        + encodingName.getName() + "|" + mapping + "|" + dw + "|" + widths
+                        + "|" + fontDescriptorGeometryFingerprint(descriptor));
             }
             pages.add(List.copyOf(fonts));
         }
         return List.copyOf(pages);
+    }
+
+    /**
+     * FontDescriptor geometry can change glyph placement or clipping without
+     * changing embedded TrueType bytes, ToUnicode, /W or page drawing commands.
+     * Snapshot synthetic Type0 descriptor geometry independently of object IDs.
+     */
+    private static String fontDescriptorGeometryFingerprint(
+            org.apache.pdfbox.cos.COSDictionary descriptor) throws IOException {
+        StringBuilder result = new StringBuilder();
+        for (String key : new String[]{"Flags", "FontBBox", "Ascent", "Descent",
+                "CapHeight", "ItalicAngle", "StemV", "MissingWidth"}) {
+            result.append(key).append('=');
+            var value = descriptor.getDictionaryObject(
+                    org.apache.pdfbox.cos.COSName.getPDFName(key));
+            if (value == null) {
+                result.append('-');
+            } else if ("FontBBox".equals(key)) {
+                if (!(value instanceof org.apache.pdfbox.cos.COSArray bbox)
+                        || bbox.size() != 4)
+                    throw new IOException("PDF FontBBox geometrisi desteklenmiyor");
+                appendFontWidthValue(result, bbox, 0);
+            } else if (value instanceof org.apache.pdfbox.cos.COSNumber number) {
+                double numeric = number.doubleValue();
+                if (!Double.isFinite(numeric))
+                    throw new IOException("PDF font tanımlayıcı geometrisi sonlu değil");
+                result.append(Double.toString(numeric));
+            } else {
+                throw new IOException("PDF font tanımlayıcı geometrisi desteklenmiyor");
+            }
+            result.append(';');
+        }
+        return result.toString();
     }
 
     /** Canonical numeric /W array representation, independent of PDF object IDs. */
