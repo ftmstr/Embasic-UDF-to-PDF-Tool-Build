@@ -874,14 +874,34 @@ public final class PdfExporter {
     }
 
     /**
-     * Commit an already validated PDF. In particular, a target created after the
-     * initial save() check must never be overwritten without user consent.
-     * No-replace moves are deliberately NOT marked ATOMIC_MOVE: Java permits
-     * provider-specific replacement behavior with ATOMIC_MOVE.
+     * Publish only a fully validated PDF. An existing approved target is never
+     * moved aside for a non-atomic replacement: that fallback created a window
+     * where another process could write a new PDF and a backup restoration
+     * could then overwrite the newer file without consent.
+     *
+     * An unsupported atomic replace now fails closed. The caller's finally
+     * block removes staging; the approved target remains untouched. This is
+     * not a compare-and-swap guarantee against an adversary changing the
+     * target between the final fingerprint check and a supported atomic move.
      */
+    @FunctionalInterface
+    interface AtomicPdfReplace {
+        void replace(Path staged, Path destination) throws IOException;
+    }
+
     static void publishValidated(Path staging, Path target, boolean overwrite) throws IOException {
-        // Defense in depth for direct callers and a late target-type change.
-        // This check is advisory, not an atomic defense against hostile races.
+        publishValidated(staging, target, overwrite,
+                (staged, destination) -> Files.move(staged, destination,
+                        StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING));
+    }
+
+    /** Package-private seam for a deterministic unsupported-atomic-move regression. */
+    static void publishValidated(Path staging, Path target, boolean overwrite,
+                                 AtomicPdfReplace atomicReplace) throws IOException {
+        if (atomicReplace == null)
+            throw new IllegalArgumentException("PDF atomik yayın işlemi eksik");
+        // Advisory only; the filesystem operation must still enforce the
+        // no-replace contract against a target appearing after this check.
         if (Files.isSymbolicLink(target))
             throw new IllegalArgumentException("PDF hedefi sembolik bağlantı olamaz; gerçek dosyayı seçin");
         if (!overwrite) {
@@ -893,25 +913,11 @@ public final class PdfExporter {
             return;
         }
         try {
-            Files.move(staging, target, StandardCopyOption.ATOMIC_MOVE,
-                StandardCopyOption.REPLACE_EXISTING);
+            atomicReplace.replace(staging, target);
         } catch (AtomicMoveNotSupportedException e) {
-            // Preserve the existing PDF until a validated replacement is ready.
-            if (Files.exists(target)) {
-                Path backup = Files.createTempFile(target.getParent(), ".embasic-backup-", ".pdf");
-                Files.deleteIfExists(backup);
-                Files.move(target, backup);
-                boolean replaced = false;
-                try {
-                    Files.move(staging, target);
-                    replaced = true;
-                } finally {
-                    if (replaced) Files.deleteIfExists(backup);
-                    else Files.move(backup, target, StandardCopyOption.REPLACE_EXISTING);
-                }
-            } else {
-                Files.move(staging, target);
-            }
+            // Never move the approved PDF to a backup or restore it with
+            // REPLACE_EXISTING: a concurrent writer could lose its new PDF.
+            throw new IOException("Atomik PDF üzerine yazma desteklenmiyor; mevcut PDF korundu", e);
         }
     }
 
