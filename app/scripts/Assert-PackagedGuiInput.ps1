@@ -4,8 +4,9 @@
   Opt-in physical Windows Robot acceptance of the ephemeral jpackage EXE.
 .DESCRIPTION
   The target must be the launched app-image's visible, enabled MVP JFrame.
-  Physical mouse focus and Ctrl+O/Escape are delivered by java.awt.Robot in
-  a separate JVM. The owned chooser must open and close. No UDF is imported,
+  Physical mouse focus, Ctrl+O/Escape and Ctrl+T are delivered by java.awt.Robot
+  in a separate JVM. The chooser must close and the empty grid background must
+  visibly change and restore across a theme round-trip. No UDF is imported,
   no user files are read, and no executable or archive is published.
 #>
 [CmdletBinding()]
@@ -72,6 +73,16 @@ public static class PackagedGuiWindows {
             return false;
         }, IntPtr.Zero);
         return found;
+    }
+
+    public static int[] BackgroundSamplePoint(IntPtr hwnd) {
+        RECT r;
+        if (!GetWindowRect(hwnd, out r) || r.Right - r.Left < 850 ||
+            r.Bottom - r.Top < 610) return null;
+        // Empty workspace: this point is in the center-right grid background,
+        // away from the toolbar, status row and top-left add-UDF tile.
+        return new int[] { r.Left + (r.Right - r.Left) * 3 / 4,
+                           r.Top + (r.Bottom - r.Top) * 3 / 5 };
     }
 
     public static int[] TitleClickPoint(IntPtr hwnd) {
@@ -152,7 +163,51 @@ try {
         [PackagedGuiWindows]::FindMainWindow($ids.ToArray()) -ne $main) {
         throw 'Chooser failed to close or packaged MVP window disappeared.'
     }
-    Write-Host 'PACKAGED-GUI-ROBOT-PASS: ephemeral EXE, physical mouse focus, Ctrl+O, owned chooser and Escape; no UDF imported.'
+    if ([PackagedGuiWindows]::GetForegroundWindow() -ne $main) {
+        throw 'Packaged MVP did not regain foreground after chooser cancellation.'
+    }
+    $samplePoint = [PackagedGuiWindows]::BackgroundSamplePoint($main)
+    if ($null -eq $samplePoint) { throw 'Cannot sample packaged grid at invalid window geometry.' }
+    function Get-GridPixel([int]$x, [int]$y) {
+        $value = & java -cp $classes PackagedInputRobot pixel $x $y
+        if ($LASTEXITCODE -ne 0 -or $value -notmatch '^#[0-9A-F]{6}
+} finally {
+    if ($null -ne $process) {
+        $process.Refresh()
+        if (-not $process.HasExited) {
+            & taskkill.exe /PID $process.Id /T /F | Out-Null
+            if ($LASTEXITCODE -ne 0) {
+                throw 'Packaged GUI process tree cleanup failed.'
+            }
+            $process.WaitForExit(10000) | Out-Null
+        }
+    }
+}
+) {
+            throw 'Physical packaged GUI pixel probe failed; theme NOT_VERIFIED.'
+        }
+        return $value
+    }
+    $before = Get-GridPixel $samplePoint[0] $samplePoint[1]
+    & java -cp $classes PackagedInputRobot theme
+    if ($LASTEXITCODE -ne 0) { throw 'Physical Ctrl+T theme toggle failed.' }
+    Start-Sleep -Milliseconds 700
+    if ([PackagedGuiWindows]::GetForegroundWindow() -ne $main) {
+        throw 'Packaged MVP lost foreground during theme acceptance.'
+    }
+    $after = Get-GridPixel $samplePoint[0] $samplePoint[1]
+    if ($after -eq $before) {
+        throw 'Ctrl+T did not visibly change the empty workspace background.'
+    }
+    & java -cp $classes PackagedInputRobot theme
+    if ($LASTEXITCODE -ne 0) { throw 'Physical Ctrl+T theme restore failed.' }
+    Start-Sleep -Milliseconds 700
+    $restored = Get-GridPixel $samplePoint[0] $samplePoint[1]
+    if ($restored -ne $before) {
+        throw 'Ctrl+T did not restore the original workspace background.'
+    }
+    Write-Host "PACKAGED-THEME-ROBOT-PASS: physical Ctrl+T twice, grid $before -> $after -> $restored; no files imported."
+    Write-Host 'PACKAGED-GUI-ROBOT-PASS: ephemeral EXE, physical mouse focus, Ctrl+O, owned chooser, Escape and theme round-trip; no UDF imported.'
 } finally {
     if ($null -ne $process) {
         $process.Refresh()
