@@ -30,9 +30,16 @@ final class OfflinePdfGlyphAudit extends PDFTextStripper {
     private record Glyph(String font, float size, float x, float y,
                          float width, float height, float direction) {}
 
-    record Snapshot(String extractedText, List<Glyph> glyphs) {
-        Snapshot {
-            glyphs = List.copyOf(glyphs);
+    // Do not use a record here: generated record.toString() would include
+    // original extracted PDF text. This short-lived object must never create
+    // a printable, content-bearing report by accident.
+    static final class Snapshot {
+        private final String extractedText;
+        private final List<Glyph> glyphs;
+
+        Snapshot(String extractedText, List<Glyph> glyphs) {
+            this.extractedText = Objects.requireNonNull(extractedText);
+            this.glyphs = List.copyOf(glyphs);
         }
     }
 
@@ -93,7 +100,7 @@ final class OfflinePdfGlyphAudit extends PDFTextStripper {
     static Comparison compare(Snapshot reference, Snapshot candidate) {
         Objects.requireNonNull(reference);
         Objects.requireNonNull(candidate);
-        List<Glyph> a = reference.glyphs(), b = candidate.glyphs();
+        List<Glyph> a = reference.glyphs, b = candidate.glyphs;
         int missing = Math.abs(a.size() - b.size());
         int differentFont = missing, differentPosition = missing;
         for (int i = 0; i < Math.min(a.size(), b.size()); i++) {
@@ -108,7 +115,7 @@ final class OfflinePdfGlyphAudit extends PDFTextStripper {
                     || !near(x.direction, y.direction, 0.01f))
                 differentPosition++;
         }
-        return new Comparison(reference.extractedText().equals(candidate.extractedText()),
+        return new Comparison(reference.extractedText.equals(candidate.extractedText),
                 Math.max(a.size(), b.size()), differentFont, differentPosition);
     }
 }
