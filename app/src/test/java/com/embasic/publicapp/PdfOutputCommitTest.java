@@ -148,6 +148,40 @@ final class PdfOutputCommitTest {
                 var fontName = resources.getFontNames().iterator().next();
                 var dictionary = resources.getFont(fontName).getCOSObject();
                 var unicodeName = org.apache.pdfbox.cos.COSName.TO_UNICODE;
+                var descendants = (org.apache.pdfbox.cos.COSArray) dictionary.getDictionaryObject(
+                        org.apache.pdfbox.cos.COSName.DESCENDANT_FONTS);
+                var descendant = (org.apache.pdfbox.cos.COSDictionary) descendants.getObject(0);
+                var widthKey = org.apache.pdfbox.cos.COSName.getPDFName("W");
+                var originalWidths = descendant.getDictionaryObject(widthKey);
+                var replacementWidths = new org.apache.pdfbox.cos.COSArray();
+                replacementWidths.add(org.apache.pdfbox.cos.COSInteger.get(1));
+                var newAdvances = new org.apache.pdfbox.cos.COSArray();
+                newAdvances.add(org.apache.pdfbox.cos.COSInteger.get(999));
+                replacementWidths.add(newAdvances);
+                descendant.setItem(widthKey, replacementWidths);
+                assertThrows(IOException.class, () ->
+                        PdfExporter.verifyStagedPageFontResources(expected, reloaded),
+                        "Changed glyph advances must not survive staging");
+                if (originalWidths == null) descendant.removeItem(widthKey);
+                else descendant.setItem(widthKey, originalWidths);
+                assertDoesNotThrow(() ->
+                        PdfExporter.verifyStagedPageFontResources(expected, reloaded));
+
+                var cidKey = org.apache.pdfbox.cos.COSName.getPDFName("CIDToGIDMap");
+                var originalMap = descendant.getDictionaryObject(cidKey);
+                var alteredMap = reloaded.getDocument().createCOSStream();
+                try (var output = alteredMap.createOutputStream()) {
+                    output.write(new byte[]{0, 0, 0, 7});
+                }
+                descendant.setItem(cidKey, alteredMap);
+                assertThrows(IOException.class, () ->
+                        PdfExporter.verifyStagedPageFontResources(expected, reloaded),
+                        "Swapped CID-to-glyph mapping must not survive staging");
+                if (originalMap == null) descendant.removeItem(cidKey);
+                else descendant.setItem(cidKey, originalMap);
+                assertDoesNotThrow(() ->
+                        PdfExporter.verifyStagedPageFontResources(expected, reloaded));
+
                 // A different CMap must not pass merely because the PDF's
                 // page geometry and /F1 drawing command are unchanged.
                 var replacement = reloaded.getDocument().createCOSStream();
