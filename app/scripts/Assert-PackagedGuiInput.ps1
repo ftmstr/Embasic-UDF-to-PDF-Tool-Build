@@ -238,7 +238,97 @@ try {
         throw 'Physical Ctrl+0 did not restore the rendered + UDF tile region.'
     }
     Write-Host 'PACKAGED-ZOOM-ROBOT-PASS: physical Ctrl+= changed the rendered + UDF tile; Ctrl+0 restored SHA-256 pixels; no files imported.'
-    Write-Host 'PACKAGED-GUI-ROBOT-PASS: ephemeral EXE, physical mouse focus, Ctrl+O/Escape, theme and zoom round-trips; no UDF imported.'
+    # TUR214: real packaged EXE input acceptance with two rights-clean
+    # synthetic UDF ZIPs. The only sources are created under RUNNER_TEMP.
+    # This is deliberately not a claim of official UYAP compatibility.
+    $fixtureDir = Join-Path $env:RUNNER_TEMP 'embasic-tur214-robot-fixtures'
+    New-Item -ItemType Directory -Path $fixtureDir -Force | Out-Null
+    function New-SyntheticUdf([string]$path, [string]$marker) {
+        $xml = "<template format_id='1.0'><content>$marker</content><properties pageSize='A4' orientation='portrait' margin='48'/><elements><paragraph><content startOffset='0' length='$($marker.Length)'/></paragraph></elements></template>"
+        $archive = [System.IO.Compression.ZipFile]::Open($path, [System.IO.Compression.ZipArchiveMode]::Create)
+        try {
+            $entry = $archive.CreateEntry('content.xml')
+            $writer = [System.IO.StreamWriter]::new($entry.Open(), [System.Text.UTF8Encoding]::new($false))
+            try { $writer.Write($xml) } finally { $writer.Dispose() }
+        } finally { $archive.Dispose() }
+    }
+    $first = Join-Path $fixtureDir '01-ALPHA-ONE.udf'
+    $second = Join-Path $fixtureDir '02-BRAVO-TWO.udf'
+    New-SyntheticUdf $first 'ALPHA-ONE'
+    New-SyntheticUdf $second 'BRAVO-TWO'
+    function Get-StableGridHash([int[]]$bounds) {
+        $last = ''
+        $streak = 0
+        for ($attempt = 0; $attempt -lt 35; $attempt++) {
+            if ([PackagedGuiWindows]::GetForegroundWindow() -ne $main -or
+                [PackagedGuiWindows]::FindOwnedDialog($main) -ne [IntPtr]::Zero) {
+                throw 'Unexpected foreground window or modal dialog during synthetic grid acceptance.'
+            }
+            $current = Get-ZoomRegionSha $bounds
+            if ($current -eq $last) { $streak++ } else { $streak = 0 }
+            if ($streak -ge 2) { return $current }
+            $last = $current
+            Start-Sleep -Milliseconds 500
+        }
+        throw 'Synthetic grid did not settle within 18 seconds; physical acceptance NOT_VERIFIED.'
+    }
+    function Import-SyntheticFile([string]$path) {
+        & java -cp $classes PackagedInputRobot open
+        if ($LASTEXITCODE -ne 0) { throw 'Physical Ctrl+O failed during synthetic import.' }
+        $deadline = (Get-Date).AddSeconds(12)
+        $chooser = [IntPtr]::Zero
+        while ((Get-Date) -lt $deadline) {
+            $chooser = [PackagedGuiWindows]::FindOwnedDialog($main)
+            if ($chooser -ne [IntPtr]::Zero) { break }
+            Start-Sleep -Milliseconds 200
+        }
+        if ($chooser -eq [IntPtr]::Zero -or [PackagedGuiWindows]::GetForegroundWindow() -ne $chooser) {
+            throw 'Synthetic import chooser did not receive physical focus.'
+        }
+        & java -cp $classes PackagedInputRobot choose $path
+        if ($LASTEXITCODE -ne 0) { throw 'Physical synthetic filename entry failed.' }
+        $deadline = (Get-Date).AddSeconds(12)
+        while ((Get-Date) -lt $deadline) {
+            if ([PackagedGuiWindows]::FindOwnedDialog($main) -eq [IntPtr]::Zero -and
+                [PackagedGuiWindows]::GetForegroundWindow() -eq $main) { return }
+            Start-Sleep -Milliseconds 250
+        }
+        throw 'Synthetic chooser failed to close or application did not regain focus.'
+    }
+    $gridRegion = [PackagedGuiWindows]::ZoomTileRegion($main)
+    if ($null -eq $gridRegion) { throw 'Synthetic grid region unavailable.' }
+    $emptyGrid = Get-StableGridHash $gridRegion
+    Import-SyntheticFile $first
+    $oneCard = Get-StableGridHash $gridRegion
+    if ($oneCard -eq $emptyGrid) { throw 'First synthetic UDF did not visibly enter packaged grid.' }
+    Import-SyntheticFile $second
+    $twoCards = Get-StableGridHash $gridRegion
+    if ($twoCards -eq $oneCard) { throw 'Second synthetic UDF did not visibly enter packaged grid.' }
+    & java -cp $classes PackagedInputRobot selectall
+    if ($LASTEXITCODE -ne 0) { throw 'Physical Ctrl+A failed.' }
+    $allSelected = Get-StableGridHash $gridRegion
+    if ($allSelected -eq $twoCards) { throw 'Physical Ctrl+A did not visibly select the imported cards.' }
+    # Plain click collapses multi-selection to the first card, then Alt+Down
+    # changes the actual visual queue; Alt+Up must restore the same pixels.
+    $firstX = $gridRegion[0] + 90
+    $firstY = $gridRegion[1] + 80
+    & java -cp $classes PackagedInputRobot focus $firstX $firstY
+    if ($LASTEXITCODE -ne 0) { throw 'Physical first-card click failed.' }
+    $beforeMove = Get-StableGridHash $gridRegion
+    if ($beforeMove -eq $allSelected) { throw 'Plain click did not collapse multi-selection.' }
+    & java -cp $classes PackagedInputRobot movedown
+    if ($LASTEXITCODE -ne 0) { throw 'Physical Alt+Down failed.' }
+    $afterMove = Get-StableGridHash $gridRegion
+    if ($afterMove -eq $beforeMove) { throw 'Physical Alt+Down did not visibly reorder the two UDF cards.' }
+    & java -cp $classes PackagedInputRobot moveup
+    if ($LASTEXITCODE -ne 0) { throw 'Physical Alt+Up failed.' }
+    $restoredMove = Get-StableGridHash $gridRegion
+    if ($restoredMove -ne $beforeMove) {
+        throw 'Physical Alt+Up did not restore original two-card grid pixels.'
+    }
+    Write-Host 'PACKAGED-SELECTION-REORDER-ROBOT-PASS: two rights-clean synthetic UDFs, Ctrl+A, plain-click collapse, Alt+Down/Up visual order round-trip; no real UYAP source.'
+    Write-Host 'PACKAGED-GUI-ROBOT-PASS: ephemeral EXE, physical chooser, theme, zoom, two synthetic imports, multi-selection and keyboard reorder.'
+
 } finally {
     if ($null -ne $process) {
         $process.Refresh()
