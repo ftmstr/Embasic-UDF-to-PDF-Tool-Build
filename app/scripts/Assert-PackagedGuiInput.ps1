@@ -210,20 +210,7 @@ try {
     if ($null -eq $region) { throw 'Packaged zoom region has invalid geometry.' }
     function Get-ZoomRegionSha([int[]]$bounds) {
         $hash = & java -cp $classes PackagedInputRobot region $bounds[0] $bounds[1] $bounds[2] $bounds[3]
-        if ($LASTEXITCODE -ne 0 -or $hash -notmatch '^[0-9a-f]{64}
-} finally {
-    if ($null -ne $process) {
-        $process.Refresh()
-        if (-not $process.HasExited) {
-            & taskkill.exe /PID $process.Id /T /F | Out-Null
-            if ($LASTEXITCODE -ne 0) {
-                throw 'Packaged GUI process tree cleanup failed.'
-            }
-            $process.WaitForExit(10000) | Out-Null
-        }
-    }
-}
-) {
+        if ($LASTEXITCODE -ne 0 -or $hash -notmatch '^[0-9a-f]{64}' -or $hash.Length -ne 64) {
             throw 'Physical packaged zoom screenshot probe failed; zoom NOT_VERIFIED.'
         }
         return $hash
