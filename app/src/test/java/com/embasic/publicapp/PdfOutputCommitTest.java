@@ -6,12 +6,15 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.awt.Color;
+import java.awt.image.BufferedImage;
 import java.util.List;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.pdmodel.PDPageContentStream;
 import org.apache.pdfbox.pdmodel.common.PDRectangle;
+import org.apache.pdfbox.pdmodel.graphics.image.LosslessFactory;
+import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -78,6 +81,46 @@ final class PdfOutputCommitTest {
                         PdfExporter.verifyStagedPageGeometry(expectedGeometry, reloaded));
                 IOException swapped = assertThrows(IOException.class, () ->
                         PdfExporter.verifyStagedPageContentHashes(expectedContents, reloaded));
+                assertTrue(swapped.getMessage().contains("1"));
+            }
+        }
+    }
+
+    @Test void samePageCommandsCannotHideSwappedImageXObject() throws Exception {
+        // The content stream still says /Im1 Do after the resource dictionary
+        // redirects /Im1 to a different same-size image. A content SHA alone
+        // cannot distinguish these two visually different PDFs.
+        Path staged = folder.resolve("synthetic-image-resource.pdf");
+        try (PDDocument original = new PDDocument()) {
+            PDPage page = new PDPage(PDRectangle.A4);
+            original.addPage(page);
+            BufferedImage red = new BufferedImage(2, 2, BufferedImage.TYPE_INT_RGB);
+            for (int y = 0; y < 2; y++)
+                for (int x = 0; x < 2; x++) red.setRGB(x, y, Color.RED.getRGB());
+            PDImageXObject firstImage = LosslessFactory.createFromImage(original, red);
+            try (PDPageContentStream stream = new PDPageContentStream(original, page)) {
+                stream.drawImage(firstImage, 48, 48, 20, 20);
+            }
+            List<String> expectedCommands = PdfExporter.snapshotPageContentHashes(original);
+            List<List<String>> expectedImages = PdfExporter.snapshotPageImageResources(original);
+            assertEquals(1, expectedImages.get(0).size());
+            original.save(staged.toFile());
+            try (PDDocument reloaded = Loader.loadPDF(staged.toFile())) {
+                assertDoesNotThrow(() -> PdfExporter.verifyStagedPageContentHashes(
+                        expectedCommands, reloaded));
+                assertDoesNotThrow(() -> PdfExporter.verifyStagedPageImageResources(
+                        expectedImages, reloaded));
+                BufferedImage blue = new BufferedImage(2, 2, BufferedImage.TYPE_INT_RGB);
+                for (int y = 0; y < 2; y++)
+                    for (int x = 0; x < 2; x++) blue.setRGB(x, y, Color.BLUE.getRGB());
+                var resources = reloaded.getPage(0).getResources();
+                var imageName = resources.getXObjectNames().iterator().next();
+                resources.put(imageName, LosslessFactory.createFromImage(reloaded, blue));
+                // The drawing commands and page geometry have not changed.
+                assertDoesNotThrow(() -> PdfExporter.verifyStagedPageContentHashes(
+                        expectedCommands, reloaded));
+                IOException swapped = assertThrows(IOException.class, () ->
+                        PdfExporter.verifyStagedPageImageResources(expectedImages, reloaded));
                 assertTrue(swapped.getMessage().contains("1"));
             }
         }
