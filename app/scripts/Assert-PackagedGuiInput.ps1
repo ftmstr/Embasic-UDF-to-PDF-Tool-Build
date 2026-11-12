@@ -7,7 +7,7 @@
   Physical mouse focus, Ctrl+O/Escape and Ctrl+T are delivered by java.awt.Robot
   in a separate JVM. The chooser must close and the empty grid background must
   visibly change and restore across theme and thumbnail-zoom round-trips. No UDF is imported,
-  no user files are read, and no executable or archive is published.
+  only temporary rights-clean synthetic UDF/PDF fixtures are used; nothing is published.
 #>
 [CmdletBinding()]
 param([switch]$AllowGui)
@@ -73,6 +73,13 @@ public static class PackagedGuiWindows {
             return false;
         }, IntPtr.Zero);
         return found;
+    }
+
+    public static string WindowTitle(IntPtr hwnd) {
+        var title = new StringBuilder(256);
+        if (hwnd == IntPtr.Zero) return "";
+        GetWindowText(hwnd, title, title.Capacity);
+        return title.ToString();
     }
 
     public static int[] BackgroundSamplePoint(IntPtr hwnd) {
@@ -327,7 +334,103 @@ try {
         throw 'Physical Alt+Up did not restore original two-card grid pixels.'
     }
     Write-Host 'PACKAGED-SELECTION-REORDER-ROBOT-PASS: two rights-clean synthetic UDFs, Ctrl+A, plain-click collapse, Alt+Down/Up visual order round-trip; no real UYAP source.'
-    Write-Host 'PACKAGED-GUI-ROBOT-PASS: ephemeral EXE, physical chooser, theme, zoom, two synthetic imports, multi-selection and keyboard reorder.'
+    # TUR216: make the same physical keyboard reorder visible in the actual
+    # saved PDF, not merely in screenshots of the Swing cards.
+    & java -cp $classes PackagedInputRobot movedown
+    if ($LASTEXITCODE -ne 0) { throw 'Physical Alt+Down before PDF save failed.' }
+    $pdfOrderGrid = Get-StableGridHash $gridRegion
+    if ($pdfOrderGrid -eq $beforeMove) { throw 'Physical PDF-order preparation did not move the first card.' }
+    $outputDir = Join-Path $env:RUNNER_TEMP 'embasic-tur216-robot-output'
+    New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
+    $outputPdf = Join-Path $outputDir 'tur216-reordered.pdf'
+    if (Test-Path -LiteralPath $outputPdf) {
+        throw 'TUR216 output unexpectedly exists before first physical save.'
+    }
+    function Wait-DialogTitle([string]$expected, [int]$seconds) {
+        $deadline = (Get-Date).AddSeconds($seconds)
+        while ((Get-Date) -lt $deadline) {
+            $owned = [PackagedGuiWindows]::FindOwnedDialog($main)
+            if ($owned -ne [IntPtr]::Zero) {
+                $title = [PackagedGuiWindows]::WindowTitle($owned)
+                if ($title -eq $expected -and
+                    [PackagedGuiWindows]::GetForegroundWindow() -eq $owned) {
+                    return $owned
+                }
+                if ($title -ne $expected -and $title -ne '') {
+                    throw "Unexpected packaged modal title while waiting for $expected : $title"
+                }
+            }
+            Start-Sleep -Milliseconds 200
+        }
+        throw "Packaged modal $expected not physically observed within $seconds seconds."
+    }
+    function Wait-NoOwnedDialog([int]$seconds) {
+        $deadline = (Get-Date).AddSeconds($seconds)
+        while ((Get-Date) -lt $deadline) {
+            if ([PackagedGuiWindows]::FindOwnedDialog($main) -eq [IntPtr]::Zero -and
+                [PackagedGuiWindows]::GetForegroundWindow() -eq $main) { return }
+            Start-Sleep -Milliseconds 200
+        }
+        throw 'Packaged modal did not close or main window did not regain physical focus.'
+    }
+    & java -cp $classes PackagedInputRobot save
+    if ($LASTEXITCODE -ne 0) { throw 'Physical Ctrl+S failed.' }
+    $saveChooser = Wait-DialogTitle 'PDF olarak kaydet' 15
+    & java -cp $classes PackagedInputRobot choosepdf $outputPdf
+    if ($LASTEXITCODE -ne 0) { throw 'Physical PDF filename selection failed.' }
+    $deadline = (Get-Date).AddSeconds(50)
+    $savedDialog = [IntPtr]::Zero
+    while ((Get-Date) -lt $deadline) {
+        $owned = [PackagedGuiWindows]::FindOwnedDialog($main)
+        if ($owned -ne [IntPtr]::Zero) {
+            $title = [PackagedGuiWindows]::WindowTitle($owned)
+            if ($title -eq 'İşlem tamamlandı' -and
+                [PackagedGuiWindows]::GetForegroundWindow() -eq $owned -and
+                (Test-Path -LiteralPath $outputPdf -PathType Leaf)) {
+                $savedDialog = $owned
+                break
+            }
+            if ($title -ne '' -and $title -ne 'PDF olarak kaydet' -and
+                $title -ne 'İşlem tamamlandı') {
+                throw "Unexpected save modal: $title"
+            }
+        }
+        Start-Sleep -Milliseconds 250
+    }
+    if ($savedDialog -eq [IntPtr]::Zero) {
+        throw 'No physical PDF success dialog and output; Ctrl+S acceptance NOT_VERIFIED.'
+    }
+    & java -cp $classes PackagedInputRobot cancel
+    if ($LASTEXITCODE -ne 0) { throw 'Physical PDF success dialog dismissal failed.' }
+    Wait-NoOwnedDialog 10
+    $shadedJar = Join-Path (Get-Location).Path 'app/target/embasic-public-desktop-0.1.0-SNAPSHOT-all.jar'
+    if (-not (Test-Path -LiteralPath $shadedJar -PathType Leaf)) {
+        throw 'Local test classpath shaded JAR missing; PDF order NOT_VERIFIED.'
+    }
+    & javac -cp $shadedJar -d $classes app/scripts/PackagedPdfOrderProbe.java
+    if ($LASTEXITCODE -ne 0) { throw 'Physical PDF verifier failed to compile.' }
+    & java -cp "$classes;$shadedJar" PackagedPdfOrderProbe $outputPdf
+    if ($LASTEXITCODE -ne 0) { throw 'Physical PDF page order/geometry verification failed.' }
+    $approvedSha = (Get-FileHash -LiteralPath $outputPdf -Algorithm SHA256).Hash
+
+    # Existing output: user declines overwrite using real Windows keyboard.
+    # The previously accepted PDF must remain byte-for-byte unchanged.
+    & java -cp $classes PackagedInputRobot save
+    if ($LASTEXITCODE -ne 0) { throw 'Physical second Ctrl+S failed.' }
+    $secondChooser = Wait-DialogTitle 'PDF olarak kaydet' 15
+    & java -cp $classes PackagedInputRobot choosepdf $outputPdf
+    if ($LASTEXITCODE -ne 0) { throw 'Physical existing-PDF selection failed.' }
+    $overwriteDialog = Wait-DialogTitle 'Dosya mevcut' 15
+    & java -cp $classes PackagedInputRobot cancel
+    if ($LASTEXITCODE -ne 0) { throw 'Physical overwrite refusal failed.' }
+    Wait-NoOwnedDialog 10
+    $afterRefusalSha = (Get-FileHash -LiteralPath $outputPdf -Algorithm SHA256).Hash
+    if ($afterRefusalSha -ne $approvedSha) {
+        throw 'Previously accepted PDF changed after physical overwrite refusal.'
+    }
+    Write-Host 'PACKAGED-PDF-OVERWRITE-REFUSAL-PASS: existing synthetic PDF SHA-256 preserved.'
+
+    Write-Host 'PACKAGED-GUI-ROBOT-PASS: ephemeral EXE, physical chooser, theme, zoom, two synthetic imports, multi-selection and keyboard reorder and Ctrl+S PDF order.'
 
 } finally {
     if ($null -ne $process) {
