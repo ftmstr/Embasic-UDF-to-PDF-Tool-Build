@@ -926,11 +926,21 @@ public final class PdfExporter {
         if (Files.isSymbolicLink(target))
             throw new IllegalArgumentException("PDF hedefi sembolik bağlantı olamaz; gerçek dosyayı seçin");
         if (!overwrite) {
+            // Files.move without ATOMIC_MOVE has no portable atomic no-clobber
+            // contract against a competing creator. Both paths are siblings:
+            // publishing a hard link creates the destination name atomically
+            // without ever replacing an existing PDF. Unsupported filesystems
+            // fail closed; never fall back to a racy move or partial copy.
             try {
-                Files.move(staging, target);
+                Files.createLink(target, staging);
             } catch (java.nio.file.FileAlreadyExistsException e) {
                 throw new IllegalArgumentException("PDF zaten var, üzerine yazma onayı gerekli", e);
+            } catch (UnsupportedOperationException e) {
+                throw new IOException("Dosya sistemi güvenli PDF oluşturmayı desteklemiyor; hedef korunuyor", e);
             }
+            // The target now names the fully staged bytes. Removing only the
+            // temporary name cannot alter the published PDF's content.
+            Files.delete(staging);
             return;
         }
         try {
