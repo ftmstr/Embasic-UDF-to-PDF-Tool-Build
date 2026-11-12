@@ -2,6 +2,7 @@ package com.embasic.publicapp;
 
 import static org.junit.jupiter.api.Assertions.*;
 import java.io.IOException;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -282,6 +283,39 @@ final class PdfOutputCommitTest {
         PdfExporter.publishValidated(staging, target, true);
         assertEquals("VALIDATED-PDF", Files.readString(target));
         assertFalse(Files.exists(staging));
+    }
+
+    @Test void unsupportedAtomicOverwriteMustNotRemoveOrRestoreApprovedPdf() throws Exception {
+        Path staging = folder.resolve(".embasic-pending-test.pdf");
+        Path target = folder.resolve("approved.pdf");
+        Files.writeString(staging, "NEW-VALIDATED-PDF", StandardCharsets.UTF_8);
+        Files.writeString(target, "APPROVED-ORIGINAL-PDF", StandardCharsets.UTF_8);
+        byte[] original = Files.readAllBytes(target);
+        byte[] staged = Files.readAllBytes(staging);
+
+        // Simulate a provider rejecting ATOMIC_MOVE without relying on a
+        // particular CI filesystem. The old fallback temporarily removed the
+        // approved PDF and could clobber a concurrent writer during restore.
+        IOException error = assertThrows(IOException.class,
+                () -> PdfExporter.publishValidated(staging, target, true,
+                        (source, destination) -> {
+                            assertEquals(staging, source);
+                            assertEquals(target, destination);
+                            throw new AtomicMoveNotSupportedException(
+                                    source.toString(), destination.toString(), "synthetic unsupported");
+                        }));
+        assertInstanceOf(AtomicMoveNotSupportedException.class, error.getCause());
+        assertTrue(error.getMessage().contains("korundu"));
+        assertArrayEquals(original, Files.readAllBytes(target));
+        // The caller's save() finally removes staging. The publisher itself
+        // must not consume it when atomic replacement was rejected.
+        assertArrayEquals(staged, Files.readAllBytes(staging));
+        try (var paths = Files.list(folder)) {
+            assertEquals(0, paths.filter(p -> p.getFileName().toString()
+                    .startsWith(".embasic-backup-")).count());
+        }
+        System.out.println("EMBASIC_TUR219_NONATOMIC_OVERWRITE_BLOCKED target=UNCHANGED"
+                + " backup=NONE staging=INTACT");
     }
 
     @Test void newTargetIsCreatedWithoutOverwriteConsent() throws Exception {
