@@ -115,6 +115,8 @@ final class OfficialPdfReferenceAuditTest {
     @Test void invisibleLinkAndCatalogActionCannotProduceFalseParity() throws Exception {
         Path reference = pdf("reference.pdf", PDRectangle.A4, "STATIC", Color.BLUE, 1);
         Path plain = pdf("plain.pdf", PDRectangle.A4, "STATIC", Color.BLUE, 1);
+        byte[] referenceBytes = Files.readAllBytes(reference);
+        byte[] plainBytes = Files.readAllBytes(plain);
         assertTrue(OfficialPdfReferenceAudit.audit(reference, plain).matches());
 
         Path linkPdf = folder.resolve("hidden-link.pdf");
@@ -152,6 +154,8 @@ final class OfficialPdfReferenceAuditTest {
                 () -> OfficialPdfReferenceAudit.audit(reference, actionPdf));
         assertThrows(IOException.class,
                 () -> OfficialPdfReferenceAudit.audit(actionPdf, reference));
+        assertArrayEquals(referenceBytes, Files.readAllBytes(reference));
+        assertArrayEquals(plainBytes, Files.readAllBytes(plain));
         System.out.println("EMBASIC_TUR212_STATIC_PDF_GATE hiddenLink=REJECT"
                 + " catalogAction=REJECT noNativeUyap=true");
     }
