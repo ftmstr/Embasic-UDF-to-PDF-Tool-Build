@@ -25,11 +25,11 @@ $forecastBase = [DateTime]::ParseExact('2026-10-31', 'yyyy-MM-dd', [System.Globa
 # Weight totals are exactly 100. Completion is engineering judgement, not telemetry.
 $milestones = @(
     [pscustomobject]@{ Name='Public kod tabani / Maven'; Weight=12; Complete=100; Evidence='Public kaynak + Linux/Windows Maven CI' }
-    [pscustomobject]@{ Name='Windows launcher / smoke'; Weight=12; Complete=100; Evidence='Tur209 SHA 419e446 Windows independent jpackage app-image and packaged EXE physical Ctrl+O/Escape, Ctrl+T twice SUCCESS, run 43200971670; no publication' }
-    [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=73; Evidence='Tur214 packaged Windows two rights-clean UDF chooser and Ctrl+A/Alt-arrows reorder physical Robot 43234117391 PASS; Tur215 exact test SHA cee8749 packaged EXE Robot 43239867905 SUCCESS; full beta NOT_RUN' }
+    [pscustomobject]@{ Name='Windows launcher / smoke'; Weight=12; Complete=100; Evidence='Tur217 exact SHA b1e89e79 Windows jpackage physical EXE Robot and stale UDF overwrite YES rejection PASS 43254819634; no approved installer or publication' }
+    [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=73; Evidence='Tur216 physical packaged Ctrl+S save, BRAVO-TWO then ALPHA-ONE A4 order, overwrite NO SHA preservation; Tur217 stale source YES error dialog and old PDF preserved; real user beta NOT_RUN' }
     [pscustomobject]@{ Name='UDF turleri ve surumleri'; Weight=26; Complete=12; Evidence='Sentetik ZIP PNG referans, A5/LEGAL; gercek UYAP schema dogrulanmadi' }
-    [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Tur215 test SHA cee8749 Windows/Linux 192 JUnit (191 PASS, 1 normal Robot SKIP), 3/3 new offline font/glyph and table-line pixel-band tests PASS; 160 synthetic UDF CI 43239869218 SUCCESS; no native UYAP golden' }
-    [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Tur215 test SHA cee8749 upstream SHA 43239868815 SUCCESS, PDF Engine 43239867939 SUCCESS, Secure Bootstrap 43239868263 FAILURE source approval BLOCKED; no native UYAP API/CLI, license/NOTICE or Win32 atomic TOCTOU approval' }
+    [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Tur215 offline glyph/font/table bands 3/3 PASS; Tur218 deterministic PDFBox mid-render source and external target mutation tests added, exact-final-SHA CI PENDING; real native UYAP golden NOT_RUN' }
+    [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Tur217 exact SHA b1e89e79 upstream SHA and PDF probes SUCCESS, secure bootstrap source approval FAILURE; Tur218 mid-render tests must not imply Windows atomic TOCTOU; redistribution/NOTICE NO-GO' }
     [pscustomobject]@{ Name='Beta kabul / dagitim'; Weight=8; Complete=10; Evidence='Paket CI ici; indirme paketi yayinlanmadi' }
 )
 if ((($milestones | Measure-Object -Property Weight -Sum).Sum) -ne 100) {
