@@ -79,8 +79,7 @@ public static class PackagedGuiWindows {
         RECT r;
         if (!GetWindowRect(hwnd, out r) || r.Right - r.Left < 850 ||
             r.Bottom - r.Top < 610) return null;
-        // Empty workspace: this point is in the center-right grid background,
-        // away from the toolbar, status row and top-left add-UDF tile.
+        // Empty workspace: center-right grid, away from toolbar and add tile.
         return new int[] { r.Left + (r.Right - r.Left) * 3 / 4,
                            r.Top + (r.Bottom - r.Top) * 3 / 5 };
     }
@@ -170,20 +169,7 @@ try {
     if ($null -eq $samplePoint) { throw 'Cannot sample packaged grid at invalid window geometry.' }
     function Get-GridPixel([int]$x, [int]$y) {
         $value = & java -cp $classes PackagedInputRobot pixel $x $y
-        if ($LASTEXITCODE -ne 0 -or $value -notmatch '^#[0-9A-F]{6}
-} finally {
-    if ($null -ne $process) {
-        $process.Refresh()
-        if (-not $process.HasExited) {
-            & taskkill.exe /PID $process.Id /T /F | Out-Null
-            if ($LASTEXITCODE -ne 0) {
-                throw 'Packaged GUI process tree cleanup failed.'
-            }
-            $process.WaitForExit(10000) | Out-Null
-        }
-    }
-}
-) {
+        if ($LASTEXITCODE -ne 0 -or $value -notmatch '^#[0-9A-F]{6}$') {
             throw 'Physical packaged GUI pixel probe failed; theme NOT_VERIFIED.'
         }
         return $value
