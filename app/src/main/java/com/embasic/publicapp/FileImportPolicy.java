@@ -9,6 +9,8 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -54,7 +56,7 @@ public final class FileImportPolicy {
         // A second spelling of the same file (symbolic link or hard link)
         // must not silently duplicate its pages in the output PDF. File keys
         // avoid quadratic filesystem probes for ordinary 160-file batches.
-        Set<Object> identities = new HashSet<>();
+        Map<Object, List<Path>> identities = new HashMap<>();
         List<Path> checked = new ArrayList<>();
         List<Path> withoutIdentity = new ArrayList<>();
         for (Path path : validated) {
@@ -65,8 +67,13 @@ public final class FileImportPolicy {
             try {
                 Object identity = Files.readAttributes(path, BasicFileAttributes.class).fileKey();
                 if (identity != null) {
-                    if (!identities.add(identity))
-                        throw new IllegalArgumentException("Birleştirme aynı UDF dosyasına ait yinelenen bağlantı içeriyor");
+                    // File keys can collide across independent filesystem providers.
+                    // Confirm physical identity rather than rejecting solely on
+                    // an opaque provider-specific key.
+                    for (Path previous : identities.getOrDefault(identity, List.of()))
+                        if (Files.isSameFile(path, previous))
+                            throw new IllegalArgumentException("Birleştirme aynı UDF dosyasına ait yinelenen bağlantı içeriyor");
+                    identities.computeIfAbsent(identity, ignored -> new ArrayList<>()).add(path);
                     // Some providers cannot supply file keys; compare those
                     // earlier paths with isSameFile instead of trusting names.
                     for (Path previous : withoutIdentity)
