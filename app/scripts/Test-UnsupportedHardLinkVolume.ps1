@@ -41,7 +41,13 @@ try {
         $exception = $errorRecord.Exception
         $unsupported = $false
         while ($null -ne $exception) {
-            if (($exception.HResult -band 0xFFFF) -eq 50) {
+            # Require a native Win32 error or HRESULT_FROM_WIN32(50), not
+            # an arbitrary exception whose low 16 bits happen to equal 50.
+            $nativeUnsupported = ($exception -is [System.ComponentModel.Win32Exception]) -and
+                ($exception.NativeErrorCode -eq 50)
+            $hresultUnsupported = ($exception -is [System.IO.IOException]) -and
+                ([uint32]($exception.HResult -band 0xFFFFFFFFL) -eq 0x80070032L)
+            if ($nativeUnsupported -or $hresultUnsupported) {
                 $unsupported = $true
                 break
             }
