@@ -150,6 +150,11 @@ public final class FileImportPolicy {
                                 + source.getFileName());
                     digest.update(buffer, 0, read);
                 }
+                // A source may be truncated after the initial size check.
+                // Never fingerprint an empty stream as a valid UDF snapshot.
+                if (total == 0)
+                    throw new IllegalArgumentException("Boş UDF arşivi kabul edilmez: "
+                            + source.getFileName());
             }
             return java.util.HexFormat.of().formatHex(digest.digest());
         } catch (IOException ex) {
