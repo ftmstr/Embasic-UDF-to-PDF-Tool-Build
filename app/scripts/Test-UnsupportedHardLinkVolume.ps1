@@ -31,9 +31,9 @@ try {
         $stream.Write($bytes, 0, $bytes.Length)
     } finally { $stream.Dispose() }
     try {
-        [System.IO.File]::CreateHardLink($dest, $source) | Out-Null
+        New-Item -ItemType HardLink -Path $dest -Target $source -ErrorAction Stop | Out-Null
         Write-Host 'HARDLINK_SUPPORTED: Bu dizin unsupported-hardlink fiziksel GUI kabulü için uygun değil.'
-    } catch [System.IO.IOException] {
+    } catch [System.Management.Automation.RuntimeException] {
         $refused = $true
         Write-Host 'HARDLINK_REFUSED: Bu dizin fiziksel GUI ret kabulü için adaydır; uygulama testi henüz yapılmadı.'
     } catch [System.UnauthorizedAccessException] {
