@@ -917,8 +917,21 @@ public final class PdfExporter {
     }
 
     /** Package-private seam for a deterministic unsupported-atomic-move regression. */
+    @FunctionalInterface
+    interface AtomicPdfLink {
+        void link(Path destination, Path staged) throws IOException;
+    }
+
     static void publishValidated(Path staging, Path target, boolean overwrite,
                                  AtomicPdfReplace atomicReplace) throws IOException {
+        publishValidated(staging, target, overwrite, atomicReplace, Files::createLink);
+    }
+
+    /** Test-only seam: simulate unsupported hard links without changing production policy. */
+    static void publishValidated(Path staging, Path target, boolean overwrite,
+                                 AtomicPdfReplace atomicReplace, AtomicPdfLink atomicLink) throws IOException {
+        if (atomicLink == null)
+            throw new IllegalArgumentException("PDF güvenli oluşturma işlemi eksik");
         if (atomicReplace == null)
             throw new IllegalArgumentException("PDF atomik yayın işlemi eksik");
         // Advisory only; the filesystem operation must still enforce the
@@ -932,7 +945,7 @@ public final class PdfExporter {
             // without ever replacing an existing PDF. Unsupported filesystems
             // fail closed; never fall back to a racy move or partial copy.
             try {
-                Files.createLink(target, staging);
+                atomicLink.link(target, staging);
             } catch (java.nio.file.FileAlreadyExistsException e) {
                 throw new IllegalArgumentException("PDF zaten var, üzerine yazma onayı gerekli", e);
             } catch (UnsupportedOperationException e) {
