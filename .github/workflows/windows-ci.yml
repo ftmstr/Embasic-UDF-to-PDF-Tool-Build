@@ -83,8 +83,12 @@ jobs:
             # parser/runtime failures. Require the supported-volume marker.
             # Accept exactly one complete supported-volume marker. A partial,
             # duplicated or error-prefixed line must not turn exit 1 into PASS.
-            $supportedMarkers = @($probeText -split '\\r?\\n' | Where-Object {
-              $_ -match '^HARDLINK_SUPPORTED: Bu dizin unsupported-hardlink fiziksel GUI kabulü için uygun değil\\.
+            $supportedMarkers = @($probeText -split '\r?\n' | Where-Object {
+              $_ -match '^HARDLINK_SUPPORTED: Bu dizin unsupported-hardlink fiziksel GUI kabulü için uygun değil\.$'
+            })
+            if ($supportedMarkers.Count -ne 1) {
+              throw 'Preflight exited 1 without exactly one canonical HARDLINK_SUPPORTED marker; fail closed.'
+            }
             if ($probeText -match 'HARDLINK_UNSUPPORTED|HARDLINK_INDETERMINATE') {
               throw 'Conflicting or indeterminate hard-link result; fail closed.'
             }
