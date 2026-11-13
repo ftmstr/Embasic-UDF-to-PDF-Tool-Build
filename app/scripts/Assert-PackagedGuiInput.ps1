@@ -292,7 +292,11 @@ try {
     # TUR214: real packaged EXE input acceptance with two rights-clean
     # synthetic UDF ZIPs. The only sources are created under RUNNER_TEMP.
     # This is deliberately not a claim of official UYAP compatibility.
-    $fixtureDir = Join-Path $env:RUNNER_TEMP 'embasic-tur214-robot-fixtures'
+    $fixtureDir = Join-Path $env:RUNNER_TEMP $(if ($JdiRenderRace) {
+        'embasic-tur244-jdi-robot-fixtures'
+    } else {
+        'embasic-tur214-robot-fixtures'
+    })
     New-Item -ItemType Directory -Path $fixtureDir -Force | Out-Null
     function New-SyntheticUdf([string]$path, [string]$marker) {
         $xml = "<template format_id='1.0'><content>$marker</content><properties pageSize='A4' orientation='portrait' margin='48'/><elements><paragraph><content startOffset='0' length='$($marker.Length)'/></paragraph></elements></template>"
@@ -384,7 +388,11 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Physical Alt+Down before PDF save failed.' }
     $pdfOrderGrid = Get-StableGridHash $gridRegion
     if ($pdfOrderGrid -eq $beforeMove) { throw 'Physical PDF-order preparation did not move the first card.' }
-    $outputDir = Join-Path $env:RUNNER_TEMP 'embasic-tur216-robot-output'
+    $outputDir = Join-Path $env:RUNNER_TEMP $(if ($JdiRenderRace) {
+        'embasic-tur244-jdi-robot-output'
+    } else {
+        'embasic-tur216-robot-output'
+    })
     New-Item -ItemType Directory -Path $outputDir -Force | Out-Null
     $outputPdf = Join-Path $outputDir 'tur216-reordered.pdf'
     if (Test-Path -LiteralPath $outputPdf) {
