@@ -196,8 +196,20 @@ jobs:
             $listener.Stop()
           }
           try {
-            & jpackage --type app-image --name EmbasicJdiRace --input app/target --main-jar $jar --main-class com.embasic.publicapp.DesktopApp --app-version 0.1.0 --add-modules jdk.jdwp.agent --java-options '-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=127.0.0.1:51277' --dest $root
+            & jpackage --type app-image --name EmbasicJdiRace --input app/target --main-jar $jar --main-class com.embasic.publicapp.DesktopApp --app-version 0.1.0 --add-modules java.desktop,java.logging,java.xml,java.naming,java.prefs,jdk.jdwp.agent --java-options '-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=127.0.0.1:51277' --dest $root
             if ($LASTEXITCODE -ne 0) { throw 'Test-only JDWP jpackage failed; physical render race NOT_VERIFIED.' }
+            $moduleImage = Join-Path $root 'EmbasicJdiRace/runtime/lib/modules'
+            if (-not (Test-Path -LiteralPath $moduleImage -PathType Leaf)) {
+              throw 'Temporary jpackage runtime modules image missing.'
+            }
+            $moduleInventory = & jimage list $moduleImage
+            if ($LASTEXITCODE -ne 0) { throw 'Test-only runtime module inspection failed.' }
+            foreach ($moduleName in @('java.desktop', 'jdk.jdwp.agent')) {
+              if (-not ($moduleInventory | Select-String -SimpleMatch ('Module: ' + $moduleName))) {
+                throw ('Test-only runtime missing required JDI/GUI module: ' + $moduleName)
+              }
+            }
+            Write-Host 'TUR244_JDI_RUNTIME_MODULES: java.desktop=INCLUDED jdk.jdwp.agent=INCLUDED testOnly=TRUE'
             $exe = Join-Path $root 'EmbasicJdiRace/EmbasicJdiRace.exe'
             if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
               throw 'Test-only JDWP packaged executable absent.'
