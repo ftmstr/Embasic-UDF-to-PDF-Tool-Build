@@ -10,12 +10,32 @@
   only temporary rights-clean synthetic UDF/PDF fixtures are used; nothing is published.
 #>
 [CmdletBinding()]
-param([switch]$AllowGui)
+param(
+    [switch]$AllowGui,
+    [switch]$JdiRenderRace,
+    [string]$ExePath
+)
 $ErrorActionPreference = 'Stop'
 if (-not $AllowGui -or -not $IsWindows) {
     throw 'Packaged physical Robot requires explicit -AllowGui on Windows.'
 }
 $exe = Join-Path $env:RUNNER_TEMP 'embasic-app-image/EmbasicPublicMvp/EmbasicPublicMvp.exe'
+if ($JdiRenderRace) {
+    if ([string]::IsNullOrWhiteSpace($ExePath)) {
+        throw 'JDI render race requires an explicitly separate ephemeral test EXE.'
+    }
+    $testRoot = Join-Path $env:RUNNER_TEMP 'embasic-jdi-app-image'
+    $resolvedExe = (Resolve-Path -LiteralPath $ExePath -ErrorAction Stop).Path
+    $resolvedRoot = (Resolve-Path -LiteralPath $testRoot -ErrorAction Stop).Path
+    if (-not $resolvedExe.StartsWith($resolvedRoot + [System.IO.Path]::DirectorySeparatorChar,
+        [System.StringComparison]::OrdinalIgnoreCase) -or
+        -not $resolvedExe.EndsWith('EmbasicJdiRace.exe', [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Debug acceptance may only launch the isolated CI-only jpackage image.'
+    }
+    $exe = $resolvedExe
+} elseif (-not [string]::IsNullOrWhiteSpace($ExePath)) {
+    throw 'An alternate EXE is permitted only in the explicitly enabled JDI test.'
+}
 if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
     throw 'Ephemeral jpackage EXE not found; packaged GUI NOT_VERIFIED.'
 }
@@ -113,6 +133,7 @@ New-Item -ItemType Directory -Path $classes -Force | Out-Null
 & javac -d $classes app/scripts/PackagedInputRobot.java
 if ($LASTEXITCODE -ne 0) { throw 'Packaged Robot helper failed to compile.' }
 $process = $null
+$raceProcess = $null
 try {
     $process = Start-Process -FilePath $exe -PassThru -ErrorAction Stop
     if ($process.SessionId -ne [System.Diagnostics.Process]::GetCurrentProcess().SessionId) {
@@ -430,6 +451,90 @@ try {
     }
     Write-Host 'PACKAGED-PDF-OVERWRITE-REFUSAL-PASS: existing synthetic PDF SHA-256 preserved.'
 
+    if ($JdiRenderRace) {
+        # TUR244: Only an ephemeral EXE exposes loopback JDWP. Arm a distinct
+        # JDI JVM AFTER the approved PDF exists and BEFORE the second Ctrl+S.
+        & javac --add-modules jdk.jdi -d $classes app/scripts/PackagedRenderBoundaryController.java
+        if ($LASTEXITCODE -ne 0) { throw 'JDI test-only controller compilation failed.' }
+        $renderMatches = @(Select-String -LiteralPath 'app/src/main/java/com/embasic/publicapp/PdfExporter.java' -SimpleMatch 'if (!previewOnly) boundary.afterDocument(++completedDocuments);')
+        if ($renderMatches.Count -ne 1) {
+            throw 'Real renderer source-line identity is ambiguous; JDI NOT_VERIFIED.'
+        }
+        $breakLine = $renderMatches[0].LineNumber
+        $raceReplacement = Join-Path $fixtureDir '02-BRAVO-TWO-jdi-replacement.udf'
+        if (Test-Path -LiteralPath $raceReplacement) {
+            throw 'JDI synthetic replacement unexpectedly exists.'
+        }
+        New-SyntheticUdf $raceReplacement 'BRAVO-NEW'
+        $beforeRaceSha = (Get-FileHash -LiteralPath $second -Algorithm SHA256).Hash
+        $beforeRaceTime = (Get-Item -LiteralPath $second).LastWriteTimeUtc
+        if ((Get-FileHash -LiteralPath $raceReplacement -Algorithm SHA256).Hash -eq $beforeRaceSha) {
+            throw 'JDI synthetic replacement has the same SHA as source.'
+        }
+        $raceLog = Join-Path $env:RUNNER_TEMP 'embasic-tur244-jdi-controller.log'
+        $raceErrorLog = Join-Path $env:RUNNER_TEMP 'embasic-tur244-jdi-controller.error.log'
+        $javaBinary = Join-Path $env:JAVA_HOME 'bin/java.exe'
+        $argsJdi = @('--add-modules', 'jdk.jdi', '-cp', ('"' + $classes + '"'),
+            'PackagedRenderBoundaryController', '51277', [string]$breakLine,
+            ('"' + $second + '"'), ('"' + $raceReplacement + '"'),
+            ('"' + $env:RUNNER_TEMP + '"'))
+        $raceProcess = Start-Process -FilePath $javaBinary -ArgumentList $argsJdi -NoNewWindow -PassThru -RedirectStandardOutput $raceLog -RedirectStandardError $raceErrorLog -ErrorAction Stop
+        $armed = $false
+        for ($attempt = 0; $attempt -lt 100; $attempt++) {
+            if (Test-Path -LiteralPath $raceLog) {
+                $evidence = Get-Content -LiteralPath $raceLog -Raw -ErrorAction SilentlyContinue
+                if ($evidence -and $evidence.Contains('EMBASIC_TUR244_JDI_READY')) {
+                    $armed = $true
+                    break
+                }
+            }
+            $raceProcess.Refresh()
+            if ($raceProcess.HasExited) { break }
+            Start-Sleep -Milliseconds 200
+        }
+        if (-not $armed) {
+            throw 'JDI did not arm a real render breakpoint; physical race NOT_VERIFIED.'
+        }
+        if ((Get-FileHash -LiteralPath $outputPdf -Algorithm SHA256).Hash -ne $approvedSha) {
+            throw 'Approved PDF changed before JDI render race.'
+        }
+        & java -cp $classes PackagedInputRobot save
+        if ($LASTEXITCODE -ne 0) { throw 'JDI physical Ctrl+S failed.' }
+        $jdiChooser = Wait-DialogTitle 'PDF olarak kaydet' 15
+        & java -cp $classes PackagedInputRobot choosepdf $outputPdf
+        if ($LASTEXITCODE -ne 0) { throw 'JDI physical output selection failed.' }
+        $jdiOverwrite = Wait-DialogTitle 'Dosya mevcut' 15
+        & java -cp $classes PackagedInputRobot confirmyes
+        if ($LASTEXITCODE -ne 0) { throw 'JDI physical YES action failed.' }
+        $raceErrorDialog = Wait-DialogTitle 'Embasic UDF hatası' 60
+        if (-not $raceProcess.WaitForExit(20000) -or $raceProcess.ExitCode -ne 0) {
+            throw 'JDI controller did not finish the real render boundary event.'
+        }
+        $jdiEvidence = Get-Content -LiteralPath $raceLog -Raw -ErrorAction Stop
+        if (-not $jdiEvidence.Contains('EMBASIC_TUR244_JDI_RENDER_BOUNDARY_HIT')) {
+            throw 'Real JDI breakpoint mutation marker not observed; no physical PASS.'
+        }
+        if ((Get-FileHash -LiteralPath $second -Algorithm SHA256).Hash -eq $beforeRaceSha) {
+            throw 'Synthetic UDF did not mutate while the actual render thread was paused.'
+        }
+        if ((Get-Item -LiteralPath $second).LastWriteTimeUtc -ne $beforeRaceTime) {
+            throw 'Synthetic UDF mtime was not restored after debugger mutation.'
+        }
+        if ((Get-FileHash -LiteralPath $outputPdf -Algorithm SHA256).Hash -ne $approvedSha) {
+            throw 'Approved PDF changed after physical render-time source mutation.'
+        }
+        if (@(Get-ChildItem -LiteralPath $outputDir -Filter '.embasic-pending-*.pdf' -File).Count -ne 0) {
+            throw 'Staging leak after real packaged JDI render rejection.'
+        }
+        & java -cp $classes PackagedInputRobot cancel
+        if ($LASTEXITCODE -ne 0) { throw 'JDI real error dialog dismissal failed.' }
+        Wait-NoOwnedDialog 10
+        if ((Get-FileHash -LiteralPath $outputPdf -Algorithm SHA256).Hash -ne $approvedSha) {
+            throw 'Approved PDF changed after dismissing JDI error dialog.'
+        }
+        Write-Host 'PACKAGED-JDWP-RENDER-RACE-PASS: isolated ephemeral Windows EXE, loopback JDI real save render thread breakpoint, independent JVM source mutation, restored mtime, physical overwrite YES and error dialog; original PDF SHA preserved and staging clean.'
+    }
+
     # TUR217: after a successful save, replace one imported synthetic UDF
     # with different rights-clean bytes at the SAME path. Restore its mtime
     # to exercise the source SHA gate rather than relying on timestamps.
@@ -482,6 +587,13 @@ try {
     Write-Host 'PACKAGED-GUI-ROBOT-PASS: ephemeral EXE, physical chooser, theme, zoom, two synthetic imports, multi-selection and keyboard reorder and Ctrl+S PDF order.'
 
 } finally {
+    if ($null -ne $raceProcess) {
+        $raceProcess.Refresh()
+        if (-not $raceProcess.HasExited) {
+            Stop-Process -Id $raceProcess.Id -Force -ErrorAction SilentlyContinue
+            $raceProcess.WaitForExit(5000) | Out-Null
+        }
+    }
     if ($null -ne $process) {
         $process.Refresh()
         if (-not $process.HasExited) {
