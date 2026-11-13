@@ -130,6 +130,20 @@ final class FileImportPolicyTest {
         assertThrows(IllegalArgumentException.class,
                 () -> UdfReader.read(oversized));
     }
+    @Test void rejectsEmptyArchiveBeforeImportHashOrPdfExport(@TempDir Path folder) throws Exception {
+        Path empty = Files.createFile(folder.resolve("empty.udf"));
+        Path output = folder.resolve("output.pdf");
+        IllegalArgumentException importError = assertThrows(IllegalArgumentException.class,
+                () -> FileImportPolicy.preflightDistinctImport(empty, List.of()));
+        assertTrue(importError.getMessage().contains("Boş UDF"));
+        assertThrows(IllegalArgumentException.class,
+                () -> FileImportPolicy.preflightReadableMergeFiles(List.of(empty)));
+        assertThrows(IllegalArgumentException.class,
+                () -> FileImportPolicy.sourceSha256(empty));
+        assertThrows(IllegalArgumentException.class, () -> UdfReader.read(empty));
+        assertFalse(Files.exists(output), "An empty source must never create a PDF");
+    }
+
     @Test void existingLimitAndRepeatedBatchAreSafe() {
         List<Path> existing=new ArrayList<>();
         for(int i=0;i<160;i++)existing.add(Path.of("fixture-"+i+".udf"));
