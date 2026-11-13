@@ -83,6 +83,9 @@ jobs:
           } finally {
             Remove-Item -LiteralPath $probeDir -Recurse -Force -ErrorAction SilentlyContinue
           }
+          # A supported volume intentionally makes the child probe exit 1.
+          # PowerShell preserves that native exit status unless this step explicitly succeeds.
+          exit 0
 
   application-regression:
     name: Maven + Java regression + synthetic UDF/PDF smoke
