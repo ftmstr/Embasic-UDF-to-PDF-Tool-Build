@@ -134,57 +134,89 @@ public final class FileImportPolicy {
     }
 
     static String sourceSha256(Path source) {
-        return sourceSha256(source, () -> {});
+        return sourceSha256(source, () -> {}, () -> {});
     }
 
-    /** Test-only bounded hook; production always supplies a no-op. */
+    /** Test-only bounded hook after a real positive read on the first pass. */
     @FunctionalInterface
     interface FirstHashChunkBoundary {
         void afterFirstChunk() throws IOException;
     }
 
-    static String sourceSha256(Path source, FirstHashChunkBoundary boundary) {
-        if (boundary == null)
+    /** Test-only barrier between two independent filesystem read passes. */
+    @FunctionalInterface
+    interface BetweenHashPassBoundary {
+        void betweenPasses() throws IOException;
+    }
+
+    static String sourceSha256(Path source, FirstHashChunkBoundary firstChunk) {
+        return sourceSha256(source, firstChunk, () -> {});
+    }
+
+    static String sourceSha256(Path source, FirstHashChunkBoundary firstChunk,
+                               BetweenHashPassBoundary betweenPasses) {
+        if (firstChunk == null || betweenPasses == null)
             throw new IllegalArgumentException("UDF SHA okuma sınırı eksik");
         requireBoundedArchive(source);
         try {
-            // The initial size is a consistency check, not an immutable snapshot.
-            // A shortened stream must never be fingerprinted as the original file.
-            long expectedSize = Files.size(source);
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            try (InputStream in = Files.newInputStream(source)) {
-                byte[] buffer = new byte[64 * 1024];
-                int read;
+            // Metadata is advisory, never an atomic content snapshot. Check
+            // identity, size and mtime as well as comparing two actual reads.
+            BasicFileAttributes initial = Files.readAttributes(
+                    source, BasicFileAttributes.class);
+            long expectedSize = initial.size();
+            if (expectedSize == 0)
+                throw new IllegalArgumentException("Boş UDF arşivi kabul edilmez: "
+                        + source.getFileName());
+            if (expectedSize > MAX_ARCHIVE_BYTES)
+                throw new IllegalArgumentException("UDF sıkıştırılmış dosya boyutu sınırı aşıldı: "
+                        + source.getFileName());
+            byte[] firstDigest = null;
+            for (int pass = 0; pass < 2; pass++) {
+                MessageDigest digest = MessageDigest.getInstance("SHA-256");
                 long total = 0;
                 boolean firstChunkSeen = false;
-                while ((read = in.read(buffer)) != -1) {
-                    total += read;
-                    // Files.size() is advisory: reject a source that grows
-                    // while being hashed, rather than reading without limit.
-                    if (total > MAX_ARCHIVE_BYTES)
-                        throw new IllegalArgumentException("UDF sıkıştırılmış dosya boyutu sınırı aşıldı: "
-                                + source.getFileName());
-                    digest.update(buffer, 0, read);
-                    if (!firstChunkSeen && read > 0) {
-                        firstChunkSeen = true;
-                        // Deterministic regression barrier WHILE a real
-                        // filesystem InputStream is still open. No sleeping,
-                        // polling or test instrumentation in packaged builds.
-                        boundary.afterFirstChunk();
+                try (InputStream in = Files.newInputStream(source)) {
+                    byte[] buffer = new byte[64 * 1024];
+                    int read;
+                    while ((read = in.read(buffer)) != -1) {
+                        total += read;
+                        if (total > MAX_ARCHIVE_BYTES)
+                            throw new IllegalArgumentException(
+                                    "UDF sıkıştırılmış dosya boyutu sınırı aşıldı: "
+                                            + source.getFileName());
+                        digest.update(buffer, 0, read);
+                        if (pass == 0 && !firstChunkSeen && read > 0) {
+                            firstChunkSeen = true;
+                            firstChunk.afterFirstChunk();
+                        }
                     }
                 }
-                // A source may be truncated after the initial size check.
-                // Never fingerprint an empty stream as a valid UDF snapshot.
-                if (total == 0)
-                    throw new IllegalArgumentException("Boş UDF arşivi kabul edilmez: "
-                            + source.getFileName());
-                if (total != expectedSize || Files.size(source) != expectedSize)
-                    throw new IllegalArgumentException("UDF kaynağı okuma sırasında değiştirildi: "
-                            + source.getFileName());
+                BasicFileAttributes observed = Files.readAttributes(
+                        source, BasicFileAttributes.class);
+                // Even equal-length content can be a different file or a
+                // different version. Some providers return null file keys,
+                // so compare identity only when both keys are available.
+                if (total != expectedSize || observed.size() != expectedSize
+                        || !initial.lastModifiedTime().equals(observed.lastModifiedTime())
+                        || (initial.fileKey() != null && observed.fileKey() != null
+                            && !initial.fileKey().equals(observed.fileKey())))
+                    throw new IllegalArgumentException(
+                            "UDF kaynağı okuma sırasında değiştirildi: "
+                                    + source.getFileName());
+                byte[] currentDigest = digest.digest();
+                if (pass == 0) {
+                    firstDigest = currentDigest;
+                    betweenPasses.betweenPasses();
+                } else if (!MessageDigest.isEqual(firstDigest, currentDigest)) {
+                    throw new IllegalArgumentException(
+                            "UDF kaynağı okuma sırasında değiştirildi: "
+                                    + source.getFileName());
+                }
             }
-            return java.util.HexFormat.of().formatHex(digest.digest());
+            return java.util.HexFormat.of().formatHex(firstDigest);
         } catch (IOException ex) {
-            throw new IllegalArgumentException("UDF kaynağı okunamadı: " + source.getFileName(), ex);
+            throw new IllegalArgumentException(
+                    "UDF kaynağı okunamadı: " + source.getFileName(), ex);
         } catch (NoSuchAlgorithmException ex) {
             throw new IllegalStateException("SHA-256 kullanılamıyor", ex);
         }
