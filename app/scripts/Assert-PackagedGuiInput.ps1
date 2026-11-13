@@ -545,6 +545,16 @@ try {
         if (-not $jdiEvidence.Contains('EMBASIC_TUR244_JDI_RENDER_BOUNDARY_HIT')) {
             throw 'Real JDI breakpoint mutation marker not observed; no physical PASS.'
         }
+        # Forward ONLY the two allowlisted, actually captured controller
+        # stdout markers into the workflow log. Source contents, paths and
+        # raw debugger output are never printed.
+        $jdiMarkers = @($jdiEvidence -split '\r?\n' | Where-Object {
+            $_ -match '^EMBASIC_TUR244_JDI_(READY|RENDER_BOUNDARY_HIT) '
+        })
+        if ($jdiMarkers.Count -ne 2) {
+            throw 'JDI real boundary evidence markers are missing or duplicated.'
+        }
+        foreach ($marker in $jdiMarkers) { Write-Host $marker.Trim() }
         if ((Get-FileHash -LiteralPath $second -Algorithm SHA256).Hash -eq $beforeRaceSha) {
             throw 'Synthetic UDF did not mutate while the actual render thread was paused.'
         }
