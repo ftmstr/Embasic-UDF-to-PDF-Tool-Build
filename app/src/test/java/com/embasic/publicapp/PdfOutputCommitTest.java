@@ -363,6 +363,28 @@ final class PdfOutputCommitTest {
                 + " backup=NONE staging=INTACT");
     }
 
+    @Test void unsupportedHardLinkMustFailClosedWithoutPublishingPartialPdf() throws Exception {
+        Path staging = Files.writeString(folder.resolve(".embasic-pending-link.pdf"), "VALIDATED-STAGE");
+        Path target = folder.resolve("new.pdf");
+        for (boolean providerThrowsUnsupported : new boolean[]{true, false}) {
+            IOException rejected = assertThrows(IOException.class,
+                    () -> PdfExporter.publishValidated(staging, target, false,
+                            (source, destination) -> { throw new AssertionError("overwrite path used"); },
+                            (destination, source) -> {
+                                assertEquals(target, destination);
+                                assertEquals(staging, source);
+                                if (providerThrowsUnsupported)
+                                    throw new UnsupportedOperationException("synthetic hard-link unsupported");
+                                throw new java.nio.file.FileSystemException(destination.toString(),
+                                        source.toString(), "synthetic provider denies links");
+                            }));
+            assertTrue(rejected.getMessage().contains("korunuyor"));
+            assertFalse(Files.exists(target), "Rejected link must not publish an output");
+            assertEquals("VALIDATED-STAGE", Files.readString(staging));
+        }
+        System.out.println("EMBASIC_TUR226_UNSUPPORTED_HARDLINK_FAIL_CLOSED PASS");
+    }
+
     @Test void newTargetIsCreatedWithoutOverwriteConsent() throws Exception {
         Path staging = folder.resolve(".embasic-pending.pdf");
         Path target = folder.resolve("new.pdf");
