@@ -135,7 +135,15 @@ if ($LASTEXITCODE -ne 0) { throw 'Packaged Robot helper failed to compile.' }
 $process = $null
 $raceProcess = $null
 try {
-    $process = Start-Process -FilePath $exe -PassThru -ErrorAction Stop
+    if ($JdiRenderRace) {
+        # Capture only ephemeral test-JVM launcher diagnostics to distinguish
+        # missing modules, agent startup errors and unavailable GUI sessions.
+        $debugStdOut = Join-Path $env:RUNNER_TEMP 'embasic-tur244-app-stdout.log'
+        $debugStdErr = Join-Path $env:RUNNER_TEMP 'embasic-tur244-app-stderr.log'
+        $process = Start-Process -FilePath $exe -PassThru -ErrorAction Stop -RedirectStandardOutput $debugStdOut -RedirectStandardError $debugStdErr
+    } else {
+        $process = Start-Process -FilePath $exe -PassThru -ErrorAction Stop
+    }
     if ($process.SessionId -ne [System.Diagnostics.Process]::GetCurrentProcess().SessionId) {
         throw 'Packaged EXE is in another Windows session; GUI NOT_VERIFIED.'
     }
@@ -144,7 +152,23 @@ try {
     $ids = [System.Collections.Generic.List[uint32]]::new()
     while ((Get-Date) -lt $deadline) {
         $process.Refresh()
-        if ($process.HasExited) { throw 'Packaged EXE exited before GUI acceptance.' }
+        if ($process.HasExited) {
+            if ($JdiRenderRace) {
+                $sanitized = ''
+                foreach ($logFile in @($debugStdErr, $debugStdOut)) {
+                    if (Test-Path -LiteralPath $logFile) {
+                        $raw = (Get-Content -LiteralPath $logFile -Raw -ErrorAction SilentlyContinue)
+                        if ($raw) {
+                            $raw = $raw.Replace($env:RUNNER_TEMP, '<TEMP>')
+                            $sanitized += $raw.Substring(0, [Math]::Min(500, $raw.Length))
+                        }
+                    }
+                }
+                Write-Warning ('TEST_ONLY_JDWP_LAUNCH_DIAGNOSTIC exit=' + $process.ExitCode
+                    + ' message=' + $sanitized)
+            }
+            throw 'Packaged EXE exited before GUI acceptance.'
+        }
         $ids.Clear()
         $ids.Add([uint32]$process.Id)
         $children = @(Get-CimInstance Win32_Process -Filter "ParentProcessId=$($process.Id)" -ErrorAction Stop)
