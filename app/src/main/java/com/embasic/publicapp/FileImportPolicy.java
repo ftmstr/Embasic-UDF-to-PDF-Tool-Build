@@ -195,11 +195,11 @@ public final class FileImportPolicy {
                         source, BasicFileAttributes.class);
                 // Even equal-length content can be a different file or a
                 // different version. Some providers return null file keys,
-                // so compare identity only when both keys are available.
+                // If availability itself changes, fail closed. Stable null keys
+                // remain a provider limitation, NOT an identity guarantee.
                 if (total != expectedSize || observed.size() != expectedSize
                         || !initial.lastModifiedTime().equals(observed.lastModifiedTime())
-                        || (initial.fileKey() != null && observed.fileKey() != null
-                            && !initial.fileKey().equals(observed.fileKey())))
+                        || !java.util.Objects.equals(initial.fileKey(), observed.fileKey()))
                     throw new IllegalArgumentException(
                             "UDF kaynağı okuma sırasında değiştirildi: "
                                     + source.getFileName());
