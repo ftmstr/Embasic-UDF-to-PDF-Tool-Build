@@ -64,6 +64,26 @@ jobs:
           & java -cp $classes HostedRunnerProbe
           if ($LASTEXITCODE -ne 0) { throw "java probe failed" }
 
+      - name: Physical Windows hard-link preflight (synthetic runner volume)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $probeDir = Join-Path $env:RUNNER_TEMP 'embasic-hardlink-preflight'
+          New-Item -ItemType Directory -Path $probeDir -Force | Out-Null
+          try {
+            & pwsh -NoProfile -File app/scripts/Test-UnsupportedHardLinkVolume.ps1 -Directory $probeDir
+            $result = $LASTEXITCODE
+            if ($result -eq 0) {
+              throw 'Runner volume reported native ERROR_NOT_SUPPORTED; this is not the expected supported-volume smoke.'
+            }
+            if ($result -ne 1) { throw "Unexpected preflight exit code: $result" }
+            $remaining = @(Get-ChildItem -LiteralPath $probeDir -Force)
+            if ($remaining.Count -ne 0) { throw 'Synthetic hard-link probe left temporary files behind.' }
+            Write-Host 'SUPPORTED_VOLUME_PREFLIGHT_PASS: Windows runner hard-link probe safely rejected unsupported-volume acceptance.'
+          } finally {
+            Remove-Item -LiteralPath $probeDir -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
   application-regression:
     name: Maven + Java regression + synthetic UDF/PDF smoke
     needs: [public-source-gate]
