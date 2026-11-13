@@ -112,3 +112,57 @@ No Private, main merge, tag, release, ZIP, installer or binary upload.
 Keep weighted engineering progress **44.3%** until there is defensible
 end-user evidence to change the milestones. This is not a UYAP
 compatibility or product-release maturity score.
+
+## Actual physical Windows evidence and repairs (13 Nov 2026)
+
+The initial experimental CI runs were real failures and were repaired
+on this Public branch, not hidden:
+
+1. `202143c14a9ea1d0624cb8532110369fa4ec7ed4`, run
+   `43498812546` — isolated debug EXE exited before GUI.
+   The production/ordinary packaged GUI acceptance passed.
+2. `fb4213c6d62b103bd7f37a5b695df9bd32bfe142`, run
+   `43499653928` — PowerShell diagnostic parenthesis ParserError.
+   No JDI race tested.
+3. `73b45e7520c782cb8b31ced3c639378e4ee270cb`, run
+   `43500203787` — isolated debug EXE and its java.desktop/jdk.jdwp.agent
+   runtime modules and physical theme/zoom **did** work, but the second
+   Robot session reused the first run's synthetic filename and failed
+   with FileAlreadyExistsException. No JDI race tested.
+
+Corrections: isolated JDI runtime module inventory, sanitized
+test-only launcher stdout/stderr, PowerShell/JDI early parse/compile
+preflight, and **distinct** `RUNNER_TEMP` UDF/PDF directories for
+each physical app-image session. These changes do not affect standard
+GUI mode.
+
+**First successful physical JDI race:** exact tested-code SHA
+`58720294b101b5b411c6a08fa63bc0fa9015e7ea`,
+Public Windows jpackage run
+`43501024616`, job `132146520489`: COMPLETED/SUCCESS,
+including standard packaged Robot and separate physical test-only JDWP
+acceptance. The genuine job console contains
+`TUR244_POWERSHELL_AND_JDI_PREFLIGHT_PASS`,
+`TUR244_JDI_RUNTIME_MODULES ... testOnly=TRUE`,
+and critically
+`PACKAGED-JDWP-RENDER-RACE-PASS`. The controller's captured READY
+and BOUNDARY_HIT markers, and the script's exact PDF SHA, source SHA,
+restored mtime, physically observed error-dialog and staging checks,
+were **all required** before this last marker could be printed.
+
+A subsequent Public script-only change
+`edeb3fb252ad8cea709a8ea955385bb514f12a6d` copies **only**
+the two allowlisted actual JDI controller stdout event markers into
+the GitHub job log after validating both, without logging personal
+paths, contents or debugger dumps. This improves independent
+inspectability. It must undergo a fresh exact-final SHA physical
+acceptance before being labeled PASS.
+
+**Interpretation:** `PHYSICAL_PACKAGED_RENDER_RACE=PASS` applies
+only to the isolated, ephemeral JDWP-enabled Windows test image with
+real physical Ctrl+S and synthetic sources after genuine render-stack
+breakpoint synchronization. The normal production app-image still
+uses its unchanged Java runtime without any debugger; its ordinary
+GUI regression acceptance remains separate PASS. Neither test proves
+a hostile Windows compare-and-swap contract for already approved PDF
+targets. `PHYSICAL_UNSUPPORTED_HARDLINK_EXE=NOT_RUN` remains true.
