@@ -136,6 +136,9 @@ public final class FileImportPolicy {
     static String sourceSha256(Path source) {
         requireBoundedArchive(source);
         try {
+            // The initial size is a consistency check, not an immutable snapshot.
+            // A shortened stream must never be fingerprinted as the original file.
+            long expectedSize = Files.size(source);
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             try (InputStream in = Files.newInputStream(source)) {
                 byte[] buffer = new byte[64 * 1024];
@@ -154,6 +157,9 @@ public final class FileImportPolicy {
                 // Never fingerprint an empty stream as a valid UDF snapshot.
                 if (total == 0)
                     throw new IllegalArgumentException("Boş UDF arşivi kabul edilmez: "
+                            + source.getFileName());
+                if (total != expectedSize || Files.size(source) != expectedSize)
+                    throw new IllegalArgumentException("UDF kaynağı okuma sırasında değiştirildi: "
                             + source.getFileName());
             }
             return java.util.HexFormat.of().formatHex(digest.digest());
