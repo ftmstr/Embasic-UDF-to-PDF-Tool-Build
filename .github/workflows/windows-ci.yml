@@ -71,12 +71,22 @@ jobs:
           $probeDir = Join-Path $env:RUNNER_TEMP 'embasic-hardlink-preflight'
           New-Item -ItemType Directory -Path $probeDir -Force | Out-Null
           try {
-            & pwsh -NoProfile -File app/scripts/Test-UnsupportedHardLinkVolume.ps1 -Directory $probeDir
+            $probeOutput = @(& pwsh -NoProfile -File app/scripts/Test-UnsupportedHardLinkVolume.ps1 -Directory $probeDir 2>&1)
             $result = $LASTEXITCODE
+            $probeText = ($probeOutput | Out-String)
+            Write-Host $probeText
             if ($result -eq 0) {
               throw 'Runner volume reported native ERROR_NOT_SUPPORTED; this is not the expected supported-volume smoke.'
             }
             if ($result -ne 1) { throw "Unexpected preflight exit code: $result" }
+            # Exit 1 alone is insufficient: PowerShell also returns 1 for
+            # parser/runtime failures. Require the supported-volume marker.
+            if ($probeText -notmatch '(?m)^HARDLINK_SUPPORTED:') {
+              throw 'Preflight exited 1 without HARDLINK_SUPPORTED; cannot accept a failed probe as a supported-volume PASS.'
+            }
+            if ($probeText -match 'HARDLINK_UNSUPPORTED|HARDLINK_INDETERMINATE') {
+              throw 'Conflicting or indeterminate hard-link result; fail closed.'
+            }
             $remaining = @(Get-ChildItem -LiteralPath $probeDir -Force)
             if ($remaining.Count -ne 0) { throw 'Synthetic hard-link probe left temporary files behind.' }
             Write-Host 'SUPPORTED_VOLUME_PREFLIGHT_PASS: Windows runner hard-link probe safely rejected unsupported-volume acceptance.'
