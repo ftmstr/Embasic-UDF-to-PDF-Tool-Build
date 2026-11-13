@@ -66,13 +66,15 @@ after mutation remains hashable but has a different SHA.
 `FileImportPolicyTest.sameBytesNewFileIdentityBetweenHashPassesIsRejected`
 makes a byte-identical separate filesystem copy. After pass one, it
 renames away the original and puts the other inode/file object at the
-same path, restores the same modification time and size, and asserts
-a different provider fileKey. The two actual SHA passes would be
-equal, but file identity change must still be rejected. A subsequent
-stable hash of the replacement equals the original content hash.
-If the filesystem cannot supply distinct native fileKeys, this test
-does not claim to have proved identity-change observation; Windows
-NTFS and Linux CI should be checked for actual identity evidence.
+same path, restores the same modification time and size, and checks provider fileKey behavior. The two actual SHA passes would
+be equal. **If the provider exposes a non-null original fileKey**,
+the new object must be rejected, even with equal bytes, size and mtime.
+If the provider exposes a null fileKey, this test records
+`fileKey=UNAVAILABLE detection=NOT_VERIFIED` rather than falsely
+claiming identity protection. A subsequent stable hash of the
+replacement equals the original content hash on either platform.
+Do not infer Windows NTFS object identity from Java's optional
+`BasicFileAttributes.fileKey()`.
 
 Markers must appear in real final SHA **both** Windows and Linux logs:
 `EMBASIC_TUR242_SAME_SIZE_INFLIGHT` and
@@ -85,6 +87,34 @@ providers, file mutations after the final SHA check and hostile
 Windows check-to-replace races still cannot be ruled out. This is
 not a true snapshot, file lock, cryptographic attestation of an
 immutable file handle, or an official UYAP PDF reference comparison.
+
+
+## Initial Windows CI failure and same-tour repair
+
+The first full test SHA `cb59014f2236fde6ca85ef0812356b76ef59b399`
+FAILED the Windows Maven suite: JUnit
+`sameBytesNewFileIdentityBetweenHashPassesIsRejected` wrongly assumed
+Windows always exposes a non-null `BasicFileAttributes.fileKey()`.
+The actual Windows GitHub Actions job `132117543500` reported
+`expected: not <null>`. Linux job `132117544258` passed.
+This is a **test assumption error**, not evidence that Windows
+detects swapped file identity.
+
+Fixed in the same tour:
+
+- `FileImportPolicy` now rejects fileKey *availability transitions*
+  too (null <-> non-null), while stable null remains an explicitly
+  unsupported identity proof.
+- `FileImportPolicyTest` makes provider evidence conditional:
+  non-null fileKey -> deterministic identity swap must be rejected;
+  null fileKey -> assert the byte-identical stable hash, label
+  identity as NOT_VERIFIED, and never call it PASS.
+- The original same-length/mtime-restored in-flight content mutation
+  regression is unchanged and was already PASS on both platforms.
+
+Require final Windows/Linux CI at the **new exact commit SHA** before
+closing this tour. Normal JUnit PASS here means no false security
+claim; the Windows file-identity guarantee remains **NO-GO**.
 
 ## Acceptance, remaining NO-GO and report contract
 
