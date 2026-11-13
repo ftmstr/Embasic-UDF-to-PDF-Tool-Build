@@ -144,6 +144,73 @@ final class FileImportPolicyTest {
         assertFalse(Files.exists(output), "An empty source must never create a PDF");
     }
 
+
+    private static Path createLargeSyntheticUdf(Path folder, String name) throws Exception {
+        Path source = folder.resolve(name);
+        // No original user data: valid ZIP structure containing only generated
+        // text. NO_COMPRESSION ensures multiple 64 KiB reads while hashing.
+        String xml = "<template format_id='1.0'><content>"
+                + "S".repeat(300_000)
+                + "</content><elements><paragraph><content startOffset='0' "
+                + "length='300000'/></paragraph></elements></template>";
+        try (var zip = new java.util.zip.ZipOutputStream(Files.newOutputStream(source))) {
+            zip.setLevel(java.util.zip.Deflater.NO_COMPRESSION);
+            zip.putNextEntry(new java.util.zip.ZipEntry("content.xml"));
+            zip.write(xml.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            zip.closeEntry();
+        }
+        assertTrue(Files.size(source) > 2 * 64 * 1024);
+        return source;
+    }
+
+    @Test void truncatingOpenStreamAfterFirstHashChunkIsRejected(@TempDir Path folder)
+            throws Exception {
+        Path source = createLargeSyntheticUdf(folder, "truncate-during-sha.udf");
+        String stable = FileImportPolicy.sourceSha256(source);
+        assertEquals(64, stable.length());
+        long originalLength = Files.size(source);
+        int[] boundaries = {0};
+        IllegalArgumentException rejected = assertThrows(IllegalArgumentException.class,
+                () -> FileImportPolicy.sourceSha256(source, () -> {
+                    boundaries[0]++;
+                    // This is executed synchronously while the actual hashing
+                    // InputStream is OPEN, after its first positive read.
+                    try (var writer = java.nio.channels.FileChannel.open(
+                            source, java.nio.file.StandardOpenOption.WRITE)) {
+                        writer.truncate(0);
+                    }
+                }));
+        assertEquals(1, boundaries[0], "First-chunk callback must run exactly once");
+        assertEquals(0, Files.size(source));
+        assertTrue(originalLength > 64 * 1024);
+        assertTrue(rejected.getMessage().contains("değiştirildi"),
+                "A nonempty initial UDF must not hash a partial stream");
+        assertThrows(IllegalArgumentException.class,
+                () -> FileImportPolicy.sourceSha256(source));
+        System.out.println("EMBASIC_TUR241_SHA_TRUNCATE firstChunk=OBSERVED"
+                + " stream=OPEN partial=REJECT zeroAfter=REJECT syntheticOnly=true");
+    }
+
+    @Test void growingOpenStreamAfterFirstHashChunkIsRejected(@TempDir Path folder)
+            throws Exception {
+        Path source = createLargeSyntheticUdf(folder, "grow-during-sha.udf");
+        String stable = FileImportPolicy.sourceSha256(source);
+        long originalLength = Files.size(source);
+        int[] boundaries = {0};
+        IllegalArgumentException rejected = assertThrows(IllegalArgumentException.class,
+                () -> FileImportPolicy.sourceSha256(source, () -> {
+                    boundaries[0]++;
+                    Files.write(source, new byte[8192],
+                            java.nio.file.StandardOpenOption.APPEND);
+                }));
+        assertEquals(1, boundaries[0]);
+        assertEquals(originalLength + 8192, Files.size(source));
+        assertTrue(rejected.getMessage().contains("değiştirildi"));
+        assertNotEquals(stable, FileImportPolicy.sourceSha256(source));
+        System.out.println("EMBASIC_TUR241_SHA_GROW firstChunk=OBSERVED"
+                + " stream=OPEN overflow=REJECT syntheticOnly=true");
+    }
+
     @Test void existingLimitAndRepeatedBatchAreSafe() {
         List<Path> existing=new ArrayList<>();
         for(int i=0;i<160;i++)existing.add(Path.of("fixture-"+i+".udf"));
