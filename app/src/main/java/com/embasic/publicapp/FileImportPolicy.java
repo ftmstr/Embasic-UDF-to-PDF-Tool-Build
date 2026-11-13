@@ -134,6 +134,18 @@ public final class FileImportPolicy {
     }
 
     static String sourceSha256(Path source) {
+        return sourceSha256(source, () -> {});
+    }
+
+    /** Test-only bounded hook; production always supplies a no-op. */
+    @FunctionalInterface
+    interface FirstHashChunkBoundary {
+        void afterFirstChunk() throws IOException;
+    }
+
+    static String sourceSha256(Path source, FirstHashChunkBoundary boundary) {
+        if (boundary == null)
+            throw new IllegalArgumentException("UDF SHA okuma sınırı eksik");
         requireBoundedArchive(source);
         try {
             // The initial size is a consistency check, not an immutable snapshot.
@@ -144,6 +156,7 @@ public final class FileImportPolicy {
                 byte[] buffer = new byte[64 * 1024];
                 int read;
                 long total = 0;
+                boolean firstChunkSeen = false;
                 while ((read = in.read(buffer)) != -1) {
                     total += read;
                     // Files.size() is advisory: reject a source that grows
@@ -152,6 +165,13 @@ public final class FileImportPolicy {
                         throw new IllegalArgumentException("UDF sıkıştırılmış dosya boyutu sınırı aşıldı: "
                                 + source.getFileName());
                     digest.update(buffer, 0, read);
+                    if (!firstChunkSeen && read > 0) {
+                        firstChunkSeen = true;
+                        // Deterministic regression barrier WHILE a real
+                        // filesystem InputStream is still open. No sleeping,
+                        // polling or test instrumentation in packaged builds.
+                        boundary.afterFirstChunk();
+                    }
                 }
                 // A source may be truncated after the initial size check.
                 // Never fingerprint an empty stream as a valid UDF snapshot.
