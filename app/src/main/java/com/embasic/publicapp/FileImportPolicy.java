@@ -120,7 +120,11 @@ public final class FileImportPolicy {
      */
     static void requireBoundedArchive(Path source) {
         try {
-            if (Files.size(source) > MAX_ARCHIVE_BYTES)
+            long size = Files.size(source);
+            if (size == 0)
+                throw new IllegalArgumentException("Boş UDF arşivi kabul edilmez: "
+                        + source.getFileName());
+            if (size > MAX_ARCHIVE_BYTES)
                 throw new IllegalArgumentException("UDF sıkıştırılmış dosya boyutu sınırı aşıldı: "
                         + source.getFileName());
         } catch (IOException ex) {
