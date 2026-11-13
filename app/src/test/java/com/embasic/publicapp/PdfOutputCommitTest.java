@@ -541,4 +541,126 @@ final class PdfOutputCommitTest {
                     "Rejected staged PDF must be cleaned up");
         }
     }
+    private record FullSaveSyntheticUdf(Path source, UdfReader.DocumentSpec document,
+                                        String sourceHash) {}
+
+    private FullSaveSyntheticUdf fullSaveSyntheticUdf() throws Exception {
+        Path file = folder.resolve("tur243-source.udf");
+        String marker = "TUR243-ONLY-SYNTHETIC";
+        String xml = "<template format_id='1.0'><content>" + marker + "</content>"
+                + "<properties pageSize='A4' orientation='portrait' margin='48'/>"
+                + "<elements><paragraph><content startOffset='0' length='"
+                + marker.length() + "'/></paragraph></elements></template>";
+        try (var zip = new java.util.zip.ZipOutputStream(Files.newOutputStream(file))) {
+            zip.putNextEntry(new java.util.zip.ZipEntry("content.xml"));
+            zip.write(xml.getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+        }
+        return new FullSaveSyntheticUdf(file, UdfReader.read(file),
+                FileImportPolicy.sourceSha256(file));
+    }
+
+    private void assertNoPdfStagingOrBackup() throws Exception {
+        try (var entries = Files.list(folder)) {
+            assertEquals(0, entries.filter(p -> {
+                String name = p.getFileName().toString();
+                return name.startsWith(".embasic-pending-")
+                        || name.startsWith(".embasic-backup-");
+            }).count(), "Failed full PDF export must clear staging and backup paths");
+        }
+    }
+
+    @Test void fullPdfSaveUnsupportedHardLinksLeaveApprovedPdfAndNoStaging()
+            throws Exception {
+        // Tur226 covered only the low-level publisher, deliberately leaving
+        // staging intact. This exercises real UDF read + double source SHA,
+        // PDFBox serialization + reopen, and the full save() finally cleanup.
+        FullSaveSyntheticUdf udf = fullSaveSyntheticUdf();
+        Path approved = folder.resolve("already-approved.pdf");
+        assertEquals(1, PdfExporter.save(List.of(udf.document()), approved, false));
+        byte[] preserved = Files.readAllBytes(approved);
+        assertNoPdfStagingOrBackup();
+
+        for (int variant = 0; variant < 2; variant++) {
+            final boolean unsupportedOperation = variant == 0;
+            // Even overwrite=true must behave as NO-REPLACE if this name
+            // did not exist when the user originally selected it.
+            boolean selectedOverwrite = variant == 1;
+            Path target = folder.resolve("new-unsupported-link-" + variant + ".pdf");
+            int[] publishedAt = {0};
+            IOException rejected = assertThrows(IOException.class,
+                    () -> PdfExporter.save(List.of(udf.document()), target,
+                            selectedOverwrite,
+                            () -> DesktopApp.verifySourceFingerprints(
+                                    List.of(udf.source()), List.of(udf.sourceHash())),
+                            done -> {}, () -> {},
+                            (staged, destination) -> {
+                                throw new AssertionError("Atomic overwrite branch not allowed");
+                            },
+                            (destination, staged) -> {
+                                publishedAt[0]++;
+                                assertEquals(target, destination);
+                                assertFalse(Files.exists(target));
+                                try (PDDocument stagedPdf = Loader.loadPDF(staged.toFile())) {
+                                    assertEquals(1, stagedPdf.getNumberOfPages());
+                                }
+                                if (unsupportedOperation)
+                                    throw new UnsupportedOperationException(
+                                            "synthetic unsupported hard link");
+                                throw new java.nio.file.FileSystemException(
+                                        staged.toString(), destination.toString(),
+                                        "synthetic hard-link policy rejection");
+                            }));
+            assertEquals(1, publishedAt[0], "Validated full PDF must reach link boundary");
+            assertTrue(rejected.getMessage().contains("korunuyor"));
+            assertFalse(Files.exists(target), "Unsupported link cannot publish partial PDF");
+            assertArrayEquals(preserved, Files.readAllBytes(approved));
+            try (PDDocument oldPdf = Loader.loadPDF(approved.toFile())) {
+                assertEquals(1, oldPdf.getNumberOfPages());
+            }
+            assertNoPdfStagingOrBackup();
+        }
+        System.out.println("EMBASIC_TUR243_FULL_SAVE_LINK_UNSUPPORTED"
+                + " validatedPdf=TRUE providers=2 target=ABSENT"
+                + " approvedSHA=UNCHANGED staging=CLEAN physicalFS=NOT_RUN");
+    }
+
+    @Test void fullPdfSaveUnsupportedAtomicOverwritePreservesApprovedPdf()
+            throws Exception {
+        FullSaveSyntheticUdf udf = fullSaveSyntheticUdf();
+        Path approved = folder.resolve("previously-approved.pdf");
+        assertEquals(1, PdfExporter.save(List.of(udf.document()), approved, false));
+        byte[] oldBytes = Files.readAllBytes(approved);
+        int[] moveCalls = {0};
+        IOException rejected = assertThrows(IOException.class,
+                () -> PdfExporter.save(List.of(udf.document()), approved, true,
+                        () -> DesktopApp.verifySourceFingerprints(
+                                List.of(udf.source()), List.of(udf.sourceHash())),
+                        done -> {}, () -> {},
+                        (staged, destination) -> {
+                            moveCalls[0]++;
+                            assertEquals(approved, destination);
+                            try (PDDocument stagedPdf = Loader.loadPDF(staged.toFile())) {
+                                assertEquals(1, stagedPdf.getNumberOfPages());
+                            }
+                            throw new AtomicMoveNotSupportedException(
+                                    staged.toString(), destination.toString(),
+                                    "synthetic unsupported atomic replace");
+                        },
+                        (destination, staged) -> {
+                            throw new AssertionError("Approved overwrite cannot use no-replace link");
+                        }));
+        assertEquals(1, moveCalls[0]);
+        assertInstanceOf(AtomicMoveNotSupportedException.class, rejected.getCause());
+        assertTrue(rejected.getMessage().contains("korundu"));
+        assertArrayEquals(oldBytes, Files.readAllBytes(approved));
+        try (PDDocument pdf = Loader.loadPDF(approved.toFile())) {
+            assertEquals(1, pdf.getNumberOfPages());
+        }
+        assertNoPdfStagingOrBackup();
+        System.out.println("EMBASIC_TUR243_FULL_SAVE_ATOMIC_UNSUPPORTED"
+                + " validatedPdf=TRUE overwrite=REJECT approvedSHA=UNCHANGED"
+                + " backup=NONE staging=CLEAN physicalFS=NOT_RUN");
+    }
+
 }
