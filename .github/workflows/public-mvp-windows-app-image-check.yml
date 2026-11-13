@@ -175,4 +175,40 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             throw "Packaged EXE physical Robot failed or was not verified"
           }
-
+      - name: Physical test-only JDI render boundary on separate ephemeral EXE (no publication)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $root = Join-Path $env:RUNNER_TEMP 'embasic-jdi-app-image'
+          $jar = 'embasic-public-desktop-0.1.0-SNAPSHOT-all.jar'
+          # Never add JDWP to the normal/public app-image. Its separate binary
+          # lives only inside RUNNER_TEMP and is destroyed after this test.
+          if (-not (Test-Path -LiteralPath (Join-Path $env:JAVA_HOME 'jmods/jdk.jdwp.agent.jmod') -PathType Leaf)) {
+            Write-Host 'PHYSICAL_PACKAGED_RENDER_RACE=NOT_RUN: hosted JDK has no JDWP agent module.'
+            exit 0
+          }
+          # A test-only fixed loopback port is safe only on an isolated hosted
+          # runner. Fail if already occupied; no wildcard listening is allowed.
+          $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 51277)
+          try {
+            $listener.Start()
+          } finally {
+            $listener.Stop()
+          }
+          try {
+            & jpackage --type app-image --name EmbasicJdiRace --input app/target --main-jar $jar --main-class com.embasic.publicapp.DesktopApp --app-version 0.1.0 --add-modules jdk.jdwp.agent --java-options '-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=127.0.0.1:51277' --dest $root
+            if ($LASTEXITCODE -ne 0) { throw 'Test-only JDWP jpackage failed; physical render race NOT_VERIFIED.' }
+            $exe = Join-Path $root 'EmbasicJdiRace/EmbasicJdiRace.exe'
+            if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
+              throw 'Test-only JDWP packaged executable absent.'
+            }
+            & pwsh -NoProfile -File app/scripts/Assert-PackagedGuiInput.ps1 -AllowGui -JdiRenderRace -ExePath $exe
+            if ($LASTEXITCODE -ne 0) {
+              throw 'Actual physical packaged render/JDI acceptance failed; no PASS claim.'
+            }
+          } finally {
+            # Debug-enabled app-image is test only and must never be uploaded.
+            if (Test-Path -LiteralPath $root) {
+              Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction Stop
+            }
+          }
