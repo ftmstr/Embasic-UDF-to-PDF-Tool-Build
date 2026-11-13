@@ -25,11 +25,11 @@ $forecastBase = [DateTime]::ParseExact('2026-10-31', 'yyyy-MM-dd', [System.Globa
 # Weight totals are exactly 100. Completion is engineering judgement, not telemetry.
 $milestones = @(
     [pscustomobject]@{ Name='Public kod tabani / Maven'; Weight=12; Complete=100; Evidence='Public kaynak + Linux/Windows Maven CI' }
-    [pscustomobject]@{ Name='Windows launcher / smoke'; Weight=12; Complete=100; Evidence='Tur241 exact SHA 1bd13523 Windows physical packaged EXE 43486723417 SUCCESS: synthetic chooser/reorder Ctrl+S PDF, approved overwrite rejection, stale source YES error; Tur242 packaged SHA tests CI pending; physical render race NOT_RUN' }
+    [pscustomobject]@{ Name='Windows launcher / smoke'; Weight=12; Complete=100; Evidence='Tur242 tested SHA 16c98e45 packaged Windows EXE 43493314849 SUCCESS: physical chooser/reorder/Ctrl+S 2-page PDF, overwrite NO and stale-source YES preserved PDF SHA/staging; physical render race NOT_RUN' }
     [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=73; Evidence='Tur216 physical packaged Ctrl+S save, BRAVO-TWO then ALPHA-ONE A4 order, overwrite NO SHA preservation; Tur217 stale source YES error dialog and old PDF preserved; real user beta NOT_RUN' }
     [pscustomobject]@{ Name='UDF turleri ve surumleri'; Weight=26; Complete=12; Evidence='Sentetik ZIP PNG referans, A5/LEGAL; gercek UYAP schema dogrulanmadi' }
-    [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Tur241 exact SHA 1bd13523 Windows/Linux 205 JUnit each 204 PASS 1 normal Robot SKIP, 160 UDF profile SUCCESS; Tur242 two-pass SHA with same-size open-stream mutation regression, final CI PENDING; native UYAP golden NOT_RUN' }
-    [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Tur242 two-read SHA+metadata/fileKey safeguards; initial Windows CI exposed null BasicFileAttributes.fileKey, same-tour test fixed (Windows identity NOT_VERIFIED when null); exact-final CI PENDING; existing PDF hostile CAS/source/license/NOTICE NO-GO, Secure Bootstrap BLOCKED' }
+    [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Tur242 tested SHA 16c98e45 Windows/Linux 207 JUnit each (206 PASS, 1 normal Robot SKIP); 160 rights-clean synthetic UDF 43493314805 SUCCESS; native UYAP golden NOT_RUN' }
+    [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Tur242 tested SHA 16c98e45 double-pass SHA same-size in-flight PASS Windows/Linux, fileKey identity PASS Linux / Windows NULL key NOT_VERIFIED; Windows physical GUI Robot PASS, PDF Engine 43493314821 and upstream 43493314826 SUCCESS; Secure Bootstrap 43493315763 SOURCE_GATE BLOCKED, existing-target Windows CAS and license/NOTICE NO-GO' }
     [pscustomobject]@{ Name='Beta kabul / dagitim'; Weight=8; Complete=10; Evidence='Paket CI ici; indirme paketi yayinlanmadi' }
 )
 if ((($milestones | Measure-Object -Property Weight -Sum).Sum) -ne 100) {
