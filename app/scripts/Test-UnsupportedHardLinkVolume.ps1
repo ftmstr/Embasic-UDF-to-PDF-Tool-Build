@@ -33,12 +33,27 @@ try {
     try {
         New-Item -ItemType HardLink -Path $dest -Target $source -ErrorAction Stop | Out-Null
         Write-Host 'HARDLINK_SUPPORTED: Bu dizin unsupported-hardlink fiziksel GUI kabulü için uygun değil.'
-    } catch [System.Management.Automation.RuntimeException] {
-        $refused = $true
-        Write-Host 'HARDLINK_REFUSED: Bu dizin fiziksel GUI ret kabulü için adaydır; uygulama testi henüz yapılmadı.'
-    } catch [System.UnauthorizedAccessException] {
-        $refused = $true
-        Write-Host 'HARDLINK_ACCESS_DENIED: İzin hatası; uygulama hata kabulü henüz yapılmadı.'
+    } catch {
+        # Only the native Windows ERROR_NOT_SUPPORTED (50) is an unsupported-link
+        # candidate. Access denied, invalid paths, policy and other failures must
+        # never be misreported as a filesystem capability finding.
+        $errorRecord = $_
+        $exception = $errorRecord.Exception
+        $unsupported = $false
+        while ($null -ne $exception) {
+            if (($exception.HResult -band 0xFFFF) -eq 50) {
+                $unsupported = $true
+                break
+            }
+            $exception = $exception.InnerException
+        }
+        if ($unsupported) {
+            $refused = $true
+            Write-Host 'HARDLINK_UNSUPPORTED: Windows ERROR_NOT_SUPPORTED (50); fiziksel GUI kabulü henüz yapılmadı.'
+        } else {
+            Write-Warning ('HARDLINK_INDETERMINATE: Hard-link denemesi başarısız; desteklenmiyor sonucu çıkarılamaz. ' + $errorRecord.FullyQualifiedErrorId)
+            throw
+        }
     }
 } finally {
     # Never delete user paths; both names contain a fresh GUID.
