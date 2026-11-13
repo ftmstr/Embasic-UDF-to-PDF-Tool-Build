@@ -429,6 +429,24 @@ public final class PdfExporter {
     static int save(List<UdfReader.DocumentSpec> docs, Path target, boolean overwrite,
                     BeforePublishCheck beforePublish, RenderBoundary boundary,
                     BeforeMoveBoundary beforeMove) throws Exception {
+        return save(docs, target, overwrite, beforePublish, boundary, beforeMove,
+                (staged, destination) -> Files.move(staged, destination,
+                        StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING),
+                Files::createLink);
+    }
+
+    /**
+     * Test-only publication strategies after REAL PDFBox staging/reopen and
+     * mandatory source/target verification. Normal GUI/CLI entrypoints always
+     * use the actual atomic filesystem operations above; no runtime switch,
+     * debugger, network listener or production bypass is exposed.
+     */
+    static int save(List<UdfReader.DocumentSpec> docs, Path target, boolean overwrite,
+                    BeforePublishCheck beforePublish, RenderBoundary boundary,
+                    BeforeMoveBoundary beforeMove,
+                    AtomicPdfReplace atomicReplace, AtomicPdfLink atomicLink) throws Exception {
+        if (atomicReplace == null || atomicLink == null)
+            throw new IllegalArgumentException("PDF güvenli yayın işlemi eksik");
         if (beforePublish == null)
             throw new IllegalArgumentException("PDF son kaynak doğrulaması eksik");
         if (boundary == null)
@@ -483,7 +501,8 @@ public final class PdfExporter {
             // Overwrite consent for a missing target does not authorize
             // replacing a file another process creates after this check.
             // Preserve the no-replace move semantics for that case.
-            publishValidated(staging, abs, overwrite && originalTarget != null);
+            publishValidated(staging, abs, overwrite && originalTarget != null,
+                    atomicReplace, atomicLink);
             return pages;
         } finally {
             Files.deleteIfExists(staging);
