@@ -25,6 +25,28 @@ jobs:
           java-version: "17"
           cache: maven
           cache-dependency-path: app/pom.xml
+      - name: Preflight CI-only physical Robot PowerShell syntax and JDI compiler
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          foreach ($file in @('app/scripts/Assert-PackagedGuiInput.ps1',
+                              'app/scripts/Test-UnsupportedHardLinkVolume.ps1')) {
+            $parseTokens = $null
+            $parseErrors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+                (Resolve-Path -LiteralPath $file).Path,
+                [ref]$parseTokens, [ref]$parseErrors) | Out-Null
+            if (@($parseErrors).Count -ne 0) {
+              throw ('Physical Windows script syntax invalid: ' + $file)
+            }
+          }
+          $testClasses = Join-Path $env:RUNNER_TEMP 'embasic-tur244-jdi-static-classes'
+          New-Item -ItemType Directory -Path $testClasses -Force | Out-Null
+          & javac --add-modules jdk.jdi -d $testClasses app/scripts/PackagedRenderBoundaryController.java
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Physical Windows test-only JDI controller did not compile.'
+          }
+          Write-Host 'TUR244_POWERSHELL_AND_JDI_PREFLIGHT_PASS: parser=VALID controller=COMPILED noRealSource=TRUE'
       - name: Build and test public-only desktop module
         shell: pwsh
         run: |
