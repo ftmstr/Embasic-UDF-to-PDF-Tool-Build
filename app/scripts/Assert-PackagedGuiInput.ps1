@@ -164,8 +164,7 @@ try {
                         }
                     }
                 }
-                Write-Warning ('TEST_ONLY_JDWP_LAUNCH_DIAGNOSTIC exit=' + $process.ExitCode
-                    + ' message=' + $sanitized)
+                Write-Warning ('TEST_ONLY_JDWP_LAUNCH_DIAGNOSTIC exit=' + $process.ExitCode + ' message=' + $sanitized)
             }
             throw 'Packaged EXE exited before GUI acceptance.'
         }
