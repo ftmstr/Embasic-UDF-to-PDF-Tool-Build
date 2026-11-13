@@ -146,11 +146,16 @@ final class FileImportPolicyTest {
 
 
     private static Path createLargeSyntheticUdf(Path folder, String name) throws Exception {
+        return createLargeSyntheticUdf(folder, name, "S");
+    }
+
+    private static Path createLargeSyntheticUdf(Path folder, String name, String fill)
+            throws Exception {
         Path source = folder.resolve(name);
         // No original user data: valid ZIP structure containing only generated
         // text. NO_COMPRESSION ensures multiple 64 KiB reads while hashing.
         String xml = "<template format_id='1.0'><content>"
-                + "S".repeat(300_000)
+                + fill.repeat(300_000)
                 + "</content><elements><paragraph><content startOffset='0' "
                 + "length='300000'/></paragraph></elements></template>";
         try (var zip = new java.util.zip.ZipOutputStream(Files.newOutputStream(source))) {
@@ -209,6 +214,77 @@ final class FileImportPolicyTest {
         assertNotEquals(stable, FileImportPolicy.sourceSha256(source));
         System.out.println("EMBASIC_TUR241_SHA_GROW firstChunk=OBSERVED"
                 + " stream=OPEN overflow=REJECT syntheticOnly=true");
+    }
+
+    @Test void sameSizeSourceRewriteWhileHashStreamOpenIsRejected(@TempDir Path folder)
+            throws Exception {
+        Path source = createLargeSyntheticUdf(folder, "same-sized-source.udf", "S");
+        Path replacement = createLargeSyntheticUdf(folder, "same-sized-replacement.udf", "T");
+        byte[] alternate = Files.readAllBytes(replacement);
+        long originalSize = Files.size(source);
+        assertEquals(originalSize, alternate.length);
+        var original = Files.readAttributes(source,
+                java.nio.file.attribute.BasicFileAttributes.class);
+        String oldSha = FileImportPolicy.sourceSha256(source);
+        int[] firstChunk = {0};
+        IllegalArgumentException rejected = assertThrows(IllegalArgumentException.class,
+                () -> FileImportPolicy.sourceSha256(source, () -> {
+                    firstChunk[0]++;
+                    // The real source stream is OPEN after hashing 64 KiB;
+                    // write a distinct, same-length valid synthetic UDF via
+                    // its existing path, then restore metadata to emulate ABA.
+                    Files.write(source, alternate,
+                            java.nio.file.StandardOpenOption.WRITE,
+                            java.nio.file.StandardOpenOption.TRUNCATE_EXISTING);
+                    Files.setLastModifiedTime(source, original.lastModifiedTime());
+                    var replaced = Files.readAttributes(source,
+                            java.nio.file.attribute.BasicFileAttributes.class);
+                    assertEquals(originalSize, replaced.size());
+                    assertEquals(original.lastModifiedTime(), replaced.lastModifiedTime());
+                    if (original.fileKey() != null && replaced.fileKey() != null)
+                        assertEquals(original.fileKey(), replaced.fileKey(),
+                                "In-place content rewrite must preserve identity");
+                }));
+        assertEquals(1, firstChunk[0]);
+        assertTrue(rejected.getMessage().contains("değiştirildi"),
+                "Equal-size in-place source must not produce a mixed valid hash");
+        assertNotEquals(oldSha, FileImportPolicy.sourceSha256(source));
+        System.out.println("EMBASIC_TUR242_SAME_SIZE_INFLIGHT"
+                + " firstChunk=OBSERVED mtime=RESTORED size=UNCHANGED"
+                + " hybrid=REJECT twoPass=ENFORCED");
+    }
+
+    @Test void sameBytesNewFileIdentityBetweenHashPassesIsRejected(@TempDir Path folder)
+            throws Exception {
+        Path source = createLargeSyntheticUdf(folder, "identity-source.udf");
+        Path newInode = folder.resolve("independent-copy.udf");
+        Files.copy(source, newInode);
+        var original = Files.readAttributes(source,
+                java.nio.file.attribute.BasicFileAttributes.class);
+        assertNotNull(original.fileKey(), "Native Windows/Linux CI must supply file keys");
+        String stableHash = FileImportPolicy.sourceSha256(source);
+        int[] boundaries = {0};
+        IllegalArgumentException rejected = assertThrows(IllegalArgumentException.class,
+                () -> FileImportPolicy.sourceSha256(source, () -> {}, () -> {
+                    boundaries[0]++;
+                    Files.move(source, folder.resolve("retired-identity.udf"));
+                    Files.move(newInode, source);
+                    Files.setLastModifiedTime(source, original.lastModifiedTime());
+                    var after = Files.readAttributes(source,
+                            java.nio.file.attribute.BasicFileAttributes.class);
+                    assertEquals(original.size(), after.size());
+                    assertEquals(original.lastModifiedTime(), after.lastModifiedTime());
+                    assertNotNull(after.fileKey());
+                    assertNotEquals(original.fileKey(), after.fileKey(),
+                            "The test requires a distinct filesystem object");
+                }));
+        assertEquals(1, boundaries[0]);
+        assertTrue(rejected.getMessage().contains("değiştirildi"));
+        assertEquals(stableHash, FileImportPolicy.sourceSha256(source),
+                "Only the file identity changes: bytes must remain equal");
+        System.out.println("EMBASIC_TUR242_FILE_IDENTITY_SWAP"
+                + " passBoundary=OBSERVED sameBytes=TRUE mtime=RESTORED"
+                + " fileKey=CHANGED hash=REJECT");
     }
 
     @Test void existingLimitAndRepeatedBatchAreSafe() {
