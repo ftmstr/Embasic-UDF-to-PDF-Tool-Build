@@ -98,8 +98,7 @@ try {
         # Missing Hyper-V / Storage privileges / VHD support is a capability
         # limitation, never proof that the PDF app accepted a filesystem race.
         if ($provenExfat) { throw }
-        Not-Run ('hosted_vhd_environment_unavailable_stage_' + $stage
-            + '_exception_' + $_.Exception.GetType().Name)
+        Not-Run ('hosted_vhd_environment_unavailable_stage_' + $stage + '_exception_' + $_.Exception.GetType().Name)
         return
     }
     $scratch = Join-Path ([string]$partition.DriveLetter + ':\') 'embasic-tur260-only'
