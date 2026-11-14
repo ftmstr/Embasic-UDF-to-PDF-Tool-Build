@@ -47,11 +47,10 @@ with tempfile.TemporaryDirectory(prefix="embasic-packaged-") as directory:
     if not os.path.samefile(udf, alias):
         raise AssertionError("Hard-link fixture is not the same physical file")
     approved_sha = hashlib.sha256(distinct_output.read_bytes()).digest()
-    rejected = subprocess.run(
-        [str(launcher), "--merge", str(distinct_output), str(udf), str(alias)],
+    # Reject on a NEW target; otherwise non-overwrite policy alone could\n    # produce a false positive without exercising duplicate-file detection.\n    rejected_output = folder / "rejected-result.pdf"\n    rejected = subprocess.run(\n        [str(launcher), "--merge", str(rejected_output), str(udf), str(alias)],
         timeout=120, check=False, capture_output=True)
-    if rejected.returncode == 0:
-        raise AssertionError("Packaged launcher accepted duplicate physical UDF hard link")
+    if rejected.returncode == 0 or rejected_output.exists():
+        raise AssertionError("Packaged launcher accepted or wrote duplicate physical UDF hard link")
     if not distinct_output.is_file() or hashlib.sha256(distinct_output.read_bytes()).digest() != approved_sha:
         raise AssertionError("Rejected hard-link merge changed the approved PDF")
     if list(folder.glob("*.staging*")) or list(folder.glob("*.tmp")):
