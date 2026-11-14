@@ -30,7 +30,8 @@ jobs:
         run: |
           $ErrorActionPreference = "Stop"
           foreach ($file in @('app/scripts/Assert-PackagedGuiInput.ps1',
-                              'app/scripts/Test-UnsupportedHardLinkVolume.ps1')) {
+                              'app/scripts/Test-UnsupportedHardLinkVolume.ps1',
+                              'app/scripts/Run-EphemeralExfatHardlinkAcceptance.ps1')) {
             $parseTokens = $null
             $parseErrors = $null
             [System.Management.Automation.Language.Parser]::ParseFile(
@@ -245,4 +246,17 @@ jobs:
             if (Test-Path -LiteralPath $root) {
               Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction Stop
             }
+          }
+      - name: TUR260 real unsupported-hardlink exFAT VHD physical packaged GUI acceptance (no publication)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          # This step is an optional *physical* filesystem proof. Only a
+          # new isolated GUID-named VHD under RUNNER_TEMP can be formatted.
+          # No existing disk partition, private UDF, production EXE, release,
+          # ZIP or installer is touched. Environment absence means NOT_RUN,
+          # not a fabricated acceptance PASS.
+          & pwsh -NoProfile -File app/scripts/Run-EphemeralExfatHardlinkAcceptance.ps1 -AllowEphemeralDisk
+          if ($LASTEXITCODE -ne 0) {
+            throw "Real unsupported-hardlink exFAT physical GUI acceptance FAILED or unverifiable"
           }
