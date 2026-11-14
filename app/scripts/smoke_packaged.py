@@ -33,7 +33,10 @@ with tempfile.TemporaryDirectory(prefix="embasic-packaged-") as directory:
     # DISTINCT physical UDF files before interpreting the hard-link rejection.
     second = folder / "independent.udf"
     with zipfile.ZipFile(second, "w", zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("content.xml", xml.replace(content, "INDEPENDENT-UDF-SOURCE").encode("utf-8"))
+        second_content = "INDEPENDENT-UDF-SOURCE-CONTROL"
+        second_xml = xml.replace(content, second_content).replace(
+            f'length="{len(content)}"', f'length="{len(second_content)}"')
+        archive.writestr("content.xml", second_xml.encode("utf-8"))
     if os.path.samefile(udf, second):
         raise AssertionError("Distinct-source control unexpectedly aliases the original")
     # The CLI deliberately rejects overwriting an existing PDF. Use a fresh
