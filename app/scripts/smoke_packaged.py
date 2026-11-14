@@ -8,6 +8,14 @@ import tempfile
 from pathlib import Path
 import zipfile
 
+def assert_complete_pdf(path, label):
+    """Reject truncated packaged output, not merely a PDF-looking header."""
+    if not path.is_file():
+        raise AssertionError(f"{label}: PDF missing")
+    data = path.read_bytes()
+    if not data.startswith(b"%PDF-") or b"%%EOF" not in data[-1024:]:
+        raise AssertionError(f"{label}: incomplete PDF header/trailer")
+
 if len(sys.argv) != 2:
     raise SystemExit("Usage: smoke_packaged.py path/to/launcher.exe")
 launcher = Path(sys.argv[1]).resolve()
@@ -27,8 +35,7 @@ with tempfile.TemporaryDirectory(prefix="embasic-packaged-") as directory:
                        timeout=120, check=False, capture_output=True)
     if p.returncode != 0:
         raise RuntimeError(f"Packaged launcher exited with {p.returncode}")
-    if not output.is_file() or output.read_bytes()[:5] != b"%PDF-":
-        raise AssertionError("Packaged launcher failed to produce PDF")
+    assert_complete_pdf(output, "Single-source packaged conversion")
     # Positive control: prove this same packaged launcher can merge two
     # DISTINCT physical UDF files before interpreting the hard-link rejection.
     second = folder / "independent.udf"
@@ -45,8 +52,9 @@ with tempfile.TemporaryDirectory(prefix="embasic-packaged-") as directory:
     distinct = subprocess.run(
         [str(launcher), "--merge", str(distinct_output), str(udf), str(second)],
         timeout=120, check=False, capture_output=True)
-    if distinct.returncode != 0 or not distinct_output.is_file() or distinct_output.read_bytes()[:5] != b"%PDF-":
+    if distinct.returncode != 0:
         raise AssertionError("Packaged launcher failed distinct two-source positive control")
+    assert_complete_pdf(distinct_output, "Distinct two-source packaged merge")
     # Physical Windows filesystem acceptance: two different paths to one NTFS
     # file must fail closed before replacing an already approved PDF.
     alias = folder / "synthetic-hardlink.udf"
