@@ -23,6 +23,14 @@ def assert_complete_pdf(path, label):
     if header != b"%PDF-" or not trailer.rstrip(b" \t\r\n\x0c\x00").endswith(b"%%EOF"):
         raise AssertionError(f"{label}: incomplete PDF header/trailer")
 
+def sha256_file(path):
+    """Hash potentially large packaged outputs without loading them into RAM."""
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.digest()
+
 if len(sys.argv) != 2:
     raise SystemExit("Usage: smoke_packaged.py path/to/launcher.exe")
 launcher = Path(sys.argv[1]).resolve()
@@ -68,9 +76,9 @@ with tempfile.TemporaryDirectory(prefix="embasic-packaged-") as directory:
     os.link(udf, alias)
     if not os.path.samefile(udf, alias):
         raise AssertionError("Hard-link fixture is not the same physical file")
-    approved_sha = hashlib.sha256(distinct_output.read_bytes()).digest()
-    source_sha = hashlib.sha256(udf.read_bytes()).digest()
-    alias_sha = hashlib.sha256(alias.read_bytes()).digest()
+    approved_sha = sha256_file(distinct_output)
+    source_sha = sha256_file(udf)
+    alias_sha = sha256_file(alias)
     # Reject on a NEW target; otherwise non-overwrite policy alone could
     # produce a false positive without exercising duplicate-file detection.
     rejected_output = folder / "rejected-result.pdf"
@@ -79,10 +87,10 @@ with tempfile.TemporaryDirectory(prefix="embasic-packaged-") as directory:
         timeout=120, check=False, capture_output=True)
     if rejected.returncode == 0 or rejected_output.exists():
         raise AssertionError("Packaged launcher accepted or wrote duplicate physical UDF hard link")
-    if (hashlib.sha256(udf.read_bytes()).digest() != source_sha or
-            hashlib.sha256(alias.read_bytes()).digest() != alias_sha):
+    if (sha256_file(udf) != source_sha or
+            sha256_file(alias) != alias_sha):
         raise AssertionError("Rejected hard-link merge modified a source UDF")
-    if not distinct_output.is_file() or hashlib.sha256(distinct_output.read_bytes()).digest() != approved_sha:
+    if not distinct_output.is_file() or sha256_file(distinct_output) != approved_sha:
         raise AssertionError("Rejected hard-link merge changed the approved PDF")
     if list(folder.glob("*.staging*")) or list(folder.glob("*.tmp")):
         raise AssertionError("Rejected hard-link merge left staging files")
