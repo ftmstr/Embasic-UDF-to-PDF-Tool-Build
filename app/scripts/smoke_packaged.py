@@ -20,7 +20,7 @@ def assert_complete_pdf(path, label):
         size = pdf.tell()
         pdf.seek(max(0, size - 4096))
         trailer = pdf.read()
-    if header != b"%PDF-" or not trailer.rstrip(b" \\t\\r\\n\\x0c\\x00").endswith(b"%%EOF"):
+    if header != b"%PDF-" or not trailer.rstrip(b" \t\r\n\x0c\x00").endswith(b"%%EOF"):
         raise AssertionError(f"{label}: incomplete PDF header/trailer")
 
 if len(sys.argv) != 2:
