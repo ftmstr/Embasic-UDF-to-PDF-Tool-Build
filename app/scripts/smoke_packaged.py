@@ -36,10 +36,9 @@ with tempfile.TemporaryDirectory(prefix="embasic-packaged-") as directory:
         archive.writestr("content.xml", xml.replace(content, "INDEPENDENT-UDF-SOURCE").encode("utf-8"))
     if os.path.samefile(udf, second):
         raise AssertionError("Distinct-source control unexpectedly aliases the original")
-    distinct = subprocess.run(
-        [str(launcher), "--merge", str(output), str(udf), str(second)],
+    # The CLI deliberately rejects overwriting an existing PDF. Use a fresh\n    # destination for the positive control, then preserve it for the rejection.\n    distinct_output = folder / "distinct-result.pdf"\n    distinct = subprocess.run(\n        [str(launcher), "--merge", str(distinct_output), str(udf), str(second)],
         timeout=120, check=False, capture_output=True)
-    if distinct.returncode != 0 or not output.is_file() or output.read_bytes()[:5] != b"%PDF-":
+    if distinct.returncode != 0 or not distinct_output.is_file() or distinct_output.read_bytes()[:5] != b"%PDF-":
         raise AssertionError("Packaged launcher failed distinct two-source positive control")
     # Physical Windows filesystem acceptance: two different paths to one NTFS
     # file must fail closed before replacing an already approved PDF.
@@ -47,13 +46,13 @@ with tempfile.TemporaryDirectory(prefix="embasic-packaged-") as directory:
     os.link(udf, alias)
     if not os.path.samefile(udf, alias):
         raise AssertionError("Hard-link fixture is not the same physical file")
-    approved_sha = hashlib.sha256(output.read_bytes()).digest()
+    approved_sha = hashlib.sha256(distinct_output.read_bytes()).digest()
     rejected = subprocess.run(
-        [str(launcher), "--merge", str(output), str(udf), str(alias)],
+        [str(launcher), "--merge", str(distinct_output), str(udf), str(alias)],
         timeout=120, check=False, capture_output=True)
     if rejected.returncode == 0:
         raise AssertionError("Packaged launcher accepted duplicate physical UDF hard link")
-    if not output.is_file() or hashlib.sha256(output.read_bytes()).digest() != approved_sha:
+    if not distinct_output.is_file() or hashlib.sha256(distinct_output.read_bytes()).digest() != approved_sha:
         raise AssertionError("Rejected hard-link merge changed the approved PDF")
     if list(folder.glob("*.staging*")) or list(folder.glob("*.tmp")):
         raise AssertionError("Rejected hard-link merge left staging files")
