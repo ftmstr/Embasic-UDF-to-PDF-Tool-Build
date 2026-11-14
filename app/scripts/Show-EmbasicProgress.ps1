@@ -91,7 +91,7 @@ $report = [pscustomobject]@{
         Status='CI_VERIFIED_LIMITED'
         Mode='Isolated packaged Windows CI; not an external user beta'
         Test='Packaged GUI Robot and test-only JDI render-boundary acceptance (TUR244/TUR245 evidence)'
-        VerifiedPhysicalWindows=true
+        VerifiedPhysicalWindows=$true
     }
     Forecast=[pscustomobject]@{
         BetaEarliest=$forecastBase.AddDays(21).ToString('yyyy-MM-dd')
