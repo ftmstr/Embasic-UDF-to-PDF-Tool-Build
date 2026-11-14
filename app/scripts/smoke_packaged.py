@@ -29,6 +29,18 @@ with tempfile.TemporaryDirectory(prefix="embasic-packaged-") as directory:
         raise RuntimeError(f"Packaged launcher exited with {p.returncode}")
     if not output.is_file() or output.read_bytes()[:5] != b"%PDF-":
         raise AssertionError("Packaged launcher failed to produce PDF")
+    # Positive control: prove this same packaged launcher can merge two
+    # DISTINCT physical UDF files before interpreting the hard-link rejection.
+    second = folder / "independent.udf"
+    with zipfile.ZipFile(second, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("content.xml", xml.replace(content, "INDEPENDENT-SOURCE").encode("utf-8"))
+    if os.path.samefile(udf, second):
+        raise AssertionError("Distinct-source control unexpectedly aliases the original")
+    distinct = subprocess.run(
+        [str(launcher), "--merge", str(output), str(udf), str(second)],
+        timeout=120, check=False, capture_output=True)
+    if distinct.returncode != 0 or not output.is_file() or output.read_bytes()[:5] != b"%PDF-":
+        raise AssertionError("Packaged launcher failed distinct two-source positive control")
     # Physical Windows filesystem acceptance: two different paths to one NTFS
     # file must fail closed before replacing an already approved PDF.
     alias = folder / "synthetic-hardlink.udf"
@@ -46,4 +58,5 @@ with tempfile.TemporaryDirectory(prefix="embasic-packaged-") as directory:
     if list(folder.glob("*.staging*")) or list(folder.glob("*.tmp")):
         raise AssertionError("Rejected hard-link merge left staging files")
     print("PASS Windows jpackage app-image launcher smoke")
+    print("PASS distinct two-source packaged merge positive control")
     print("PASS physical Windows hard-link duplicate rejection and approved PDF SHA preservation")
