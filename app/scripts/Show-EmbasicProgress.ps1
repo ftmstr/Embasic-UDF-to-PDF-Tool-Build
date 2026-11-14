@@ -19,7 +19,7 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $today = [DateTimeOffset]::UtcNow.ToOffset([TimeSpan]::FromHours(3))
-$reviewDate = '2026-11-14'
+$reviewDate = '2026-11-15'
 # Do not drift conditional release dates forward just because an hourly tour ran.
 $forecastBase = [DateTime]::ParseExact('2026-10-31', 'yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture)
 # Weight totals are exactly 100. Completion is engineering judgement, not telemetry.
@@ -101,7 +101,17 @@ $report = [pscustomobject]@{
         Confidence='LOW'
         Assumptions='Daily development, rights-cleared UDF samples, successful Windows UI tests, approved redistribution; any blocker moves the dates'
     }
-    ReleaseGate='BLOCKED: real UDF fidelity, GUI acceptance, third-party license/NOTICE and download authorization outstanding'
+    ReleaseGate='BLOCKED: native UYAP fidelity, independent Public source approval, hostile CAS and external user beta outstanding'
+    ReleaseReadiness=[pscustomobject]@{
+        PublicationAllowed=$false
+        LegacySourceGate='BLOCKED: independent_public_mvp_source_review_required'
+        NativeUyapGolden='NOT_VERIFIED'
+        AllUdfVersions='NOT_VERIFIED'
+        SourceAndNotices='NO_GO'
+        HostileExistingTargetCas='NO_GO'
+        PhysicalUnsupportedHardlinkExfat='NOT_RUN'
+        ExternalUserBeta='NOT_RUN'
+    }
 }
 if ($AsJson) {
     $report | ConvertTo-Json -Depth 8
