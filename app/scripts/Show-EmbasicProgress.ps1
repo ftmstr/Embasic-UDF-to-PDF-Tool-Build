@@ -19,17 +19,17 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $today = [DateTimeOffset]::UtcNow.ToOffset([TimeSpan]::FromHours(3))
-$reviewDate = '2026-11-13'
+$reviewDate = '2026-11-14'
 # Do not drift conditional release dates forward just because an hourly tour ran.
 $forecastBase = [DateTime]::ParseExact('2026-10-31', 'yyyy-MM-dd', [System.Globalization.CultureInfo]::InvariantCulture)
 # Weight totals are exactly 100. Completion is engineering judgement, not telemetry.
 $milestones = @(
     [pscustomobject]@{ Name='Public kod tabani / Maven'; Weight=12; Complete=100; Evidence='Public kaynak + Linux/Windows Maven CI' }
-    [pscustomobject]@{ Name='Windows launcher / smoke'; Weight=12; Complete=100; Evidence='Tur244 tested SHA 58720294 Windows jpackage run 43501024616 SUCCESS: ordinary packaged GUI Robot PASS and separate isolated loopback JDWP physical render-breakpoint race PASS; original PDF SHA/staging preserved; final dashboard SHA CI PENDING' }
+    [pscustomobject]@{ Name='Windows launcher / smoke'; Weight=12; Complete=100; Evidence='TUR260 tested SHA f19e8cfc Windows packaged run 43617222833 SUCCESS: ordinary physical GUI Robot PASS, isolated test-only JDWP render-boundary PASS. Real unsupported-hardlink exFAT VHD physical acceptance NOT_RUN: verified Windows Mount-DiskImage CimException before formatting; TUR259 NTFS hardlink input alias SHA guards PASS; standard EXE has no debugger' }
     [pscustomobject]@{ Name='Masaustu UI / kullanim'; Weight=14; Complete=73; Evidence='Tur216 physical packaged Ctrl+S save, BRAVO-TWO then ALPHA-ONE A4 order, overwrite NO SHA preservation; Tur217 stale source YES error dialog and old PDF preserved; real user beta NOT_RUN' }
     [pscustomobject]@{ Name='UDF turleri ve surumleri'; Weight=26; Complete=12; Evidence='Sentetik ZIP PNG referans, A5/LEGAL; gercek UYAP schema dogrulanmadi' }
-    [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='Tur243 209 JUnit Windows/Linux each 208 PASS 1 normal Robot SKIP, 160 rights-clean UDF profile; Tur244 packaged real render-race source mutation/error modal PASS on tested SHA 58720294; native UYAP golden NOT_RUN' }
-    [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='Tur244 physical packaged test-only JDWP SUSPEND_EVENT_THREAD real PdfExporter.save stack and UDF mutation PASS on tested SHA 58720294, approved PDF SHA unchanged/staging clean; production image unchanged; Tur250 SHA 432c1f0d Windows hosted jpackage run 43568672655 packaged EXE physical NTFS hard-link duplicate REJECTED, approved PDF SHA unchanged, staging clean; existing-target hostile CAS/license/NOTICE/source gate NO-GO' }
+    [pscustomobject]@{ Name='PDF gorsel sadakati'; Weight=18; Complete=15; Evidence='TUR260 test SHA f19e8cfc Windows app-image Maven 209 JUnit 208 PASS 1 normal Robot SKIP; Linux MVP 209/208 PASS 1 normal SKIP; synthetic 160 UDF/PDF probes. Native official UYAP golden PDF fidelity NOT_RUN' }
+    [pscustomobject]@{ Name='Guvenlik / lisans / yayin'; Weight=10; Complete=35; Evidence='TUR260 hosted VHD Mount-DiskImage CimException, PHYSICAL_UNSUPPORTED_HARDLINK_EXE=NOT_RUN without formatting existing disks. TUR259 NTFS hardlink duplicate rejection retains source UDF and approved PDF SHA; TUR244 isolated JDI real render-race PASS only CI. Hostile existing-target CAS, source approval, license/NOTICE release NO-GO' }
     [pscustomobject]@{ Name='Beta kabul / dagitim'; Weight=8; Complete=10; Evidence='Paket CI ici; indirme paketi yayinlanmadi' }
 )
 if ((($milestones | Measure-Object -Property Weight -Sum).Sum) -ne 100) {
