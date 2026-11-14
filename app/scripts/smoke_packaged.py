@@ -45,12 +45,15 @@ with tempfile.TemporaryDirectory(prefix="embasic-packaged-") as directory:
            '</paragraph></elements></template>')
     with zipfile.ZipFile(udf, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("content.xml", xml.encode("utf-8"))
+    original_udf_sha = sha256_file(udf)
     output = folder / "result.pdf"
     p = subprocess.run([str(launcher), "--merge", str(output), str(udf)],
                        timeout=120, check=False, capture_output=True)
     if p.returncode != 0:
         raise RuntimeError(f"Packaged launcher exited with {p.returncode}: stdout={p.stdout[-2048:]!r}; stderr={p.stderr[-2048:]!r}")
     assert_complete_pdf(output, "Single-source packaged conversion")
+    if sha256_file(udf) != original_udf_sha:
+        raise AssertionError("Successful single-source conversion modified input UDF")
     # Positive control: prove this same packaged launcher can merge two
     # DISTINCT physical UDF files before interpreting the hard-link rejection.
     second = folder / "independent.udf"
@@ -59,6 +62,7 @@ with tempfile.TemporaryDirectory(prefix="embasic-packaged-") as directory:
         second_xml = xml.replace(content, second_content).replace(
             f'length="{len(content)}"', f'length="{len(second_content)}"')
         archive.writestr("content.xml", second_xml.encode("utf-8"))
+    independent_udf_sha = sha256_file(second)
     if os.path.samefile(udf, second):
         raise AssertionError("Distinct-source control unexpectedly aliases the original")
     # The CLI deliberately rejects overwriting an existing PDF. Use a fresh
@@ -70,6 +74,8 @@ with tempfile.TemporaryDirectory(prefix="embasic-packaged-") as directory:
     if distinct.returncode != 0:
         raise AssertionError(f"Packaged launcher failed distinct two-source positive control (exit {distinct.returncode}): stdout={distinct.stdout[-2048:]!r}; stderr={distinct.stderr[-2048:]!r}")
     assert_complete_pdf(distinct_output, "Distinct two-source packaged merge")
+    if sha256_file(udf) != original_udf_sha or sha256_file(second) != independent_udf_sha:
+        raise AssertionError("Successful two-source merge modified an input UDF")
     # Physical Windows filesystem acceptance: two different paths to one NTFS
     # file must fail closed before replacing an already approved PDF.
     alias = folder / "synthetic-hardlink.udf"
@@ -94,6 +100,7 @@ with tempfile.TemporaryDirectory(prefix="embasic-packaged-") as directory:
         raise AssertionError("Rejected hard-link merge changed the approved PDF")
     if list(folder.glob("*.staging*")) or list(folder.glob("*.tmp")):
         raise AssertionError("Rejected hard-link merge left staging files")
+    print("PASS successful single/two-source conversions preserve source UDF SHA-256")
     print("PASS Windows jpackage app-image launcher smoke")
     print("PASS distinct two-source packaged merge positive control")
     print("PASS physical Windows hard-link duplicate rejection and approved PDF SHA preservation")
