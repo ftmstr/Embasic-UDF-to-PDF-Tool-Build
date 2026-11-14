@@ -111,3 +111,48 @@ must never be marked PASS.
 The weighted development planning estimate remains **44.3%**,
 not a UYAP compatibility, native visual fidelity or release
 readiness percentage.
+
+## Real Windows host capability outcome — 14 Nov 2026
+
+The initial complete hosted Windows app-image acceptance on source
+commit `d3a30665057d2d67bcf87ff2daea14b9f78bbdea` had a successful
+normal physical GUI and test-only JDI acceptance, but its exFAT
+capability result was **`PHYSICAL_UNSUPPORTED_HARDLINK_EXE=NOT_RUN`**
+due to `CimException` while preparing the disposable VHD.
+It did **not** test a real exFAT save.
+
+A second diagnostic commit
+`98777fce88888e5b5d1f0e2c640a21aad451842a`
+identified the phase without recording runner disk/device identifiers.
+Its first Windows run `43617104968` failed the PowerShell parse
+preflight; **the regression was fixed** with single-line PowerShell
+diagnostics in
+`f19e8cfcc1b5483a8304cf7a4fa0cf707c568831`.
+
+**Verified CI** at `f19e8cfcc1b5483a8304cf7a4fa0cf707c568831`:
+independent packaged Windows workflow `43617222833` SUCCESS;
+ordinary physical GUI PASS; separate **test-only JDI**
+`PACKAGED-JDWP-RENDER-RACE-PASS`; all scripts parse and Maven
+passes. The specifically relevant real log is:
+
+`PHYSICAL_UNSUPPORTED_HARDLINK_EXE=NOT_RUN reason=hosted_vhd_environment_unavailable_stage_mount_disposable_vhd_exception_CimException`
+
+The isolated VHD failed at the **official `Mount-DiskImage` step**
+before the program reached `Get-DiskImage`, partition creation,
+`Format-Volume`, the native hard-link probe or the physical EXE
+save dialog on exFAT. Therefore **no host disk or VHD volume was
+formatted** in this run. The temporary GUID VHDX file was
+handled by the script's `finally` cleanup; disk identity and
+cleanup are not replaced by runner filesystem guesses.
+
+**Decision:** preserve `PHYSICAL_UNSUPPORTED_HARDLINK_EXE=NOT_RUN`.
+Do not treat workflow SUCCESS, normal NTFS hard-link alias rejection,
+synthetic JUnit fault injection or a test-only JDWP render-race
+as evidence for real unsupported-exFAT physical GUI acceptance.
+Do not escalate privileges, format existing disks, or attempt
+unreviewed alternate mounts to bypass the host's Storage error.
+
+The safe runner-only VHD harness remains available for a future
+verified environment that explicitly permits mounting ephemeral disk
+images. All source/license/NOTICE and hostile Win32 CAS publication
+gates remain NO-GO. Do not publish the debug app-image.
