@@ -1,0 +1,1270 @@
+package com.embasic.publicapp;
+
+import java.awt.Color;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.HashMap;
+import java.util.Map;
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.pdmodel.PDPage;
+import org.apache.pdfbox.pdmodel.PDPageContentStream;
+import org.apache.pdfbox.pdmodel.common.PDRectangle;
+import org.apache.pdfbox.pdmodel.font.PDType0Font;
+import org.apache.pdfbox.pdmodel.graphics.image.LosslessFactory;
+import org.apache.pdfbox.pdmodel.graphics.image.PDImageXObject;
+import org.apache.pdfbox.rendering.PDFRenderer;
+
+/** Original, public-only PDFBox text subset renderer. No authentic UYAP layout parity claims. */
+public final class PdfExporter {
+    private static final float LEFT = 48f, RIGHT = PDRectangle.A4.getWidth() - 48f;
+    private static final float TOP = PDRectangle.A4.getHeight() - 48f, BOTTOM = 48f;
+    private PdfExporter() {}
+
+    public static Path systemFont(boolean bold) {
+        String override = System.getProperty(bold ? "embasic.font.bold" : "embasic.font.regular");
+        if (override != null && !override.isBlank()) {
+            Path custom = Path.of(override);
+            if (Files.isRegularFile(custom)) return custom;
+            throw new IllegalArgumentException("Belirtilen font bulunamadı: " + custom);
+        }
+        String[] locations = bold
+            ? new String[]{"C:/Windows/Fonts/arialbd.ttf", "C:/Windows/Fonts/segoeuib.ttf",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"}
+            : new String[]{"C:/Windows/Fonts/arial.ttf", "C:/Windows/Fonts/segoeui.ttf",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"};
+        for (String location : locations) {
+            Path candidate = Path.of(location);
+            if (Files.isRegularFile(candidate)) return candidate;
+        }
+        throw new IllegalStateException("Unicode PDF fontu bulunamadı; Windows Arial/Segoe UI veya DejaVu Sans gerekli");
+    }
+
+    /** Validate original runs before any trailing whitespace is trimmed or skipped. */
+    private static void validateSupportedText(String text) {
+        for (int i = 0; i < text.length();) {
+            int cp = text.codePointAt(i);
+            i += Character.charCount(cp);
+            // Zero-width and bidi format controls have no defined placement in
+            // the synthetic PDF subset. Reject them before font loading rather
+            // than silently dropping, reordering, or hiding visible text.
+            int category = Character.getType(cp);
+            // PDFBox showText() does not perform Arabic/Indic shaping or
+            // bidirectional paragraph layout. Combining marks need tested
+            // mark placement. Reject these before any PDF is staged, rather
+            // than publishing misleading, apparently successful output.
+            int direction=Character.getDirectionality(cp);
+            Character.UnicodeScript script=Character.UnicodeScript.of(cp);
+            if (direction == Character.DIRECTIONALITY_RIGHT_TO_LEFT
+                    || direction == Character.DIRECTIONALITY_RIGHT_TO_LEFT_ARABIC
+                    || category == Character.NON_SPACING_MARK
+                    || category == Character.COMBINING_SPACING_MARK
+                    || category == Character.ENCLOSING_MARK
+                    || requiresComplexShaping(script))
+                throw new IllegalArgumentException("PDF için biçimlendirmesi doğrulanmamış Unicode: U+"
+                        + Integer.toHexString(cp).toUpperCase(Locale.ROOT));
+            // Layout.add() maps Character.isWhitespace to a single ASCII space.
+            // Reject non-ASCII whitespace instead of silently shrinking em/en
+            // and ideographic spaces (including at the end of a document).
+            if (cp != ' ' && cp != '\r' && cp != '\n' && cp != '\t'
+                    && (Character.isISOControl(cp) || Character.isWhitespace(cp)
+                        || cp == 0x2028 || cp == 0x2029
+                        || category == Character.FORMAT || category == Character.SURROGATE))
+                throw new IllegalArgumentException("Desteklenmeyen metin kontrol veya ayırıcı karakteri: U+"
+                        + Integer.toHexString(cp).toUpperCase(Locale.ROOT));
+        }
+    }
+
+    /**
+     * Conservative explicit subset; not a claim that other writing systems
+     * are impossible to render. They need a separately validated shaping
+     * engine before being considered safe for pixel-faithful UDF export.
+     */
+    private static boolean requiresComplexShaping(Character.UnicodeScript script) {
+        return switch (script) {
+            case ARABIC, HEBREW, SYRIAC, THAANA, NKO, MANDAIC,
+                    SAMARITAN, DEVANAGARI, BENGALI, GURMUKHI, GUJARATI,
+                    ORIYA, TAMIL, TELUGU, KANNADA, MALAYALAM, SINHALA,
+                    THAI, LAO, TIBETAN, MYANMAR, KHMER, JAVANESE,
+                    BALINESE -> true;
+            default -> false;
+        };
+    }
+
+    public static PDDocument render(List<UdfReader.DocumentSpec> docs) throws Exception {
+        return renderInternal(docs, false);
+    }
+
+    /**
+     * A thumbnail only needs the first page. Avoid laying out every later page
+     * of a large synthetic document just to render its first-page preview.
+     * The full export path is unchanged and still validates every page.
+     */
+    static PDDocument renderPreview(UdfReader.DocumentSpec doc) throws Exception {
+        return renderInternal(List.of(doc), true);
+    }
+
+    private static final class PreviewPageComplete extends RuntimeException {
+        PreviewPageComplete() { super(null, null, false, false); }
+    }
+
+    /**
+     * Check font-independent geometry before loading system fonts. An invalid
+     * table or oversized image must fail immediately instead of waiting for
+     * PDFBox's potentially expensive first-use font discovery on Windows.
+     * The actual renderer retains its layout checks as a second safeguard.
+     */
+    private static boolean supportedPageSize(float width, float height) {
+        // The synthetic XML reader only admits A4, A5, Letter and Legal,
+        // in portrait or landscape. Direct PageSpec records must not invent
+        // unverified page sizes that the parser itself would reject.
+        float[][] sizes = {{595.28f, 841.89f}, {419.53f, 595.28f},
+                {612f, 792f}, {612f, 1008f}};
+        for (float[] size : sizes)
+            if ((Math.abs(width - size[0]) < 0.01f && Math.abs(height - size[1]) < 0.01f)
+                    || (Math.abs(width - size[1]) < 0.01f && Math.abs(height - size[0]) < 0.01f))
+                return true;
+        return false;
+    }
+
+    private static void preflightPageGeometry(UdfReader.DocumentSpec document) {
+        DocumentElements.PageSpec page = document.page();
+        // Public DocumentSpec/PageSpec constructors bypass XML's positive,
+        // finite geometry checks. Never publish a PDF with negative margins,
+        // NaN coordinates or infinite page dimensions.
+        if (!Float.isFinite(page.width()) || !Float.isFinite(page.height())
+                || !Float.isFinite(page.margin()) || page.width() <= 0
+                || page.height() <= 0 || page.margin() <= 0
+                || page.margin() > 100f || !supportedPageSize(page.width(), page.height()))
+            throw new IllegalArgumentException("Geçersiz sayfa geometrisi");
+        float usableWidth = page.width() - 2 * page.margin();
+        float usableHeight = page.height() - 2 * page.margin();
+        if (!Float.isFinite(usableWidth) || !Float.isFinite(usableHeight)
+                || usableWidth <= 0 || usableHeight <= 0)
+            throw new IllegalArgumentException("Geçersiz sayfa geometrisi");
+        for (DocumentElements.Block block : document.blocks()) {
+            if (block instanceof DocumentElements.TableBlock table) {
+                TableLayout.Geometry geometry = TableLayout.calculate(table);
+                float width = 0f;
+                for (float column : geometry.widths()) width += column;
+                if (width > usableWidth)
+                    throw new IllegalArgumentException("Tablo sayfa genişliğini aşıyor");
+                for (TableLayout.CellPosition cell : geometry.cells())
+                    if (cell.height() < 18)
+                        throw new IllegalArgumentException("Tablo hücresi taşıyor: " + cell.text());
+                for (int[] group : TableLayout.pageGroups(geometry)) {
+                    double height = 0;
+                    for (int row = group[0]; row < group[1]; row++)
+                        height += geometry.rowHeights().get(row);
+                    if (height > usableHeight)
+                        throw new IllegalArgumentException("Rowspan grubu tek sayfaya sığmıyor");
+                }
+            } else if (block instanceof DocumentElements.ImageBlock image) {
+                // Direct ImageBlock records also bypass XML's positive/finite
+                // image dimensions. Reject before PNG decoding or PDF staging.
+                if (!Float.isFinite(image.width()) || !Float.isFinite(image.height())
+                        || image.width() <= 0 || image.height() <= 0)
+                    throw new IllegalArgumentException("Geçersiz PNG yerleşim geometrisi");
+                if (image.width() > usableWidth || image.height() > usableHeight)
+                    throw new IllegalArgumentException("PNG sayfaya sığmıyor");
+                // Direct API callers bypass the XML PNG byte budget. Reject
+                // obviously invalid payloads before Windows font discovery;
+                // the bounded PNG decoder still validates format and pixels.
+                byte[] png = image.png();
+                if (png.length < 24 || png.length > 1_048_576
+                        || (png[0] & 0xff) != 0x89 || png[1] != 'P'
+                        || png[2] != 'N' || png[3] != 'G'
+                        || (png[4] & 0xff) != 0x0d || (png[5] & 0xff) != 0x0a
+                        || (png[6] & 0xff) != 0x1a || (png[7] & 0xff) != 0x0a)
+                    throw new IllegalArgumentException("PNG biçimi veya boyutu geçersiz");
+            } else if (block instanceof DocumentElements.ParagraphBlock) {
+                // Paragraph geometry is handled by Layout; this is a supported
+                // block type and must not be rejected by the early preflight.
+            } else {
+                // Reject null or unknown direct API blocks before expensive font discovery.
+                // Never attempt to render a partially supported synthetic document.
+                throw new IllegalArgumentException("Desteklenmeyen belge bloğu");
+            }
+        }
+    }
+
+    private static void validateRunStyle(UdfReader.Style style) {
+        if (style == null || !Float.isFinite(style.size())
+                || style.size() < 6f || style.size() > 48f || style.color() == null
+                // Synthetic XML accepts opaque #RRGGBB only. Direct Style
+                // constructors could supply alpha, which PDFBox's RGB color
+                // setter does not preserve. Never silently alter opacity.
+                || style.color().getAlpha() != 255)
+            throw new IllegalArgumentException("Geçersiz sentetik metin stili");
+    }
+
+    private static PDDocument renderInternal(List<UdfReader.DocumentSpec> docs,
+                                             boolean previewOnly) throws Exception {
+        return renderInternal(docs, previewOnly, completed -> {});
+    }
+
+    /**
+     * Bounded regression seam: runs after an entire document is laid out but
+     * before the next document is rendered. The ordinary UI/CLI passes a no-op.
+     * It is deliberately package-private and must never bypass the mandatory
+     * source validation immediately before publishing the staged PDF.
+     */
+    @FunctionalInterface
+    interface RenderBoundary {
+        void afterDocument(int completedDocuments) throws Exception;
+    }
+
+    private static PDDocument renderInternal(List<UdfReader.DocumentSpec> docs,
+                                             boolean previewOnly,
+                                             RenderBoundary boundary) throws Exception {
+        if (boundary == null) throw new IllegalArgumentException("PDF render sınır kontrolü eksik");
+        if (docs == null || docs.isEmpty()) throw new IllegalArgumentException("PDF için en az bir UDF gerekli");
+        // Match the 160-card desktop limit for direct API/CLI merges as well.
+        // Reject before PDF allocation, font discovery, or output staging.
+        if (docs.size() > FileImportPolicy.MAX_CARDS)
+            throw new IllegalArgumentException("En fazla " + FileImportPolicy.MAX_CARDS
+                    + " UDF dosyası birleştirilebilir");
+        // A final run or paragraph may be omitted during layout to avoid blank
+        // pages. Validate the ORIGINAL text first: unsupported separators must
+        // never disappear through stripTrailing(), isBlank(), or run skipping.
+        for (UdfReader.DocumentSpec document : docs) {
+            // Direct DocumentSpec instances bypass the XML reader's schema gate.
+            // Never interpret an unknown format as the documented synthetic 1.0 subset.
+            if (document == null || !"1.0".equals(document.formatId()))
+                throw new IllegalArgumentException("Desteklenmeyen sentetik UDF format_id");
+            boolean hasVisibleContent = false;
+            for (DocumentElements.Block block : document.blocks()) {
+                if (block instanceof DocumentElements.ParagraphBlock paragraph) {
+                    for (UdfReader.Run run : paragraph.paragraph().runs()) {
+                        // Direct Run/Style records bypass XML's 6..48 pt bounds.
+                        // Invalid sizes can corrupt PDF geometry or trigger late font errors.
+                        if (run == null || run.text() == null)
+                            throw new IllegalArgumentException("Geçersiz sentetik metin stili");
+                        // A preview must not inspect the style of a glyph that
+                        // belongs exclusively to page two (lazy-font contract).
+                        if (!previewOnly) validateRunStyle(run.style());
+                        validateSupportedText(run.text());
+                        if (!run.text().isBlank()) hasVisibleContent = true;
+                    }
+                } else if (block instanceof DocumentElements.TableBlock table) {
+                    // Even a table with empty cells draws a visible grid.
+                    hasVisibleContent = true;
+                    // Table cells are rendered as a single PDF text line. A tab,
+                    // newline, or unsupported separator must not be emitted as
+                    // an invisible glyph or silently alter the cell geometry.
+                    // Validate before font loading and before any PDF is written.
+                    for (DocumentElements.Row row : table.rows())
+                        for (DocumentElements.Cell cell : row.cells()) {
+                            validateSupportedText(cell.text());
+                            if (cell.text().indexOf('\t') >= 0
+                                    || cell.text().indexOf('\r') >= 0
+                                    || cell.text().indexOf('\n') >= 0)
+                                throw new IllegalArgumentException(
+                                        "Desteklenmeyen tablo hücresi satır sonu veya sekme karakteri");
+                        }
+                } else if (block instanceof DocumentElements.ImageBlock) {
+                    hasVisibleContent = true;
+                }
+            }
+            // A whitespace-only synthetic UDF otherwise saves as a successful
+            // but visually empty PDF after trailing editor runs are trimmed.
+            // Reject the entire merge rather than silently including blank files.
+            if (!hasVisibleContent)
+                throw new IllegalArgumentException(
+                        "PDF'ye aktarılacak görünür UDF içeriği bulunamadı: " + document.fileName());
+            preflightPageGeometry(document);
+        }
+        PDDocument pdf = new PDDocument();
+        try {
+            // Load each style only on first actual use, sharing embedded fonts
+            // across all pages/documents. A first-page thumbnail must not wait
+            // for a bold font used exclusively on a later page.
+            FontSet fonts = new FontSet(pdf);
+            try {
+                int completedDocuments = 0;
+                for (UdfReader.DocumentSpec document : docs) {
+                try (Layout layout = new Layout(pdf, fonts, document.page(), previewOnly)) {
+                    layout.newPage();
+                    List<DocumentElements.Block> blocks = document.blocks();
+                    // Trailing empty editor paragraphs must not allocate an otherwise blank page.
+                    // Preserve interior empty paragraphs and at least one block for an empty document.
+                    int lastBlock = blocks.size() - 1;
+                    while (lastBlock > 0 && blocks.get(lastBlock) instanceof DocumentElements.ParagraphBlock p
+                            && p.paragraph().runs().stream().allMatch(run -> run.text().isBlank()))
+                        lastBlock--;
+                    for (int index = 0; index <= lastBlock; index++) {
+                        DocumentElements.Block block = blocks.get(index);
+                        if (block instanceof DocumentElements.ParagraphBlock p) {
+                            List<UdfReader.Run> runs = p.paragraph().runs();
+                            int lastRun = runs.size() - 1;
+                            if (index == lastBlock) {
+                                // Trailing whitespace has no visible glyphs. In particular,
+                                // terminal newlines must not allocate blank PDF pages.
+                                // Preserve whitespace between runs and before later blocks.
+                                while (lastRun >= 0 && runs.get(lastRun).text().isBlank()) lastRun--;
+                            }
+                            for (int runIndex = 0; runIndex <= lastRun; runIndex++) {
+                                UdfReader.Run run = runs.get(runIndex);
+                                if (index == lastBlock && runIndex == lastRun) {
+                                    String trimmed = run.text().stripTrailing();
+                                    if (!trimmed.equals(run.text()))
+                                        run = new UdfReader.Run(trimmed, run.style());
+                                }
+                                layout.add(run);
+                            }
+                            // Only add paragraph spacing when another block follows.
+                            // A trailing gap at the bottom must not emit an empty PDF page.
+                            if (index < lastBlock) layout.endParagraph();
+                        } else if (block instanceof DocumentElements.TableBlock table) {
+                            layout.table(table);
+                        } else if (block instanceof DocumentElements.ImageBlock image) {
+                            layout.image(image);
+                        } else throw new IllegalArgumentException("Desteklenmeyen belge bloğu");
+                    }
+                }
+                if (!previewOnly) boundary.afterDocument(++completedDocuments);
+                }
+            } catch (PreviewPageComplete complete) {
+                if (!previewOnly) throw complete;
+                // The first page content stream was closed by Layout.close().
+            }
+            if (pdf.getNumberOfPages() == 0) throw new IllegalStateException("PDF sayfası oluşturulamadı");
+            return pdf;
+        } catch (Exception e) {
+            pdf.close();
+            throw e;
+        }
+    }
+
+    public static BufferedImage firstPage(UdfReader.DocumentSpec doc) throws Exception {
+        // Opt-in, privacy-safe timing distinguishes PDF layout (including first
+        // font lookup/embed) from rasterization. No paths, text or image bytes.
+        // A slow first thumbnail cannot be attributed to rasterization alone.
+        long layoutStarted = System.nanoTime();
+        try (PDDocument pdf = renderPreview(doc)) {
+            long rasterStarted = System.nanoTime();
+            if (Boolean.getBoolean("embasic.diagnostics.fontTiming"))
+                System.err.println("EMBASIC_TIMING preview_layout_ms="
+                        + java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
+                                rasterStarted - layoutStarted));
+            try {
+                return new PDFRenderer(pdf).renderImageWithDPI(0, 40);
+            } finally {
+                if (Boolean.getBoolean("embasic.diagnostics.fontTiming")) {
+                    long finished = System.nanoTime();
+                    System.err.println("EMBASIC_TIMING preview_raster_ms="
+                            + java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
+                                    finished - rasterStarted));
+                    System.err.println("EMBASIC_TIMING preview_total_ms="
+                            + java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
+                                    finished - layoutStarted));
+                }
+            }
+        }
+    }
+
+    /**
+     * Reject unusable output paths before a CLI merge parses up to 160 UDFs.
+     * This is advisory only: save() repeats the check and publishValidated()
+     * still enforces no-replace semantics against concurrent file creation.
+     */
+    static Path preflightTarget(Path target, boolean overwrite) {
+        if (target == null || target.getFileName() == null
+                || !target.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".pdf"))
+            throw new IllegalArgumentException("Çıktı dosyası .pdf uzantılı olmalıdır");
+        Path abs = target.toAbsolutePath().normalize();
+        // Never follow an output-file symlink: replacing it would update the
+        // link itself, not necessarily the PDF the user inspected/approved.
+        if (Files.isSymbolicLink(abs))
+            throw new IllegalArgumentException("PDF hedefi sembolik bağlantı olamaz; gerçek dosyayı seçin");
+        Path folder = abs.getParent();
+        if (!Files.isDirectory(folder)) throw new IllegalArgumentException("Çıktı klasörü bulunamadı");
+        // A directory named *.pdf is not an overwriteable PDF. Reject it before
+        // staging or reading a large batch, instead of failing after rendering.
+        if (Files.exists(abs) && !Files.isRegularFile(abs))
+            throw new IllegalArgumentException("Çıktı yolu normal bir PDF dosyası olmalıdır");
+        if (Files.exists(abs) && !overwrite)
+            throw new IllegalArgumentException("PDF zaten var, üzerine yazma onayı gerekli");
+        return abs;
+    }
+
+    public static int save(List<UdfReader.DocumentSpec> docs, Path target, boolean overwrite) throws Exception {
+        return save(docs, target, overwrite, () -> {});
+    }
+
+    /** Validate mutable GUI sources after PDF staging but before publishing any output. */
+    @FunctionalInterface
+    interface BeforePublishCheck {
+        void verify() throws Exception;
+    }
+
+    static int save(List<UdfReader.DocumentSpec> docs, Path target, boolean overwrite,
+                    BeforePublishCheck beforePublish) throws Exception {
+        return save(docs, target, overwrite, beforePublish, completed -> {});
+    }
+
+    /** Regression-only injection seam. UI and CLI retain mandatory pre/post SHA gates. */
+    static int save(List<UdfReader.DocumentSpec> docs, Path target, boolean overwrite,
+                    BeforePublishCheck beforePublish, RenderBoundary boundary) throws Exception {
+        return save(docs, target, overwrite, beforePublish, boundary, () -> {});
+    }
+
+    /**
+     * Regression-only barrier after the final optimistic target check. It
+     * exposes the check-to-move window without sleeps or shipped debug hooks.
+     */
+    @FunctionalInterface
+    interface BeforeMoveBoundary {
+        void beforeMove() throws Exception;
+    }
+
+    static int save(List<UdfReader.DocumentSpec> docs, Path target, boolean overwrite,
+                    BeforePublishCheck beforePublish, RenderBoundary boundary,
+                    BeforeMoveBoundary beforeMove) throws Exception {
+        return save(docs, target, overwrite, beforePublish, boundary, beforeMove,
+                (staged, destination) -> Files.move(staged, destination,
+                        StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING),
+                Files::createLink);
+    }
+
+    /**
+     * Test-only publication strategies after REAL PDFBox staging/reopen and
+     * mandatory source/target verification. Normal GUI/CLI entrypoints always
+     * use the actual atomic filesystem operations above; no runtime switch,
+     * debugger, network listener or production bypass is exposed.
+     */
+    static int save(List<UdfReader.DocumentSpec> docs, Path target, boolean overwrite,
+                    BeforePublishCheck beforePublish, RenderBoundary boundary,
+                    BeforeMoveBoundary beforeMove,
+                    AtomicPdfReplace atomicReplace, AtomicPdfLink atomicLink) throws Exception {
+        if (atomicReplace == null || atomicLink == null)
+            throw new IllegalArgumentException("PDF güvenli yayın işlemi eksik");
+        if (beforePublish == null)
+            throw new IllegalArgumentException("PDF son kaynak doğrulaması eksik");
+        if (boundary == null)
+            throw new IllegalArgumentException("PDF render sınır kontrolü eksik");
+        if (beforeMove == null)
+            throw new IllegalArgumentException("PDF son yayın sınır kontrolü eksik");
+        Path abs = preflightTarget(target, overwrite);
+        // Overwrite consent applies to the PDF the user actually inspected.
+        // Do not silently replace a newer file written by another application
+        // while a large UDF merge is rendering.
+        TargetSnapshot originalTarget = overwrite ? TargetSnapshot.capture(abs) : null;
+        Path folder = abs.getParent();
+        Path staging = Files.createTempFile(folder, ".embasic-pending-", ".pdf");
+        try {
+            int pages;
+            List<float[]> expectedGeometry;
+            List<String> expectedPageContents;
+            List<List<String>> expectedImageResources;
+            List<List<String>> expectedFontResources;
+            try (PDDocument pdf = renderInternal(docs, false, boundary)) {
+                pages = pdf.getNumberOfPages();
+                // Record every page's original media/crop boxes and rotation
+                // before serialization. A successful reopen and matching page
+                // count alone cannot detect silently changed page geometry.
+                expectedGeometry = snapshotPageGeometry(pdf);
+                // Distinct pages can have identical boxes and rotation. Keep a
+                // decoded content-stream fingerprint per page as an additional
+                // ordering/integrity guard before PDFBox serialization.
+                expectedPageContents = snapshotPageContentHashes(pdf);
+                // Content commands reference image resources by name. Hash the
+                // decoded XObject streams too: a swapped same-size image can
+                // otherwise pass the page-content SHA guard unchanged.
+                expectedImageResources = snapshotPageImageResources(pdf);
+                pdf.save(staging.toFile());
+                // PDFBox finalizes Type0 subsets during save(). Snapshot only
+                // after serialization so the embedded font bytes and ToUnicode
+                // CMaps are compared against their finalized in-memory values.
+                expectedFontResources = snapshotPageFontResources(pdf);
+            }
+            try (PDDocument reloaded = Loader.loadPDF(staging.toFile())) {
+                verifyStagedPageGeometry(expectedGeometry, reloaded);
+                verifyStagedPageContentHashes(expectedPageContents, reloaded);
+                verifyStagedPageImageResources(expectedImageResources, reloaded);
+                verifyStagedPageFontResources(expectedFontResources, reloaded);
+            }
+            // A source may change during a long 160-document render. Keep the
+            // validated PDF private until the caller confirms the same bytes
+            // still back its parsed documents; finally always cleans staging.
+            beforePublish.verify();
+            if (overwrite) TargetSnapshot.verifyUnchanged(abs, originalTarget);
+            beforeMove.beforeMove();
+            // Overwrite consent for a missing target does not authorize
+            // replacing a file another process creates after this check.
+            // Preserve the no-replace move semantics for that case.
+            publishValidated(staging, abs, overwrite && originalTarget != null,
+                    atomicReplace, atomicLink);
+            return pages;
+        } finally {
+            Files.deleteIfExists(staging);
+        }
+    }
+
+    /** Exact ordered geometry captured before PDFBox serializes the staged PDF. */
+    static List<float[]> snapshotPageGeometry(PDDocument pdf) {
+        List<float[]> result = new ArrayList<>(pdf.getNumberOfPages());
+        for (PDPage page : pdf.getPages()) {
+            PDRectangle media = page.getMediaBox();
+            PDRectangle crop = page.getCropBox();
+            result.add(new float[]{
+                    media.getLowerLeftX(), media.getLowerLeftY(),
+                    media.getUpperRightX(), media.getUpperRightY(),
+                    crop.getLowerLeftX(), crop.getLowerLeftY(),
+                    crop.getUpperRightX(), crop.getUpperRightY(),
+                    page.getRotation()});
+        }
+        return result;
+    }
+
+    /**
+     * Fail closed before publication if serialization changed a page's size,
+     * crop, origin, orientation, order, or count. This is a structural guard,
+     * not proof of native UYAP visual equivalence.
+     */
+    static void verifyStagedPageGeometry(List<float[]> expected, PDDocument reloaded)
+            throws IOException {
+        if (expected == null || expected.isEmpty()
+                || reloaded.getNumberOfPages() != expected.size())
+            throw new IOException("PDF sayfa sayısı/geometrisi doğrulaması başarısız");
+        List<float[]> actual = snapshotPageGeometry(reloaded);
+        for (int page = 0; page < expected.size(); page++) {
+            float[] before = expected.get(page), after = actual.get(page);
+            if (before.length != after.length)
+                throw new IOException("PDF sayfa geometrisi doğrulaması başarısız: " + (page + 1));
+            for (int coordinate = 0; coordinate < before.length; coordinate++)
+                if (!Float.isFinite(before[coordinate])
+                        || !Float.isFinite(after[coordinate])
+                        || Math.abs(before[coordinate] - after[coordinate]) > 0.01f)
+                    throw new IOException("PDF sayfa geometrisi doğrulaması başarısız: "
+                            + (page + 1));
+        }
+    }
+
+    /**
+     * Hash decoded page drawing commands, not compressed PDF bytes: PDFBox may
+     * legitimately change stream compression when saving. The ordered hashes
+     * detect loss, mutation or reordering of distinct same-size page content.
+     * This does not prove font-resource or raster/real-UYAP equivalence.
+     */
+    static List<String> snapshotPageContentHashes(PDDocument pdf) throws IOException {
+        List<String> hashes = new ArrayList<>(pdf.getNumberOfPages());
+        for (PDPage page : pdf.getPages()) {
+            java.security.MessageDigest digest;
+            try {
+                digest = java.security.MessageDigest.getInstance("SHA-256");
+            } catch (java.security.NoSuchAlgorithmException e) {
+                throw new IllegalStateException("SHA-256 kullanılamıyor", e);
+            }
+            try (java.io.InputStream content = page.getContents()) {
+                if (content != null) {
+                    byte[] buffer = new byte[8192];
+                    int count;
+                    while ((count = content.read(buffer)) != -1)
+                        digest.update(buffer, 0, count);
+                }
+            }
+            hashes.add(java.util.HexFormat.of().formatHex(digest.digest()));
+        }
+        return hashes;
+    }
+
+    static void verifyStagedPageContentHashes(List<String> expected, PDDocument reloaded)
+            throws IOException {
+        if (expected == null || expected.isEmpty()
+                || expected.size() != reloaded.getNumberOfPages())
+            throw new IOException("PDF sayfa içerik bütünlüğü doğrulaması başarısız");
+        List<String> actual = snapshotPageContentHashes(reloaded);
+        for (int page = 0; page < expected.size(); page++)
+            if (!java.util.Objects.equals(expected.get(page), actual.get(page)))
+                throw new IOException("PDF sayfa içerik/sıra doğrulaması başarısız: "
+                        + (page + 1));
+    }
+
+    /**
+     * Snapshot each page's image XObjects independently of drawing commands.
+     * PDF content streams contain only names such as /Im1 Do; a resource
+     * dictionary can redirect that name to a different image without changing
+     * any page content bytes. Compare decoded streams (not Flate container
+     * bytes) because PDFBox may re-encode streams during serialization.
+     *
+     * Only the synthetic renderer's image XObjects are supported. An unknown
+     * resource type fails closed; this is not font-program or UYAP parity.
+     */
+    static List<List<String>> snapshotPageImageResources(PDDocument pdf) throws IOException {
+        List<List<String>> pages = new ArrayList<>(pdf.getNumberOfPages());
+        for (PDPage page : pdf.getPages()) {
+            var resources = page.getResources();
+            List<org.apache.pdfbox.cos.COSName> names = new ArrayList<>();
+            if (resources != null)
+                for (var name : resources.getXObjectNames()) names.add(name);
+            names.sort(java.util.Comparator.comparing(org.apache.pdfbox.cos.COSName::getName));
+            List<String> images = new ArrayList<>(names.size());
+            for (var name : names) {
+                var xobject = resources.getXObject(name);
+                if (!(xobject instanceof PDImageXObject image))
+                    throw new IOException("PDF desteklenmeyen XObject kaynağı");
+                var imageStream = image.getCOSObject();
+                var mask = imageStream.getDictionaryObject(org.apache.pdfbox.cos.COSName.SMASK);
+                if (mask != null && !(mask instanceof org.apache.pdfbox.cos.COSStream))
+                    throw new IOException("PDF desteklenmeyen görüntü maskesi");
+                // An explicit /Mask or alternate image mask is outside the
+                // verified synthetic PNG subset; never silently ignore it.
+                if (imageStream.getDictionaryObject(org.apache.pdfbox.cos.COSName.MASK) != null)
+                    throw new IOException("PDF desteklenmeyen görüntü maskesi");
+                // Alpha can change even when the decoded SMask bytes do not:
+                // its geometry, bit depth, grayscale space, Decode or Matte
+                // entries can be redirected independently of the /Im Do command.
+                String maskDigest = mask == null ? "-" :
+                        softMaskFingerprint((org.apache.pdfbox.cos.COSStream) mask);
+                images.add(name.getName() + "|" + image.getWidth() + "x" + image.getHeight()
+                        + "|" + image.getBitsPerComponent() + "|"
+                        + image.getColorSpace().getName() + "|"
+                        + decodedStreamSha256(imageStream) + "|" + maskDigest);
+            }
+            pages.add(List.copyOf(images));
+        }
+        return List.copyOf(pages);
+    }
+
+    /** Capture soft-mask interpretation as well as its decoded alpha samples. */
+    private static String softMaskFingerprint(org.apache.pdfbox.cos.COSStream mask)
+            throws IOException {
+        var width = mask.getDictionaryObject(org.apache.pdfbox.cos.COSName.WIDTH);
+        var height = mask.getDictionaryObject(org.apache.pdfbox.cos.COSName.HEIGHT);
+        var bits = mask.getDictionaryObject(org.apache.pdfbox.cos.COSName.BITS_PER_COMPONENT);
+        var color = mask.getDictionaryObject(org.apache.pdfbox.cos.COSName.COLORSPACE);
+        if (!(width instanceof org.apache.pdfbox.cos.COSNumber w)
+                || !(height instanceof org.apache.pdfbox.cos.COSNumber h)
+                || !(bits instanceof org.apache.pdfbox.cos.COSNumber b)
+                || !(color instanceof org.apache.pdfbox.cos.COSName colorName)
+                || w.intValue() <= 0 || h.intValue() <= 0
+                || b.intValue() <= 0 || !Float.isFinite(w.floatValue())
+                || !Float.isFinite(h.floatValue()) || !Float.isFinite(b.floatValue())
+                || !"DeviceGray".equals(colorName.getName()))
+            throw new IOException("PDF alfa maskesi geometrisi desteklenmiyor");
+        return w.floatValue() + "x" + h.floatValue() + "|"
+                + b.floatValue() + "|" + colorName.getName() + "|"
+                + fontWidthsFingerprint(mask.getDictionaryObject(
+                        org.apache.pdfbox.cos.COSName.getPDFName("Decode"))) + "|"
+                + fontWidthsFingerprint(mask.getDictionaryObject(
+                        org.apache.pdfbox.cos.COSName.getPDFName("Matte"))) + "|"
+                + decodedStreamSha256(mask);
+    }
+
+    private static String decodedStreamSha256(org.apache.pdfbox.cos.COSStream stream)
+            throws IOException {
+        java.security.MessageDigest digest;
+        try {
+            digest = java.security.MessageDigest.getInstance("SHA-256");
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 kullanılamıyor", e);
+        }
+        try (java.io.InputStream input = stream.createInputStream()) {
+            byte[] buffer = new byte[8192];
+            int count;
+            while ((count = input.read(buffer)) != -1)
+                digest.update(buffer, 0, count);
+        }
+        return java.util.HexFormat.of().formatHex(digest.digest());
+    }
+
+    static void verifyStagedPageImageResources(List<List<String>> expected,
+                                               PDDocument reloaded) throws IOException {
+        if (expected == null || expected.isEmpty()
+                || expected.size() != reloaded.getNumberOfPages())
+            throw new IOException("PDF görüntü kaynak bütünlüğü doğrulaması başarısız");
+        List<List<String>> actual = snapshotPageImageResources(reloaded);
+        for (int page = 0; page < expected.size(); page++)
+            if (!expected.get(page).equals(actual.get(page)))
+                throw new IOException("PDF görüntü kaynağı doğrulaması başarısız: "
+                        + (page + 1));
+    }
+
+    /**
+     * The content stream records only /F1 Tf; swapping /F1's embedded font
+     * program or ToUnicode CMap can silently alter visible text or extraction
+     * without changing any page-content hash. Only the renderer's embedded
+     * Type0 TrueType subset is admitted. PDFBox writes its font subsets during
+     * save(), so call this on the saved in-memory document and on the reloaded
+     * staged file, never on an unfinalized font.
+     *
+     * This is a resource integrity check, not a guarantee of native UYAP
+     * typography or glyph positioning.
+     */
+    static List<List<String>> snapshotPageFontResources(PDDocument pdf) throws IOException {
+        List<List<String>> pages = new ArrayList<>(pdf.getNumberOfPages());
+        Map<org.apache.pdfbox.cos.COSStream, String> digests =
+                new java.util.IdentityHashMap<>();
+        for (PDPage page : pdf.getPages()) {
+            var resources = page.getResources();
+            List<org.apache.pdfbox.cos.COSName> names = new ArrayList<>();
+            if (resources != null)
+                for (var name : resources.getFontNames()) names.add(name);
+            names.sort(java.util.Comparator.comparing(org.apache.pdfbox.cos.COSName::getName));
+            List<String> fonts = new ArrayList<>(names.size());
+            for (var name : names) {
+                var font = resources.getFont(name);
+                if (!(font instanceof PDType0Font type0) || !type0.isEmbedded())
+                    throw new IOException("PDF desteklenmeyen veya gömülmemiş font kaynağı");
+                var dictionary = type0.getCOSObject();
+                var unicode = dictionary.getDictionaryObject(
+                        org.apache.pdfbox.cos.COSName.TO_UNICODE);
+                var descendants = dictionary.getDictionaryObject(
+                        org.apache.pdfbox.cos.COSName.DESCENDANT_FONTS);
+                if (!(unicode instanceof org.apache.pdfbox.cos.COSStream unicodeStream)
+                        || !(descendants instanceof org.apache.pdfbox.cos.COSArray array)
+                        || array.size() != 1
+                        || !(array.getObject(0) instanceof org.apache.pdfbox.cos.COSDictionary descendant)
+                        || !(descendant.getDictionaryObject(
+                                org.apache.pdfbox.cos.COSName.FONT_DESC)
+                                instanceof org.apache.pdfbox.cos.COSDictionary descriptor)
+                        || !(descriptor.getDictionaryObject(
+                                org.apache.pdfbox.cos.COSName.FONT_FILE2)
+                                instanceof org.apache.pdfbox.cos.COSStream fontStream))
+                    throw new IOException("PDF gömülü font/ToUnicode kaynağı eksik");
+                String fontHash = cachedDecodedStreamSha256(fontStream, digests);
+                String unicodeHash = cachedDecodedStreamSha256(unicodeStream, digests);
+                // Font bytes and ToUnicode alone do not define displayed glyphs:
+                // /CIDToGIDMap redirects character IDs to glyph IDs, while /W
+                // and /DW control advance widths. The page's /F1 Tf command
+                // can remain byte-identical when any of these resources change.
+                var encoding = dictionary.getDictionaryObject(
+                        org.apache.pdfbox.cos.COSName.ENCODING);
+                if (!(encoding instanceof org.apache.pdfbox.cos.COSName encodingName))
+                    throw new IOException("PDF Type0 font kodlaması desteklenmiyor");
+                var cidMap = descendant.getDictionaryObject(
+                        org.apache.pdfbox.cos.COSName.getPDFName("CIDToGIDMap"));
+                String mapping;
+                if (cidMap == null || cidMap instanceof org.apache.pdfbox.cos.COSName
+                        && "Identity".equals(((org.apache.pdfbox.cos.COSName) cidMap).getName())) {
+                    mapping = "Identity";
+                } else if (cidMap instanceof org.apache.pdfbox.cos.COSStream stream) {
+                    mapping = "stream:" + cachedDecodedStreamSha256(stream, digests);
+                } else {
+                    throw new IOException("PDF CIDToGIDMap kaynağı desteklenmiyor");
+                }
+                var defaultWidth = descendant.getDictionaryObject(
+                        org.apache.pdfbox.cos.COSName.getPDFName("DW"));
+                if (defaultWidth != null
+                        && !(defaultWidth instanceof org.apache.pdfbox.cos.COSNumber))
+                    throw new IOException("PDF varsayılan font genişliği geçersiz");
+                String dw = defaultWidth == null ? "1000" :
+                        Float.toString(((org.apache.pdfbox.cos.COSNumber) defaultWidth).floatValue());
+                String widths = fontWidthsFingerprint(descendant.getDictionaryObject(
+                        org.apache.pdfbox.cos.COSName.getPDFName("W")));
+                fonts.add(name.getName() + "|" + dictionary.getNameAsString(
+                        org.apache.pdfbox.cos.COSName.BASE_FONT) + "|"
+                        + fontHash + "|" + unicodeHash + "|"
+                        + encodingName.getName() + "|" + mapping + "|" + dw + "|" + widths
+                        + "|" + fontDescriptorGeometryFingerprint(descriptor));
+            }
+            pages.add(List.copyOf(fonts));
+        }
+        return List.copyOf(pages);
+    }
+
+    /**
+     * FontDescriptor geometry can change glyph placement or clipping without
+     * changing embedded TrueType bytes, ToUnicode, /W or page drawing commands.
+     * Snapshot synthetic Type0 descriptor geometry independently of object IDs.
+     */
+    private static String fontDescriptorGeometryFingerprint(
+            org.apache.pdfbox.cos.COSDictionary descriptor) throws IOException {
+        StringBuilder result = new StringBuilder();
+        for (String key : new String[]{"Flags", "FontBBox", "Ascent", "Descent",
+                "CapHeight", "ItalicAngle", "StemV", "MissingWidth"}) {
+            result.append(key).append('=');
+            var value = descriptor.getDictionaryObject(
+                    org.apache.pdfbox.cos.COSName.getPDFName(key));
+            if (value == null) {
+                result.append('-');
+            } else if ("FontBBox".equals(key)) {
+                if (!(value instanceof org.apache.pdfbox.cos.COSArray bbox)
+                        || bbox.size() != 4)
+                    throw new IOException("PDF FontBBox geometrisi desteklenmiyor");
+                appendFontWidthValue(result, bbox, 0);
+            } else if (value instanceof org.apache.pdfbox.cos.COSNumber number) {
+                float numeric = number.floatValue();
+                if (!Double.isFinite(numeric))
+                    throw new IOException("PDF font tanımlayıcı geometrisi sonlu değil");
+                result.append(Double.toString(numeric));
+            } else {
+                throw new IOException("PDF font tanımlayıcı geometrisi desteklenmiyor");
+            }
+            result.append(';');
+        }
+        return result.toString();
+    }
+
+    /** Canonical numeric /W array representation, independent of PDF object IDs. */
+    private static String fontWidthsFingerprint(org.apache.pdfbox.cos.COSBase widths)
+            throws IOException {
+        if (widths == null) return "-";
+        StringBuilder result = new StringBuilder();
+        appendFontWidthValue(result, widths, 0);
+        return result.toString();
+    }
+
+    private static void appendFontWidthValue(StringBuilder result,
+                                             org.apache.pdfbox.cos.COSBase value,
+                                             int depth) throws IOException {
+        if (depth > 6) throw new IOException("PDF font genişlik dizisi çok derin");
+        if (value instanceof org.apache.pdfbox.cos.COSArray array) {
+            result.append('[');
+            for (int i = 0; i < array.size(); i++) {
+                if (i > 0) result.append(',');
+                appendFontWidthValue(result, array.getObject(i), depth + 1);
+            }
+            result.append(']');
+        } else if (value instanceof org.apache.pdfbox.cos.COSNumber number) {
+            float width = number.floatValue();
+            if (!Float.isFinite(width))
+                throw new IOException("PDF font genişliği sonlu değil");
+            result.append(width);
+        } else {
+            throw new IOException("PDF font genişlik öğesi desteklenmiyor");
+        }
+    }
+
+    private static String cachedDecodedStreamSha256(
+            org.apache.pdfbox.cos.COSStream stream,
+            Map<org.apache.pdfbox.cos.COSStream, String> digests) throws IOException {
+        String existing = digests.get(stream);
+        if (existing != null) return existing;
+        String hash = decodedStreamSha256(stream);
+        digests.put(stream, hash);
+        return hash;
+    }
+
+    static void verifyStagedPageFontResources(List<List<String>> expected,
+                                               PDDocument reloaded) throws IOException {
+        if (expected == null || expected.isEmpty()
+                || expected.size() != reloaded.getNumberOfPages())
+            throw new IOException("PDF font kaynak bütünlüğü doğrulaması başarısız");
+        List<List<String>> actual = snapshotPageFontResources(reloaded);
+        for (int page = 0; page < expected.size(); page++)
+            if (!expected.get(page).equals(actual.get(page)))
+                throw new IOException("PDF font/ToUnicode kaynağı doğrulaması başarısız: "
+                        + (page + 1));
+    }
+
+    /**
+     * Advisory optimistic-concurrency guard for approved PDF overwrites.
+     * SHA-256 catches edits that preserve size/timestamps; fileKey also catches
+     * same-byte atomic replacement when the provider exposes an identity.
+     * This does not make the final check-and-move atomic against hostile races.
+     */
+    private record TargetSnapshot(Object fileKey, String sha256) {
+        static TargetSnapshot capture(Path target) throws IOException {
+            if (Files.isSymbolicLink(target))
+                throw new IllegalArgumentException("PDF hedefi sembolik bağlantı olamaz; gerçek dosyayı seçin");
+            if (!Files.exists(target)) return null;
+            if (!Files.isRegularFile(target))
+                throw new IllegalArgumentException("Çıktı yolu normal bir PDF dosyası olmalıdır");
+            Object key = Files.readAttributes(target,
+                    java.nio.file.attribute.BasicFileAttributes.class).fileKey();
+            return new TargetSnapshot(key, fingerprint(target));
+        }
+
+        static void verifyUnchanged(Path target, TargetSnapshot original) throws IOException {
+            // A target switched to a symlink during rendering must never be
+            // treated as the originally approved regular output file.
+            if (Files.isSymbolicLink(target))
+                throw new IllegalArgumentException("PDF hedefi işlem sırasında bağlantıya dönüştü; yeniden onaylayın");
+            if (original == null) {
+                if (Files.exists(target))
+                    throw new IllegalArgumentException(
+                            "PDF hedefi işlem sırasında oluşturuldu; yeniden onaylayın");
+                return;
+            }
+            if (!Files.isRegularFile(target))
+                throw new IllegalArgumentException(
+                        "Mevcut PDF işlem sırasında kaldırıldı veya değiştirildi; yeniden onaylayın");
+            Object currentKey = Files.readAttributes(target,
+                    java.nio.file.attribute.BasicFileAttributes.class).fileKey();
+            if ((original.fileKey != null && currentKey != null
+                    && !original.fileKey.equals(currentKey))
+                    || !original.sha256.equals(fingerprint(target)))
+                throw new IllegalArgumentException(
+                        "Mevcut PDF işlem sırasında değiştirildi; yeniden onaylayın");
+        }
+
+        private static String fingerprint(Path target) throws IOException {
+            try {
+                java.security.MessageDigest digest =
+                        java.security.MessageDigest.getInstance("SHA-256");
+                try (java.security.DigestInputStream stream =
+                             new java.security.DigestInputStream(Files.newInputStream(target), digest)) {
+                    stream.transferTo(java.io.OutputStream.nullOutputStream());
+                }
+                return java.util.HexFormat.of().formatHex(digest.digest());
+            } catch (java.security.NoSuchAlgorithmException ex) {
+                throw new IllegalStateException("SHA-256 kullanılamıyor", ex);
+            }
+        }
+    }
+
+    /**
+     * Publish only a fully validated PDF. An existing approved target is never
+     * moved aside for a non-atomic replacement: that fallback created a window
+     * where another process could write a new PDF and a backup restoration
+     * could then overwrite the newer file without consent.
+     *
+     * An unsupported atomic replace now fails closed. The caller's finally
+     * block removes staging; the approved target remains untouched. This is
+     * not a compare-and-swap guarantee against an adversary changing the
+     * target between the final fingerprint check and a supported atomic move.
+     */
+    @FunctionalInterface
+    interface AtomicPdfReplace {
+        void replace(Path staged, Path destination) throws IOException;
+    }
+
+    static void publishValidated(Path staging, Path target, boolean overwrite) throws IOException {
+        publishValidated(staging, target, overwrite,
+                (staged, destination) -> Files.move(staged, destination,
+                        StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING));
+    }
+
+    /** Package-private seam for a deterministic unsupported-atomic-move regression. */
+    @FunctionalInterface
+    interface AtomicPdfLink {
+        void link(Path destination, Path staged) throws IOException;
+    }
+
+    static void publishValidated(Path staging, Path target, boolean overwrite,
+                                 AtomicPdfReplace atomicReplace) throws IOException {
+        publishValidated(staging, target, overwrite, atomicReplace, Files::createLink);
+    }
+
+    /** Test-only seam: simulate unsupported hard links without changing production policy. */
+    static void publishValidated(Path staging, Path target, boolean overwrite,
+                                 AtomicPdfReplace atomicReplace, AtomicPdfLink atomicLink) throws IOException {
+        if (atomicLink == null)
+            throw new IllegalArgumentException("PDF güvenli oluşturma işlemi eksik");
+        if (atomicReplace == null)
+            throw new IllegalArgumentException("PDF atomik yayın işlemi eksik");
+        // Advisory only; the filesystem operation must still enforce the
+        // no-replace contract against a target appearing after this check.
+        if (Files.isSymbolicLink(target))
+            throw new IllegalArgumentException("PDF hedefi sembolik bağlantı olamaz; gerçek dosyayı seçin");
+        if (!overwrite) {
+            // Files.move without ATOMIC_MOVE has no portable atomic no-clobber
+            // contract against a competing creator. Both paths are siblings:
+            // publishing a hard link creates the destination name atomically
+            // without ever replacing an existing PDF. Unsupported filesystems
+            // fail closed; never fall back to a racy move or partial copy.
+            try {
+                atomicLink.link(target, staging);
+            } catch (java.nio.file.FileAlreadyExistsException e) {
+                throw new IllegalArgumentException("PDF zaten var, üzerine yazma onayı gerekli", e);
+            } catch (UnsupportedOperationException e) {
+                throw new IOException("Dosya sistemi güvenli PDF oluşturmayı desteklemiyor; hedef korunuyor", e);
+            } catch (IOException e) {
+                // Windows and network filesystem providers commonly report
+                // unsupported hard links as FileSystemException/AccessDeniedException,
+                // not UnsupportedOperationException. Never attempt a racy copy.
+                throw new IOException("Güvenli PDF oluşturulamadı; hedef korunuyor (dosya sistemi veya erişim izni)", e);
+            }
+            // The target now names the fully staged bytes. Removing only the
+            // temporary name cannot alter the published PDF's content.
+            Files.delete(staging);
+            return;
+        }
+        try {
+            atomicReplace.replace(staging, target);
+        } catch (AtomicMoveNotSupportedException e) {
+            // Never move the approved PDF to a backup or restore it with
+            // REPLACE_EXISTING: a concurrent writer could lose its new PDF.
+            throw new IOException("Atomik PDF üzerine yazma desteklenmiyor; mevcut PDF korundu", e);
+        }
+    }
+
+    /** One font pair per PDF, resolved lazily at the first measured or drawn glyph. */
+    private static final class FontSet {
+        private final PDDocument pdf;
+        private PDType0Font regular, bold;
+        FontSet(PDDocument pdf) { this.pdf = pdf; }
+        PDType0Font get(boolean useBold) throws IOException {
+            PDType0Font cached = useBold ? bold : regular;
+            if (cached != null) return cached;
+            long started = System.nanoTime();
+            Path selected = systemFont(useBold);
+            long resolved = System.nanoTime();
+            try {
+                PDType0Font loaded = PDType0Font.load(pdf, selected.toFile());
+                if (useBold) bold = loaded; else regular = loaded;
+                return loaded;
+            } finally {
+                // Opt-in only: no font paths, document contents or personal data in logs.
+                // Measure discovery separately from embedding to diagnose slow Windows starts.
+                if (Boolean.getBoolean("embasic.diagnostics.fontTiming")) {
+                    long finished = System.nanoTime();
+                    System.err.println("EMBASIC_TIMING font=" + (useBold ? "bold" : "regular")
+                            + " lookup_ms=" + java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
+                                    resolved - started)
+                            + " load_ms=" + java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(
+                                    finished - resolved));
+                }
+            }
+        }
+    }
+
+    private static final class Layout implements AutoCloseable {
+        private final PDDocument pdf;
+        private final FontSet fonts;
+        private final boolean previewOnly;
+        private final DocumentElements.PageSpec page;
+        private final float left, right, top, bottom;
+        private PDPageContentStream stream;
+        // ASCII-space glyph metrics are constant for each font/style. Repeated
+        // indentation must not ask PDFBox to measure the same glyph per space.
+        private final Map<UdfReader.Style, Float> spaceWidths = new HashMap<>();
+        private float x, y, lineHeight = 17f;
+        // A CRLF pair can be split across differently styled text runs.
+        private boolean previousWasCR;
+        // A UDF style/run boundary is not a legal line-break opportunity
+        // inside one uninterrupted word. Track the previous run's last codepoint.
+        private boolean previousRunEndsInWord;
+        private Layout(PDDocument pdf, FontSet fonts,
+                       DocumentElements.PageSpec page, boolean previewOnly) {
+            this.pdf = pdf; this.fonts = fonts; this.page = page;
+            this.previewOnly = previewOnly;
+            left = page.margin(); right = page.width() - page.margin();
+            top = page.height() - page.margin(); bottom = page.margin();
+        }
+        void newPage() throws IOException {
+            // Stop before allocating page two. The try-with-resources caller
+            // closes the first page stream even when this short-circuit fires.
+            if (previewOnly && stream != null) throw new PreviewPageComplete();
+            if (stream != null) stream.close();
+            PDPage newPage = new PDPage(new PDRectangle(page.width(), page.height()));
+            pdf.addPage(newPage);
+            stream = new PDPageContentStream(pdf, newPage);
+            x = left; y = top; lineHeight = 17f;
+        }
+        void newLine() throws IOException {
+            x = left;
+            y -= lineHeight;
+            lineHeight = 17f;
+            if (y < bottom) newPage();
+        }
+        void endParagraph() throws IOException {
+            previousWasCR = false;
+            previousRunEndsInWord = false;
+            newLine();
+            y -= 5f;
+            if (y < bottom) newPage();
+        }
+        private float width(String word, PDType0Font font, float size) throws IOException {
+            try { return font.getStringWidth(word) * size / 1000f; }
+            catch (IllegalArgumentException ex) {
+                throw new IOException("PDF fontunda bulunmayan Unicode karakteri: " + word, ex);
+            }
+        }
+        private void word(String text, UdfReader.Style style, boolean continuesPriorRun)
+                throws IOException {
+            if (text.isEmpty()) return;
+            float size = style.size();
+            // An earlier, already painted glyph on this line cannot be moved
+            // back when a later, larger styled word no longer fits vertically.
+            // Moving only the suffix to page two silently changes its baseline
+            // and paragraph geometry. Fail closed in complete export; a
+            // first-page thumbnail may still stop before the next page.
+            if (!previewOnly && x > left && y - size < bottom)
+                throw new IllegalArgumentException(
+                        "Satır içi yazı boyutu sayfa sonunda bölünemez");
+            // PDFBox only sees each styled UDF run separately. Wrapping a
+            // fragment at this boundary would silently split a single word.
+            // Without a validated cross-style word layout, fail closed.
+            if (continuesPriorRun && y - size < bottom)
+                throw new IllegalArgumentException(
+                        "Biçimlendirilmiş kelime sayfa sonunda bölünemez");
+            // A glyph that cannot fit vertically on this page belongs to the
+            // next page. In a first-page preview, stop before resolving a font
+            // used only by that later page (potentially expensive on Windows).
+            if (y - size < bottom) newPage();
+            // For previews validate only the glyphs actually placed on page one.
+            validateRunStyle(style);
+            PDType0Font font = fonts.get(style.bold());
+            float length = width(text, font, size);
+            if (continuesPriorRun && x + length > right)
+                throw new IllegalArgumentException(
+                        "Biçimlendirilmiş kelime satır sonunda bölünemez");
+            if (length > right - left)
+                throw new IllegalArgumentException("Sayfaya sığmayan kelime: " + text.substring(0, Math.min(30, text.length())));
+            // Recompute the *new* line's height after wrapping; otherwise a
+            // large-font run can overlap the following text after newLine() resets it.
+            if (x + length > right) newLine();
+            lineHeight = Math.max(lineHeight, size * 1.4f);
+            if (y - size < bottom) {
+                newPage();
+                // newPage() resets lineHeight to the default. A large run that
+                // starts on the next page still needs its own line advance;
+                // otherwise the following paragraph can overlap its glyphs.
+                lineHeight = Math.max(lineHeight, size * 1.4f);
+            }
+            stream.beginText();
+            stream.setFont(font, size);
+            Color color = style.color();
+            stream.setNonStrokingColor(color);
+            stream.newLineAtOffset(x, y);
+            stream.showText(text);
+            stream.endText();
+            x += length;
+        }
+        private void spaces(int count, UdfReader.Style style) throws IOException {
+            validateRunStyle(style);
+            Float spaceWidth = spaceWidths.get(style);
+            if (spaceWidth == null) {
+                // Still fail closed if the requested font is unavailable: a
+                // measured interior space cannot silently use another style.
+                spaceWidth = width(" ", fonts.get(style.bold()), style.size());
+                spaceWidths.put(style, spaceWidth);
+            }
+            float length = spaceWidth * count;
+            // Preserve explicit leading spaces (including paragraph indentation).
+            // Only discard a separator when it itself causes a soft line wrap;
+            // otherwise the next word would silently lose its left offset.
+            if (x + length > right) {
+                newLine();
+                return;
+            }
+            x += length;
+        }
+        void add(UdfReader.Run run) throws IOException {
+            UdfReader.Style style = run.style();
+            String text = run.text();
+            StringBuilder token = new StringBuilder();
+            boolean continuation = previousRunEndsInWord;
+            for (int i = 0; i < text.length();) {
+                int cp = text.codePointAt(i);
+                i += Character.charCount(cp);
+                // These controls and Unicode separators have no defined layout
+                // semantics in the public synthetic subset. Treating them as
+                // ordinary spaces would silently change the PDF text geometry.
+                if (cp != '\r' && cp != '\n' && cp != '\t'
+                        && (Character.isISOControl(cp) || cp == 0x2028 || cp == 0x2029))
+                    throw new IllegalArgumentException("Desteklenmeyen metin kontrol veya ayırıcı karakteri: U+"
+                            + Integer.toHexString(cp).toUpperCase(Locale.ROOT));
+                if (cp == '\r') {
+                    // A lone CR is a real line break, not a character to drop.
+                    // Remember it so a following LF (even in another run) does
+                    // not advance the cursor a second time.
+                    word(token.toString(), style, continuation);
+                    continuation = false;
+                    token.setLength(0);
+                    newLine();
+                    previousWasCR = true;
+                    continue;
+                }
+                if (cp == '\n' && previousWasCR) {
+                    previousWasCR = false;
+                    continue;
+                }
+                previousWasCR = false;
+                if (cp == '\n' || cp == '\t' || Character.isWhitespace(cp)) {
+                    word(token.toString(), style, continuation);
+                    continuation = false;
+                    token.setLength(0);
+                    if (cp == '\n') newLine();
+                    else if (cp == '\t') {
+                        float stop = left + ((float) Math.floor((x - left) / 36f) + 1) * 36f;
+                        if (stop > right) newLine(); else x = stop;
+                    } else spaces(1, style);
+                } else {
+                    if (Character.isISOControl(cp))
+                        throw new IllegalArgumentException("Desteklenmeyen metin kontrol karakteri");
+                    token.appendCodePoint(cp);
+                }
+            }
+            word(token.toString(), style, continuation);
+            if (!text.isEmpty()) {
+                int last = text.codePointBefore(text.length());
+                previousRunEndsInWord = last != '\r' && last != '\n'
+                        && last != '\t' && !Character.isWhitespace(last);
+            }
+        }
+        void table(DocumentElements.TableBlock table) throws IOException {
+            TableLayout.Geometry geometry=TableLayout.calculate(table);
+            float totalWidth=0;
+            for(float width:geometry.widths())totalWidth+=width;
+            if(totalWidth>right-left)throw new IllegalArgumentException("Tablo sayfa genişliğini aşıyor");
+            // Font-independent cell height checks remain eager. Text widths
+            // are checked only when their page group is actually rendered:
+            // a first-page thumbnail must not load fonts for later table pages.
+            for(TableLayout.CellPosition cell:geometry.cells())
+                if(cell.height()<18)
+                    throw new IllegalArgumentException("Tablo hücresi taşıyor: "+cell.text());
+            List<int[]> groups=TableLayout.pageGroups(geometry);
+            // Cells are in row order. A row-height prefix and forward-only cell
+            // cursor avoid rescanning the entire table for every page group.
+            double[] rowTop=new double[geometry.rowHeights().size()+1];
+            for(int i=0;i<geometry.rowHeights().size();i++)
+                rowTop[i+1]=rowTop[i]+geometry.rowHeights().get(i);
+            List<TableLayout.CellPosition> cells=geometry.cells();
+            int cellCursor=0;
+            if(x>left) newLine();
+            for(int[] group:groups) {
+                float height=(float)(rowTop[group[1]]-rowTop[group[0]]);
+                if(height>top-bottom)throw new IllegalArgumentException("Rowspan grubu tek sayfaya sığmıyor");
+                if(y-height<bottom)newPage();
+                while(cellCursor<cells.size() && cells.get(cellCursor).row()<group[1]) {
+                    TableLayout.CellPosition cell=cells.get(cellCursor++);
+                    // The full export still rejects overflow and missing glyphs.
+                    // Preview does not probe fonts belonging only to later pages.
+                    if(!cell.text().isBlank()
+                            && fonts.get(false).getStringWidth(cell.text())*10/1000f>cell.width()-8)
+                        throw new IllegalArgumentException("Tablo hücresi taşıyor: "+cell.text());
+                    float rowOffset=(float)(rowTop[cell.row()]-rowTop[group[0]]);
+                    float cellTop=y-rowOffset;
+                    stream.setStrokingColor(Color.BLACK);
+                    stream.setLineWidth(.7f);
+                    stream.addRect(left+cell.x(),cellTop-cell.height(),cell.width(),cell.height());
+                    stream.stroke();
+                    if(!cell.text().isBlank()) {
+                        stream.beginText();
+                        stream.setNonStrokingColor(Color.BLACK);
+                        stream.setFont(fonts.get(false),10);
+                        stream.newLineAtOffset(left+cell.x()+4,cellTop-14);
+                        stream.showText(cell.text());
+                        stream.endText();
+                    }
+                }
+                y-=height;
+            }
+            x=left;
+            y-=8;
+            lineHeight=17;
+        }
+        void image(DocumentElements.ImageBlock block) throws Exception {
+            if(block.width()>right-left || block.height()>top-bottom)
+                throw new IllegalArgumentException("PNG sayfaya sığmıyor");
+            // Position the image before decoding its pixels. A first-page
+            // thumbnail stops at the page break, so images that occur only on
+            // later pages must not be decoded or embedded during preview.
+            if(x>left)newLine();
+            if(y-block.height()<bottom)newPage();
+            // Directly constructed ImageBlocks bypass the XML reader. Apply
+            // the same bounded PNG decode before allocating a PDF image.
+            var image=DocumentElements.decodeBoundedPng(block.png());
+            PDImageXObject xobject=LosslessFactory.createFromImage(pdf,image);
+            stream.drawImage(xobject,left,y-block.height(),block.width(),block.height());
+            y-=block.height()+8;
+            x=left;
+            lineHeight=17;
+        }
+        @Override public void close() throws IOException {
+            if (stream != null) { stream.close(); stream = null; }
+        }
+    }
+}

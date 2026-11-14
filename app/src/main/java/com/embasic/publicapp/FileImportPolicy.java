@@ -1,0 +1,254 @@
+package com.embasic.publicapp;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.nio.file.Files;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+
+/** Bounded selection planning without disk IO; avoids duplicate cards and huge UI import bursts. */
+public final class FileImportPolicy {
+    public static final int MAX_CARDS = 160;
+    // The documented synthetic ZIP subset permits at most 32 MiB of decoded
+    // entries. Bound compressed archives too, before hashing or opening ZIPs.
+    public static final long MAX_ARCHIVE_BYTES = 64L * 1024 * 1024;
+    private FileImportPolicy() {}
+    public record Selection(List<Path> accepted, boolean limitReached,
+                            int unsupportedCount, int duplicateCount) {
+        public Selection { accepted = List.copyOf(accepted); }
+    }
+    /**
+     * CLI merges must never silently repeat a file or omit an unsupported
+     * argument. Validate the entire batch before reading any archive.
+     * Unlike the interactive grid, command-line use cannot display skipped
+     * cards or ask the user to correct an incomplete selection.
+     */
+    public static List<Path> requireCompleteMerge(List<Path> candidates) {
+        if (candidates == null || candidates.isEmpty())
+            throw new IllegalArgumentException("PDF için en az bir UDF gerekli");
+        if (candidates.size() > MAX_CARDS)
+            throw new IllegalArgumentException("En fazla " + MAX_CARDS + " UDF dosyası birleştirilebilir");
+        Selection plan = plan(List.of(), candidates);
+        if (plan.unsupportedCount() > 0)
+            throw new IllegalArgumentException("Birleştirme yalnızca .udf dosyalarını kabul eder");
+        if (plan.duplicateCount() > 0)
+            throw new IllegalArgumentException("Birleştirme yinelenen UDF dosyası içeriyor");
+        if (plan.limitReached())
+            throw new IllegalArgumentException("En fazla " + MAX_CARDS + " UDF dosyası birleştirilebilir");
+        return plan.accepted();
+    }
+
+    /**
+     * Validate the entire CLI merge set before opening the first ZIP. A missing
+     * or unreadable last file must not waste parsing 159 earlier documents.
+     * The interactive grid retains its existing per-card error handling.
+     */
+    static void preflightReadableMergeFiles(List<Path> validated) {
+        // A second spelling of the same file (symbolic link or hard link)
+        // must not silently duplicate its pages in the output PDF. File keys
+        // avoid quadratic filesystem probes for ordinary 160-file batches.
+        Map<Object, List<Path>> identities = new HashMap<>();
+        List<Path> checked = new ArrayList<>();
+        List<Path> withoutIdentity = new ArrayList<>();
+        for (Path path : validated) {
+            if (!Files.isRegularFile(path) || !Files.isReadable(path))
+                throw new IllegalArgumentException("Geçerli, okunabilir bir .udf dosyası seçin: "
+                        + path.getFileName());
+            requireBoundedArchive(path);
+            try {
+                Object identity = Files.readAttributes(path, BasicFileAttributes.class).fileKey();
+                if (identity != null) {
+                    // File keys can collide across independent filesystem providers.
+                    // Confirm physical identity rather than rejecting solely on
+                    // an opaque provider-specific key.
+                    for (Path previous : identities.getOrDefault(identity, List.of()))
+                        if (Files.isSameFile(path, previous))
+                            throw new IllegalArgumentException("Birleştirme aynı UDF dosyasına ait yinelenen bağlantı içeriyor");
+                    identities.computeIfAbsent(identity, ignored -> new ArrayList<>()).add(path);
+                    // Some providers cannot supply file keys; compare those
+                    // earlier paths with isSameFile instead of trusting names.
+                    for (Path previous : withoutIdentity)
+                        if (Files.isSameFile(path, previous))
+                            throw new IllegalArgumentException("Birleştirme aynı UDF dosyasına ait yinelenen bağlantı içeriyor");
+                } else {
+                    for (Path previous : checked)
+                        if (Files.isSameFile(path, previous))
+                            throw new IllegalArgumentException("Birleştirme aynı UDF dosyasına ait yinelenen bağlantı içeriyor");
+                    withoutIdentity.add(path);
+                }
+                checked.add(path);
+            } catch (IOException ex) {
+                throw new IllegalArgumentException("UDF dosyası doğrulanamadı: " + path.getFileName(), ex);
+            }
+        }
+    }
+
+    /**
+     * Reject a physical alias before parsing a newly imported GUI card. This
+     * filesystem work runs on the parser worker, never the Swing EDT. Earlier
+     * cards may have been removed while the worker was queued; missing paths
+     * are ignored here, while the export preflight still validates every
+     * remaining source.
+     */
+    static void preflightDistinctImport(Path candidate, List<Path> earlier) {
+        if (candidate == null || earlier == null)
+            throw new IllegalArgumentException("UDF kaynak listesi eksik");
+        if (!Files.isRegularFile(candidate) || !Files.isReadable(candidate))
+            throw new IllegalArgumentException("Geçerli, okunabilir bir .udf dosyası seçin: "
+                    + candidate.getFileName());
+        requireBoundedArchive(candidate);
+        for (Path previous : earlier) {
+            if (previous == null || !Files.exists(previous)) continue;
+            try {
+                if (Files.isSameFile(candidate, previous))
+                    throw new IllegalArgumentException(
+                            "Bu UDF dosyası zaten çalışma alanında (fiziksel yinelenen bağlantı): "
+                                    + candidate.getFileName());
+            } catch (IOException ex) {
+                throw new IllegalArgumentException(
+                        "UDF bağlantısı doğrulanamadı: " + candidate.getFileName(), ex);
+            }
+        }
+    }
+
+    /**
+     * Stream a SHA-256 fingerprint without retaining the archive in memory.
+     * The GUI compares this at import and before export so a changed source
+     * cannot silently produce a PDF from an obsolete parsed preview.
+     */
+    static void requireBoundedArchive(Path source) {
+        try {
+            long size = Files.size(source);
+            if (size == 0)
+                throw new IllegalArgumentException("Boş UDF arşivi kabul edilmez: "
+                        + source.getFileName());
+            if (size > MAX_ARCHIVE_BYTES)
+                throw new IllegalArgumentException("UDF sıkıştırılmış dosya boyutu sınırı aşıldı: "
+                        + source.getFileName());
+        } catch (IOException ex) {
+            throw new IllegalArgumentException("UDF dosya boyutu okunamadı: "
+                    + source.getFileName(), ex);
+        }
+    }
+
+    static String sourceSha256(Path source) {
+        return sourceSha256(source, () -> {}, () -> {});
+    }
+
+    /** Test-only bounded hook after a real positive read on the first pass. */
+    @FunctionalInterface
+    interface FirstHashChunkBoundary {
+        void afterFirstChunk() throws IOException;
+    }
+
+    /** Test-only barrier between two independent filesystem read passes. */
+    @FunctionalInterface
+    interface BetweenHashPassBoundary {
+        void betweenPasses() throws IOException;
+    }
+
+    static String sourceSha256(Path source, FirstHashChunkBoundary firstChunk) {
+        return sourceSha256(source, firstChunk, () -> {});
+    }
+
+    static String sourceSha256(Path source, FirstHashChunkBoundary firstChunk,
+                               BetweenHashPassBoundary betweenPasses) {
+        if (firstChunk == null || betweenPasses == null)
+            throw new IllegalArgumentException("UDF SHA okuma sınırı eksik");
+        requireBoundedArchive(source);
+        try {
+            // Metadata is advisory, never an atomic content snapshot. Check
+            // identity, size and mtime as well as comparing two actual reads.
+            BasicFileAttributes initial = Files.readAttributes(
+                    source, BasicFileAttributes.class);
+            long expectedSize = initial.size();
+            if (expectedSize == 0)
+                throw new IllegalArgumentException("Boş UDF arşivi kabul edilmez: "
+                        + source.getFileName());
+            if (expectedSize > MAX_ARCHIVE_BYTES)
+                throw new IllegalArgumentException("UDF sıkıştırılmış dosya boyutu sınırı aşıldı: "
+                        + source.getFileName());
+            byte[] firstDigest = null;
+            for (int pass = 0; pass < 2; pass++) {
+                MessageDigest digest = MessageDigest.getInstance("SHA-256");
+                long total = 0;
+                boolean firstChunkSeen = false;
+                try (InputStream in = Files.newInputStream(source)) {
+                    byte[] buffer = new byte[64 * 1024];
+                    int read;
+                    while ((read = in.read(buffer)) != -1) {
+                        total += read;
+                        if (total > MAX_ARCHIVE_BYTES)
+                            throw new IllegalArgumentException(
+                                    "UDF sıkıştırılmış dosya boyutu sınırı aşıldı: "
+                                            + source.getFileName());
+                        digest.update(buffer, 0, read);
+                        if (pass == 0 && !firstChunkSeen && read > 0) {
+                            firstChunkSeen = true;
+                            firstChunk.afterFirstChunk();
+                        }
+                    }
+                }
+                BasicFileAttributes observed = Files.readAttributes(
+                        source, BasicFileAttributes.class);
+                // Even equal-length content can be a different file or a
+                // different version. Some providers return null file keys,
+                // If availability itself changes, fail closed. Stable null keys
+                // remain a provider limitation, NOT an identity guarantee.
+                if (total != expectedSize || observed.size() != expectedSize
+                        || !initial.lastModifiedTime().equals(observed.lastModifiedTime())
+                        || !java.util.Objects.equals(initial.fileKey(), observed.fileKey()))
+                    throw new IllegalArgumentException(
+                            "UDF kaynağı okuma sırasında değiştirildi: "
+                                    + source.getFileName());
+                byte[] currentDigest = digest.digest();
+                if (pass == 0) {
+                    firstDigest = currentDigest;
+                    betweenPasses.betweenPasses();
+                } else if (!MessageDigest.isEqual(firstDigest, currentDigest)) {
+                    throw new IllegalArgumentException(
+                            "UDF kaynağı okuma sırasında değiştirildi: "
+                                    + source.getFileName());
+                }
+            }
+            return java.util.HexFormat.of().formatHex(firstDigest);
+        } catch (IOException ex) {
+            throw new IllegalArgumentException(
+                    "UDF kaynağı okunamadı: " + source.getFileName(), ex);
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 kullanılamıyor", ex);
+        }
+    }
+
+    public static Selection plan(List<Path> current, List<Path> candidates) {
+        if (current == null || candidates == null) throw new IllegalArgumentException("Dosya listesi eksik");
+        Set<Path> known = new HashSet<>();
+        for (Path p : current) if (p != null) known.add(p.toAbsolutePath().normalize());
+        List<Path> accepted = new ArrayList<>();
+        boolean full = false;
+        int unsupported = 0, duplicates = 0;
+        for (Path p : candidates) {
+            if (p == null) { unsupported++; continue; }
+            Path normalized = p.toAbsolutePath().normalize();
+            Path name = normalized.getFileName();
+            if (name == null || !name.toString().toLowerCase(Locale.ROOT).endsWith(".udf")) {
+                unsupported++;
+                continue;
+            }
+            if (known.contains(normalized)) { duplicates++; continue; }
+            if (known.size() >= MAX_CARDS) { full = true; continue; }
+            known.add(normalized);
+            accepted.add(normalized);
+        }
+        return new Selection(accepted, full, unsupported, duplicates);
+    }
+}

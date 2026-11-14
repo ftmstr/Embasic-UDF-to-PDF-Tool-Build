@@ -1,0 +1,136 @@
+name: Public-only Desktop MVP Proof
+
+on:
+  push:
+    branches: [main, "ci/**"]
+    paths:
+      - "app/**"
+      - ".github/workflows/public-mvp-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "app/**"
+      - ".github/workflows/public-mvp-ci.yml"
+  workflow_dispatch:
+    inputs:
+      run_gui_robot:
+        description: "Opt-in real Windows desktop Robot smoke (requires interactive runner)"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  java-mvp:
+    name: Build and smoke public MVP (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+          cache-dependency-path: app/pom.xml
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install system font for Linux smoke
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y fonts-dejavu-core
+      # Opt-in PDFBox timing in CI only: identify font lookup vs embedding cost
+      # without logging document text or font paths. This is instrumentation,
+      # not a performance improvement or a release approval.
+      - name: Compile + JUnit test + shaded JAR build (no binary publication)
+        run: mvn -B -ntp -f app/pom.xml "-Dembasic.diagnostics.fontTiming=true" clean verify
+      - name: CLI synthetic UDF to PDF smoke
+        run: python app/scripts/smoke_cli.py app/target/embasic-public-desktop-0.1.0-SNAPSHOT-all.jar
+
+      # Measure a real, valid 160-file batch on both OS runners. This is a
+      # performance baseline (wall time, Java CPU and peak RSS), not a claim of
+      # physical Windows acceptance or a new JUnit pass count.
+      - name: Profile 160 valid public synthetic UDF files (512 MiB heap)
+        run: python app/scripts/profile_160.py app/target/embasic-public-desktop-0.1.0-SNAPSHOT-all.jar
+
+      # Three isolated JVM launches prove PDFBox reads a persistent metadata cache
+      # and rebuilds corrupted metadata without disabling font checksums.
+      # Run only on explicitly marked commits to conserve hosted runner minutes.
+      - name: Profile Windows PDFBox cold, warm and corrupt font metadata (CI only)
+        if: runner.os == 'Windows' && github.event_name == 'push' && contains(github.event.head_commit.message, '[fontcache-3x]')
+        run: python app/scripts/profile_fontcache.py
+
+      # This separate opt-in experiment is NOT the explicit pdfbox.fontcache
+      # cache used in the 3x probe above. It leaves the cache property unset,
+      # overrides user.home only inside each disposable Surefire child JVM,
+      # and verifies cold/update/corrupt/bad-font behavior across four JVMs.
+      # Run on both Windows and Linux, but only for deliberate tagged pushes.
+      - name: Probe true PDFBox default-cache fallback over four JVMs (CI only)
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, '[fontcache-default-4x]')
+        run: python app/scripts/profile_fontcache_default.py
+
+      # Robot remains opt-in: a deliberate [gui-robot] push on this Public
+      # branch, or a manual workflow_dispatch input, runs the actual Windows
+      # keyboard/mouse acceptance on the hosted desktop. Default CI skips it.
+      # A noninteractive/locked desktop or JUnit skip MUST fail this opt-in job;
+      # the script deletes stale XML and checks non-skipped Surefire evidence.
+      - name: Opt-in interactive Windows Robot acceptance (no release)
+        if: runner.os == 'Windows' && ((github.event_name == 'workflow_dispatch' && inputs.run_gui_robot) || (github.event_name == 'push' && github.ref == 'refs/heads/ci/secure-windows-bootstrap-20261018' && contains(github.event.head_commit.message, '[gui-robot]')))
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          & pwsh -NoProfile -File app/scripts/Run-Windows-GuiRobotSmoke.ps1 -AllowGui
+          if ($LASTEXITCODE -ne 0) { throw "Physical Windows GUI acceptance not verified (failed, skipped or noninteractive)" }
+
+
+      - name: Validate colorful PowerShell dashboard, JSON score and forecast
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $raw = & pwsh -NoProfile -File app/scripts/Show-EmbasicProgress.ps1 -Offline -AsJson
+          if ($LASTEXITCODE -ne 0) { throw "PowerShell dashboard failed" }
+          $dashboard = $raw | ConvertFrom-Json
+          if ($dashboard.SchemaVersion -ne 1 -or $dashboard.ProgressPercent -lt 0 -or $dashboard.ProgressPercent -gt 100) {
+            throw "Dashboard score invalid"
+          }
+          if ((($dashboard.Milestones | Measure-Object -Property Weight -Sum).Sum) -ne 100) {
+            throw "Dashboard weights invalid"
+          }
+          if ($dashboard.GuiAcceptance.Status -ne "CI_VERIFIED_LIMITED" -or $dashboard.GuiAcceptance.VerifiedPhysicalWindows -ne $true -or $dashboard.GuiAcceptance.Mode -notmatch "not an external user beta") {
+            throw "Packaged Windows CI evidence must remain limited and external beta must not be reported as PASS"
+          }
+          if ([DateTime]$dashboard.Forecast.FinalEarliest -ge [DateTime]$dashboard.Forecast.FinalLatest) {
+            throw "Invalid final release forecast window"
+          }
+          & pwsh -NoProfile -File app/scripts/Show-EmbasicProgress.ps1 -Offline
+          if ($LASTEXITCODE -ne 0) { throw "Color dashboard display failed" }
+
+      - name: Build portable Windows app-image (CI validation only)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $packageInput = Join-Path $env:RUNNER_TEMP "embasic-mvp-input"
+          $packageOutput = Join-Path $env:RUNNER_TEMP "embasic-mvp-output"
+          New-Item -ItemType Directory -Force -Path $packageInput | Out-Null
+          New-Item -ItemType Directory -Force -Path $packageOutput | Out-Null
+          Copy-Item -LiteralPath "app/target/embasic-public-desktop-0.1.0-SNAPSHOT-all.jar" -Destination $packageInput
+          & jpackage --type app-image --name EmbasicUdfToPdfPublicMVP --app-version 0.1.0 --input $packageInput --main-jar embasic-public-desktop-0.1.0-SNAPSHOT-all.jar --main-class com.embasic.publicapp.DesktopApp --dest $packageOutput
+          if ($LASTEXITCODE -ne 0) { throw "Windows app-image packaging failed" }
+          $launcher = Join-Path $packageOutput "EmbasicUdfToPdfPublicMVP/EmbasicUdfToPdfPublicMVP.exe"
+          if (-not (Test-Path -LiteralPath $launcher)) { throw "Packaged launcher not found" }
+          & python app/scripts/smoke_packaged.py $launcher
+          if ($LASTEXITCODE -ne 0) { throw "Packaged launcher conversion failed" }
+
+# Does not publish executable artifacts or bypass source/license/rights release gates.

@@ -1,0 +1,248 @@
+name: Public MVP Windows app-image acceptance (no publication)
+
+on:
+  push:
+    branches: ["ci/secure-windows-bootstrap-20261018"]
+    paths:
+      - "app/**"
+      - ".github/workflows/public-mvp-windows-app-image-check.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-app-image:
+    runs-on: windows-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+          cache-dependency-path: app/pom.xml
+      - name: Preflight CI-only physical Robot PowerShell syntax and JDI compiler
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          foreach ($file in @('app/scripts/Assert-PackagedGuiInput.ps1',
+                              'app/scripts/Test-UnsupportedHardLinkVolume.ps1')) {
+            $parseTokens = $null
+            $parseErrors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+                (Resolve-Path -LiteralPath $file).Path,
+                [ref]$parseTokens, [ref]$parseErrors) | Out-Null
+            if (@($parseErrors).Count -ne 0) {
+              throw ('Physical Windows script syntax invalid: ' + $file)
+            }
+          }
+          $testClasses = Join-Path $env:RUNNER_TEMP 'embasic-tur244-jdi-static-classes'
+          New-Item -ItemType Directory -Path $testClasses -Force | Out-Null
+          & javac --add-modules jdk.jdi -d $testClasses app/scripts/PackagedRenderBoundaryController.java
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Physical Windows test-only JDI controller did not compile.'
+          }
+          Write-Host 'TUR244_POWERSHELL_AND_JDI_PREFLIGHT_PASS: parser=VALID controller=COMPILED noRealSource=TRUE'
+      - name: Build and test public-only desktop module
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          & mvn -B -ntp -f app/pom.xml clean verify
+          if ($LASTEXITCODE -ne 0) { throw "Public desktop Maven verify failed" }
+      - name: Verify actual shaded desktop JAR and manifest
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $jar = "app/target/embasic-public-desktop-0.1.0-SNAPSHOT-all.jar"
+          if (-not (Test-Path -LiteralPath $jar -PathType Leaf)) { throw "Public desktop shaded JAR missing" }
+          $entries = & jar tf $jar
+          if ($LASTEXITCODE -ne 0) { throw "Unable to inspect shaded JAR" }
+          if (-not ($entries -contains "com/embasic/publicapp/DesktopApp.class")) { throw "DesktopApp class missing" }
+          & jar xf $jar META-INF/MANIFEST.MF
+          if (-not (Select-String -LiteralPath "META-INF/MANIFEST.MF" -Pattern "^Main-Class: com.embasic.publicapp.DesktopApp\s*$" -Quiet)) { throw "Unexpected Main-Class" }
+      - name: Build ephemeral app-image, inspect launcher (no ZIP or upload)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $jar = "embasic-public-desktop-0.1.0-SNAPSHOT-all.jar"
+          & jpackage --type app-image --name EmbasicPublicMvp --input app/target --main-jar $jar --main-class com.embasic.publicapp.DesktopApp --app-version 0.1.0 --dest "$env:RUNNER_TEMP/embasic-app-image"
+          if ($LASTEXITCODE -ne 0) { throw "Public MVP jpackage app-image failed" }
+          $exe = Join-Path $env:RUNNER_TEMP "embasic-app-image/EmbasicPublicMvp/EmbasicPublicMvp.exe"
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "Windows launcher missing" }
+          Write-Host "Ephemeral app-image launcher exists. No publication approval implied."
+      - name: Smoke launch Windows packaged executable (no GUI interaction)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $exe = Join-Path $env:RUNNER_TEMP "embasic-app-image/EmbasicPublicMvp/EmbasicPublicMvp.exe"
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "Windows launcher missing" }
+          $process = $null
+          try {
+            $process = Start-Process -FilePath $exe -PassThru -ErrorAction Stop
+            # A packaged Swing app must remain alive long enough to create its window.
+            # This is a process smoke test, NOT a Robot/visual GUI acceptance.
+            Start-Sleep -Seconds 5
+            $process.Refresh()
+            if ($process.HasExited) {
+              throw "Packaged Windows launcher exited prematurely (exit $($process.ExitCode))"
+            }
+            Write-Host "Packaged launcher remained running for 5 seconds; physical GUI acceptance NOT_RUN."
+          } finally {
+            if ($null -ne $process) {
+              $process.Refresh()
+              if (-not $process.HasExited) {
+                Stop-Process -Id $process.Id -Force -ErrorAction Stop
+                $process.WaitForExit(10000) | Out-Null
+              }
+            }
+          }
+      - name: Verify packaged desktop has a visible top-level window
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $exe = Join-Path $env:RUNNER_TEMP "embasic-app-image/EmbasicPublicMvp/EmbasicPublicMvp.exe"
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "Windows launcher missing" }
+          Add-Type -TypeDefinition @'
+          using System;
+          using System.Runtime.InteropServices;
+          using System.Text;
+          public static class EmbasicWindowProbe {
+            public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+            [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc callback, IntPtr lParam);
+            [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
+            [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+            [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int maxCount);
+            [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+            [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr hWnd, out RECT rect);
+            [DllImport("user32.dll")] public static extern bool IsWindowEnabled(IntPtr hWnd);
+            public static bool HasVisibleWindow(uint pid) {
+              bool found = false;
+              EnumWindows((hWnd, ignored) => {
+                uint owner;
+                GetWindowThreadProcessId(hWnd, out owner);
+                if (owner == pid && IsWindowVisible(hWnd)) {
+                  // A splash, error dialog or unrelated helper window is not the MVP frame.
+                  var title = new StringBuilder(256);
+                  GetWindowText(hWnd, title, title.Capacity);
+                  if (title.ToString() == "Embasic UDF to PDF \u2014 Public MVP" && IsWindowEnabled(hWnd)) {
+                    RECT client;
+                    if (!GetClientRect(hWnd, out client) || client.Right - client.Left < 320 || client.Bottom - client.Top < 240) return true;
+                    found = true; return false;
+                  }
+                }
+                return true;
+              }, IntPtr.Zero);
+              return found;
+            }
+          }
+          '@
+          $process = $null
+          try {
+            $process = Start-Process -FilePath $exe -PassThru -ErrorAction Stop
+            $deadline = (Get-Date).AddSeconds(25)
+            $visible = $false
+            $matchedWindowPid = $null
+            while ((Get-Date) -lt $deadline) {
+              $process.Refresh()
+              if ($process.HasExited) { throw "Packaged GUI process exited before a visible window appeared" }
+              # jpackage may spawn a second same-name GUI process. Accept only
+              # direct descendants of this launcher, never arbitrary same-name processes.
+              $candidateIds = @([uint32]$process.Id)
+              $children = @(Get-CimInstance Win32_Process -Filter "ParentProcessId=$($process.Id)" -ErrorAction Stop)
+              foreach ($child in $children) {
+                $childProcess = Get-Process -Id $child.ProcessId -ErrorAction SilentlyContinue
+                if ($null -ne $childProcess -and -not $childProcess.HasExited -and $childProcess.SessionId -eq $process.SessionId) {
+                  $candidateIds += [uint32]$child.ProcessId
+                }
+              }
+              foreach ($candidateId in $candidateIds) {
+                if ([EmbasicWindowProbe]::HasVisibleWindow($candidateId)) { $visible = $true; $matchedWindowPid = $candidateId; break }
+              }
+              if ($visible) { break }
+              Start-Sleep -Milliseconds 500
+            }
+            if (-not $visible) {
+              # Hosted runners may lack an interactive desktop. Diagnose without treating
+              # a surviving process as proof that the Swing window was rendered.
+              $session = [System.Diagnostics.Process]::GetCurrentProcess().SessionId
+              $process.Refresh()
+              Write-Host "WINDOW_DIAGNOSTIC: runnerSession=$session launcherSession=$($process.SessionId) launcherPID=$($process.Id) mainWindowHandle=$($process.MainWindowHandle) mainWindowTitle=$($process.MainWindowTitle)"
+              $related = Get-CimInstance Win32_Process -Filter "ParentProcessId=$($process.Id)" -ErrorAction SilentlyContinue
+              foreach ($child in $related) {
+                Write-Host "WINDOW_DIAGNOSTIC: childPID=$($child.ProcessId) childName=$($child.Name)"
+              }
+              throw "No visible top-level window within 25 seconds (WINDOW_NOT_VERIFIED; hosted runner may be noninteractive). GUI acceptance FAIL"
+            }
+            Write-Host "Visible titled MVP main window verified for owner PID $matchedWindowPid (launcher PID $($process.Id)). No user interaction or UYAP compatibility implied."
+          } finally {
+            if ($null -ne $process) {
+              $process.Refresh()
+              if (-not $process.HasExited) {
+                # Kill the launcher process tree, including jpackage's GUI child.
+                & taskkill.exe /PID $process.Id /T /F | Out-Null
+                if ($LASTEXITCODE -ne 0) { throw "Unable to clean up packaged GUI process tree" }
+                $process.WaitForExit(10000) | Out-Null
+              }
+            }
+          }
+      - name: Physical packaged EXE mouse and keyboard acceptance (no publication)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          & pwsh -NoProfile -File app/scripts/Assert-PackagedGuiInput.ps1 -AllowGui
+          if ($LASTEXITCODE -ne 0) {
+            throw "Packaged EXE physical Robot failed or was not verified"
+          }
+      - name: Physical test-only JDI render boundary on separate ephemeral EXE (no publication)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $root = Join-Path $env:RUNNER_TEMP 'embasic-jdi-app-image'
+          $jar = 'embasic-public-desktop-0.1.0-SNAPSHOT-all.jar'
+          # Never add JDWP to the normal/public app-image. Its separate binary
+          # lives only inside RUNNER_TEMP and is destroyed after this test.
+          if (-not (Test-Path -LiteralPath (Join-Path $env:JAVA_HOME 'jmods/jdk.jdwp.agent.jmod') -PathType Leaf)) {
+            Write-Host 'PHYSICAL_PACKAGED_RENDER_RACE=NOT_RUN: hosted JDK has no JDWP agent module.'
+            exit 0
+          }
+          # A test-only fixed loopback port is safe only on an isolated hosted
+          # runner. Fail if already occupied; no wildcard listening is allowed.
+          $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 51277)
+          try {
+            $listener.Start()
+          } finally {
+            $listener.Stop()
+          }
+          try {
+            & jpackage --type app-image --name EmbasicJdiRace --input app/target --main-jar $jar --main-class com.embasic.publicapp.DesktopApp --app-version 0.1.0 --add-modules java.desktop,java.logging,java.xml,java.naming,java.prefs,jdk.jdwp.agent --java-options '-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=127.0.0.1:51277' --dest $root
+            if ($LASTEXITCODE -ne 0) { throw 'Test-only JDWP jpackage failed; physical render race NOT_VERIFIED.' }
+            $moduleImage = Join-Path $root 'EmbasicJdiRace/runtime/lib/modules'
+            if (-not (Test-Path -LiteralPath $moduleImage -PathType Leaf)) {
+              throw 'Temporary jpackage runtime modules image missing.'
+            }
+            $moduleInventory = & jimage list $moduleImage
+            if ($LASTEXITCODE -ne 0) { throw 'Test-only runtime module inspection failed.' }
+            foreach ($moduleName in @('java.desktop', 'jdk.jdwp.agent')) {
+              if (-not ($moduleInventory | Select-String -SimpleMatch ('Module: ' + $moduleName))) {
+                throw ('Test-only runtime missing required JDI/GUI module: ' + $moduleName)
+              }
+            }
+            Write-Host 'TUR244_JDI_RUNTIME_MODULES: java.desktop=INCLUDED jdk.jdwp.agent=INCLUDED testOnly=TRUE'
+            $exe = Join-Path $root 'EmbasicJdiRace/EmbasicJdiRace.exe'
+            if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
+              throw 'Test-only JDWP packaged executable absent.'
+            }
+            & pwsh -NoProfile -File app/scripts/Assert-PackagedGuiInput.ps1 -AllowGui -JdiRenderRace -ExePath $exe
+            if ($LASTEXITCODE -ne 0) {
+              throw 'Actual physical packaged render/JDI acceptance failed; no PASS claim.'
+            }
+          } finally {
+            # Debug-enabled app-image is test only and must never be uploaded.
+            if (Test-Path -LiteralPath $root) {
+              Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction Stop
+            }
+          }
