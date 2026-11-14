@@ -36,7 +36,11 @@ with tempfile.TemporaryDirectory(prefix="embasic-packaged-") as directory:
         archive.writestr("content.xml", xml.replace(content, "INDEPENDENT-UDF-SOURCE").encode("utf-8"))
     if os.path.samefile(udf, second):
         raise AssertionError("Distinct-source control unexpectedly aliases the original")
-    # The CLI deliberately rejects overwriting an existing PDF. Use a fresh\n    # destination for the positive control, then preserve it for the rejection.\n    distinct_output = folder / "distinct-result.pdf"\n    distinct = subprocess.run(\n        [str(launcher), "--merge", str(distinct_output), str(udf), str(second)],
+    # The CLI deliberately rejects overwriting an existing PDF. Use a fresh
+    # destination for the positive control, then preserve it for the rejection.
+    distinct_output = folder / "distinct-result.pdf"
+    distinct = subprocess.run(
+        [str(launcher), "--merge", str(distinct_output), str(udf), str(second)],
         timeout=120, check=False, capture_output=True)
     if distinct.returncode != 0 or not distinct_output.is_file() or distinct_output.read_bytes()[:5] != b"%PDF-":
         raise AssertionError("Packaged launcher failed distinct two-source positive control")
@@ -47,7 +51,11 @@ with tempfile.TemporaryDirectory(prefix="embasic-packaged-") as directory:
     if not os.path.samefile(udf, alias):
         raise AssertionError("Hard-link fixture is not the same physical file")
     approved_sha = hashlib.sha256(distinct_output.read_bytes()).digest()
-    # Reject on a NEW target; otherwise non-overwrite policy alone could\n    # produce a false positive without exercising duplicate-file detection.\n    rejected_output = folder / "rejected-result.pdf"\n    rejected = subprocess.run(\n        [str(launcher), "--merge", str(rejected_output), str(udf), str(alias)],
+    # Reject on a NEW target; otherwise non-overwrite policy alone could
+    # produce a false positive without exercising duplicate-file detection.
+    rejected_output = folder / "rejected-result.pdf"
+    rejected = subprocess.run(
+        [str(launcher), "--merge", str(rejected_output), str(udf), str(alias)],
         timeout=120, check=False, capture_output=True)
     if rejected.returncode == 0 or rejected_output.exists():
         raise AssertionError("Packaged launcher accepted or wrote duplicate physical UDF hard link")
