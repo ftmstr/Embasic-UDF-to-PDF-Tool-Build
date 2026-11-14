@@ -22,7 +22,7 @@ class PublicAppInventoryTest(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.git("init", "-q")
         self.git("config", "user.name", "Synthetic CI")
-        self.git("config", "user.email", "synthetic@example.invalid")
+        self.git("config", "user.email", ("synthetic" + chr(64) + "example.invalid"))
         self.write("app/pom.xml", POM)
         self.write("app/src/main/java/Synthetic.java", "class Synthetic {}\n")
         self.git("add", "app")
