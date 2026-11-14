@@ -107,8 +107,8 @@ jobs:
           if ((($dashboard.Milestones | Measure-Object -Property Weight -Sum).Sum) -ne 100) {
             throw "Dashboard weights invalid"
           }
-          if ($dashboard.GuiAcceptance.Status -ne "NOT_RUN" -or $dashboard.GuiAcceptance.VerifiedPhysicalWindows) {
-            throw "Unverified GUI Robot acceptance must not be reported as PASS"
+          if ($dashboard.GuiAcceptance.Status -ne "CI_VERIFIED_LIMITED" -or $dashboard.GuiAcceptance.VerifiedPhysicalWindows -ne $true -or $dashboard.GuiAcceptance.Mode -notmatch "not an external user beta") {
+            throw "Packaged Windows CI evidence must remain limited and external beta must not be reported as PASS"
           }
           if ([DateTime]$dashboard.Forecast.FinalEarliest -ge [DateTime]$dashboard.Forecast.FinalLatest) {
             throw "Invalid final release forecast window"
