@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Synthetic packaged Windows launcher smoke; private UDF data must never be used."""
+import hashlib
+import os
 import subprocess
 import sys
 import tempfile
@@ -27,4 +29,21 @@ with tempfile.TemporaryDirectory(prefix="embasic-packaged-") as directory:
         raise RuntimeError(f"Packaged launcher exited with {p.returncode}")
     if not output.is_file() or output.read_bytes()[:5] != b"%PDF-":
         raise AssertionError("Packaged launcher failed to produce PDF")
+    # Physical Windows filesystem acceptance: two different paths to one NTFS
+    # file must fail closed before replacing an already approved PDF.
+    alias = folder / "synthetic-hardlink.udf"
+    os.link(udf, alias)
+    if not os.path.samefile(udf, alias):
+        raise AssertionError("Hard-link fixture is not the same physical file")
+    approved_sha = hashlib.sha256(output.read_bytes()).digest()
+    rejected = subprocess.run(
+        [str(launcher), "--merge", str(output), str(udf), str(alias)],
+        timeout=120, check=False, capture_output=True)
+    if rejected.returncode == 0:
+        raise AssertionError("Packaged launcher accepted duplicate physical UDF hard link")
+    if not output.is_file() or hashlib.sha256(output.read_bytes()).digest() != approved_sha:
+        raise AssertionError("Rejected hard-link merge changed the approved PDF")
+    if list(folder.glob("*.staging*")) or list(folder.glob("*.tmp")):
+        raise AssertionError("Rejected hard-link merge left staging files")
     print("PASS Windows jpackage app-image launcher smoke")
+    print("PASS physical Windows hard-link duplicate rejection and approved PDF SHA preservation")
