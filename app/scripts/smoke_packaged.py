@@ -54,6 +54,17 @@ with tempfile.TemporaryDirectory(prefix="embasic-packaged-") as directory:
     assert_complete_pdf(output, "Single-source packaged conversion")
     if sha256_file(udf) != original_udf_sha:
         raise AssertionError("Successful single-source conversion modified input UDF")
+    # End-user safety: an existing approved PDF must never be overwritten.
+    approved_single_sha = sha256_file(output)
+    overwrite = subprocess.run(
+        [str(launcher), "--merge", str(output), str(udf)],
+        timeout=120, check=False, capture_output=True)
+    if overwrite.returncode == 0:
+        raise AssertionError("Packaged launcher accepted overwrite of existing PDF")
+    if not output.is_file() or sha256_file(output) != approved_single_sha:
+        raise AssertionError("Rejected overwrite changed the approved single-source PDF")
+    if sha256_file(udf) != original_udf_sha:
+        raise AssertionError("Rejected overwrite modified the source UDF")
     # Positive control: prove this same packaged launcher can merge two
     # DISTINCT physical UDF files before interpreting the hard-link rejection.
     second = folder / "independent.udf"
@@ -100,6 +111,7 @@ with tempfile.TemporaryDirectory(prefix="embasic-packaged-") as directory:
         raise AssertionError("Rejected hard-link merge changed the approved PDF")
     if list(folder.glob("*.staging*")) or list(folder.glob("*.tmp")):
         raise AssertionError("Rejected hard-link merge left staging files")
+    print("PASS existing PDF overwrite rejected without modifying PDF or source UDF")
     print("PASS successful single/two-source conversions preserve source UDF SHA-256")
     print("PASS Windows jpackage app-image launcher smoke")
     print("PASS distinct two-source packaged merge positive control")
