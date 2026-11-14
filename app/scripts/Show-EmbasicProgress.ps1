@@ -105,6 +105,7 @@ $report = [pscustomobject]@{
     ReleaseReadiness=[pscustomobject]@{
         PublicationAllowed=$false
         LegacySourceGate='BLOCKED: independent_public_mvp_source_review_required'
+        PublicAppInventory='EXACT_COMMIT_SHA256_ONLY_NOT_LICENSE_APPROVAL'
         NativeUyapGolden='NOT_VERIFIED'
         AllUdfVersions='NOT_VERIFIED'
         SourceAndNotices='NO_GO'
