@@ -87,7 +87,7 @@ with tempfile.TemporaryDirectory(prefix="embasic-packaged-") as directory:
     assert_complete_pdf(distinct_output, "Distinct two-source packaged merge")
     if sha256_file(udf) != original_udf_sha or sha256_file(second) != independent_udf_sha:
         raise AssertionError("Successful two-source merge modified an input UDF")
-    # Physical Windows filesystem acceptance: two different paths to one NTFS
+    # A merged, approved PDF must also resist accidental overwrite: a single-\n    # source rejection alone does not prove the multi-source CLI path is safe.\n    approved_distinct_sha = sha256_file(distinct_output)\n    merge_overwrite = subprocess.run(\n        [str(launcher), "--merge", str(distinct_output), str(udf), str(second)],\n        timeout=120, check=False, capture_output=True)\n    if merge_overwrite.returncode == 0:\n        raise AssertionError("Packaged launcher accepted overwrite of approved merged PDF")\n    if not distinct_output.is_file() or sha256_file(distinct_output) != approved_distinct_sha:\n        raise AssertionError("Rejected merge overwrite changed the approved merged PDF")\n    if sha256_file(udf) != original_udf_sha or sha256_file(second) != independent_udf_sha:\n        raise AssertionError("Rejected merge overwrite modified a source UDF")\n    # Physical Windows filesystem acceptance: two different paths to one NTFS
     # file must fail closed before replacing an already approved PDF.
     alias = folder / "synthetic-hardlink.udf"
     os.link(udf, alias)
@@ -111,7 +111,7 @@ with tempfile.TemporaryDirectory(prefix="embasic-packaged-") as directory:
         raise AssertionError("Rejected hard-link merge changed the approved PDF")
     if list(folder.glob("*.staging*")) or list(folder.glob("*.tmp")):
         raise AssertionError("Rejected hard-link merge left staging files")
-    print("PASS existing PDF overwrite rejected without modifying PDF or source UDF")
+    print("PASS single/two-source approved PDF overwrite rejected without changing PDF or UDF")
     print("PASS successful single/two-source conversions preserve source UDF SHA-256")
     print("PASS Windows jpackage app-image launcher smoke")
     print("PASS distinct two-source packaged merge positive control")
