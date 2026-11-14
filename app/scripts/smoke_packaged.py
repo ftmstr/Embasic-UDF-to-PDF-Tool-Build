@@ -33,7 +33,7 @@ with tempfile.TemporaryDirectory(prefix="embasic-packaged-") as directory:
     # DISTINCT physical UDF files before interpreting the hard-link rejection.
     second = folder / "independent.udf"
     with zipfile.ZipFile(second, "w", zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("content.xml", xml.replace(content, "INDEPENDENT-SOURCE").encode("utf-8"))
+        archive.writestr("content.xml", xml.replace(content, "INDEPENDENT-UDF-SOURCE").encode("utf-8"))
     if os.path.samefile(udf, second):
         raise AssertionError("Distinct-source control unexpectedly aliases the original")
     distinct = subprocess.run(
