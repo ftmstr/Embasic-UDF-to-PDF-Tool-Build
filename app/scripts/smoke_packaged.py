@@ -13,7 +13,7 @@ def assert_complete_pdf(path, label):
     if not path.is_file():
         raise AssertionError(f"{label}: PDF missing")
     data = path.read_bytes()
-    if not data.startswith(b"%PDF-") or b"%%EOF" not in data[-1024:]:
+    if not data.startswith(b"%PDF-") or not data.rstrip(b" \t\r\n\x0c\x00").endswith(b"%%EOF"):
         raise AssertionError(f"{label}: incomplete PDF header/trailer")
 
 if len(sys.argv) != 2:
