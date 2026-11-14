@@ -34,6 +34,7 @@ New-Item -ItemType Directory -Path $root -ErrorAction Stop | Out-Null
 $vhd = Join-Path $root 'tur260-ephemeral.vhdx'
 $mounted = $false
 $provenExfat = $false
+$stage = 'disk_inventory'
 try {
     $existingDiskNumbers = @(Get-Disk -ErrorAction Stop | ForEach-Object Number)
     try {
@@ -41,6 +42,7 @@ try {
         # is a fallback for file creation ONLY. Never let DiskPart SELECT,
         # CLEAN, FORMAT or ASSIGN anything; all later operations target
         # the disk returned from this unique VHD's Get-DiskImage object.
+        $stage = 'create_disposable_vhd'
         if ($null -ne (Get-Command New-VHD -ErrorAction SilentlyContinue)) {
             New-VHD -Path $vhd -SizeBytes 268435456 -Dynamic -ErrorAction Stop | Out-Null
         } else {
@@ -58,8 +60,10 @@ try {
         if (-not (Test-Path -LiteralPath $vhd -PathType Leaf)) {
             throw 'Disposable VHD was not created'
         }
+        $stage = 'mount_disposable_vhd'
         Mount-DiskImage -ImagePath $vhd -StorageType VHD -NoDriveLetter -ErrorAction Stop | Out-Null
         $mounted = $true
+        $stage = 'get_image_disk_identity'
         $image = Get-DiskImage -ImagePath $vhd -ErrorAction Stop
         $disk = $image | Get-Disk -ErrorAction Stop
         if ($null -eq $disk -or $disk.Count -gt 1 -or
@@ -72,12 +76,16 @@ try {
         # Format only a newly mounted RAW disk, identified directly by
         # Get-DiskImage for the GUID-named file under RUNNER_TEMP.
         $diskNumber = [uint32]$disk.Number
+        $stage = 'initialize_verified_raw_vhd'
         Initialize-Disk -Number $diskNumber -PartitionStyle MBR -ErrorAction Stop | Out-Null
+        $stage = 'partition_verified_vhd'
         $partition = New-Partition -DiskNumber $diskNumber -UseMaximumSize -AssignDriveLetter -ErrorAction Stop
         if ($null -eq $partition -or -not $partition.DriveLetter) {
             throw 'Disposable VHD partition was not assigned a letter'
         }
+        $stage = 'format_verified_exfat_vhd'
         Format-Volume -Partition $partition -FileSystem exFAT -NewFileSystemLabel 'EMBASIC_T260' -Confirm:$false -Force -ErrorAction Stop | Out-Null
+        $stage = 'verify_backed_exfat_volume'
         $volume = Get-Volume -DriveLetter $partition.DriveLetter -ErrorAction Stop
         $backedDisk = Get-Partition -DriveLetter $partition.DriveLetter -ErrorAction Stop | Get-Disk -ErrorAction Stop
         if ($volume.FileSystem -ne 'exFAT' -or
@@ -90,7 +98,8 @@ try {
         # Missing Hyper-V / Storage privileges / VHD support is a capability
         # limitation, never proof that the PDF app accepted a filesystem race.
         if ($provenExfat) { throw }
-        Not-Run ('hosted_vhd_environment_unavailable_' + $_.Exception.GetType().Name)
+        Not-Run ('hosted_vhd_environment_unavailable_stage_' + $stage
+            + '_exception_' + $_.Exception.GetType().Name)
         return
     }
     $scratch = Join-Path ([string]$partition.DriveLetter + ':\') 'embasic-tur260-only'
