@@ -99,6 +99,11 @@ def evaluate(root: Path, tracked: list[str], approved: str, sha: str) -> bool:
                 raise GateError("potential_sensitive_content_" + category)
     application_files = [n for n in names if n.startswith("src/main/") or n == "pom.xml"]
     if not application_files:
+        # The independently authored Public MVP lives in app/, outside the
+        # original root src/main source approval contract. A matching commit
+        # SHA cannot authorize this new source without a separate review.
+        if any(n == "app/pom.xml" or n.startswith("app/src/main/") for n in names):
+            raise GateError("independent_public_mvp_source_review_required")
         if names - BOOTSTRAP_ALLOWED:
             raise GateError("unapproved_bootstrap_file")
         return False
