@@ -12,8 +12,15 @@ def assert_complete_pdf(path, label):
     """Reject truncated packaged output, not merely a PDF-looking header."""
     if not path.is_file():
         raise AssertionError(f"{label}: PDF missing")
-    data = path.read_bytes()
-    if not data.startswith(b"%PDF-") or not data.rstrip(b" \t\r\n\x0c\x00").endswith(b"%%EOF"):
+    # Inspect only bounded header/trailer windows: a user PDF can be very large.
+    # This is a structural smoke check, not a full PDF parser.
+    with path.open("rb") as pdf:
+        header = pdf.read(5)
+        pdf.seek(0, os.SEEK_END)
+        size = pdf.tell()
+        pdf.seek(max(0, size - 4096))
+        trailer = pdf.read()
+    if header != b"%PDF-" or not trailer.rstrip(b" \\t\\r\\n\\x0c\\x00").endswith(b"%%EOF"):
         raise AssertionError(f"{label}: incomplete PDF header/trailer")
 
 if len(sys.argv) != 2:
