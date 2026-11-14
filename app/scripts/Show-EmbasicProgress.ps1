@@ -88,10 +88,10 @@ $report = [pscustomobject]@{
     Milestones=$milestones
     Ci=$ci
     GuiAcceptance=[pscustomobject]@{
-        Status='NOT_RUN'
-        Mode='Explicit interactive Windows opt-in only'
-        Test='GuiRobotSmokeTest'
-        VerifiedPhysicalWindows=false
+        Status='CI_VERIFIED_LIMITED'
+        Mode='Isolated packaged Windows CI; not an external user beta'
+        Test='Packaged GUI Robot and test-only JDI render-boundary acceptance (TUR244/TUR245 evidence)'
+        VerifiedPhysicalWindows=true
     }
     Forecast=[pscustomobject]@{
         BetaEarliest=$forecastBase.AddDays(21).ToString('yyyy-MM-dd')
@@ -133,7 +133,7 @@ Write-Host ''
 $ciColor = if ($ci.Conclusion -eq 'success') { 'Green' } elseif ($ci.Conclusion -eq 'failure') { 'Red' } else { 'Yellow' }
 Write-Host "  GITHUB CI  : $($ci.Status) / $($ci.Conclusion)" -ForegroundColor $ciColor
 if ($ci.Url) { Write-Host "  CI URL     : $($ci.Url)" -ForegroundColor Gray }
-Write-Host '  ROBOT GUI   : NOT_RUN — yalnız izinli etkileşimli Windows testinden sonra doğrulanabilir' -ForegroundColor Yellow
+Write-Host '  ROBOT GUI   : CI_VERIFIED_LIMITED — paketli Windows Robot/JDI kabulü var; dış kullanıcı beta NOT_RUN' -ForegroundColor Yellow
 Write-Host '  YAYIN GATE: KAPALI — hak/lisans, gercek UDF, arayuz kabul testleri eksik' -ForegroundColor Red
 Write-Host ''
 Write-Host ("  ILK BETA ICIN PLANLAMA : {0} — {1}" -f $report.Forecast.BetaEarliest,$report.Forecast.BetaLatest) -ForegroundColor Cyan
