@@ -34,7 +34,7 @@ with tempfile.TemporaryDirectory(prefix="embasic-packaged-") as directory:
     p = subprocess.run([str(launcher), "--merge", str(output), str(udf)],
                        timeout=120, check=False, capture_output=True)
     if p.returncode != 0:
-        raise RuntimeError(f"Packaged launcher exited with {p.returncode}")
+        raise RuntimeError(f"Packaged launcher exited with {p.returncode}: stdout={p.stdout[-2048:]!r}; stderr={p.stderr[-2048:]!r}")
     assert_complete_pdf(output, "Single-source packaged conversion")
     # Positive control: prove this same packaged launcher can merge two
     # DISTINCT physical UDF files before interpreting the hard-link rejection.
@@ -53,7 +53,7 @@ with tempfile.TemporaryDirectory(prefix="embasic-packaged-") as directory:
         [str(launcher), "--merge", str(distinct_output), str(udf), str(second)],
         timeout=120, check=False, capture_output=True)
     if distinct.returncode != 0:
-        raise AssertionError("Packaged launcher failed distinct two-source positive control")
+        raise AssertionError(f"Packaged launcher failed distinct two-source positive control (exit {distinct.returncode}): stdout={distinct.stdout[-2048:]!r}; stderr={distinct.stderr[-2048:]!r}")
     assert_complete_pdf(distinct_output, "Distinct two-source packaged merge")
     # Physical Windows filesystem acceptance: two different paths to one NTFS
     # file must fail closed before replacing an already approved PDF.
