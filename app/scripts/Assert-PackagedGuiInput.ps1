@@ -13,13 +13,30 @@
 param(
     [switch]$AllowGui,
     [switch]$JdiRenderRace,
-    [string]$ExePath
+    [string]$ExePath,
+    [string]$UnsupportedLinkVolumeDirectory
 )
 $ErrorActionPreference = 'Stop'
 if (-not $AllowGui -or -not $IsWindows) {
     throw 'Packaged physical Robot requires explicit -AllowGui on Windows.'
 }
 $exe = Join-Path $env:RUNNER_TEMP 'embasic-app-image/EmbasicPublicMvp/EmbasicPublicMvp.exe'
+if (-not [string]::IsNullOrWhiteSpace($UnsupportedLinkVolumeDirectory)) {
+    if ($JdiRenderRace -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or
+        $env:GITHUB_ACTIONS -ne 'true') {
+        throw 'Physical exFAT acceptance requires a separate standard hosted Windows session.'
+    }
+    $volumeRoot = (Resolve-Path -LiteralPath $UnsupportedLinkVolumeDirectory -ErrorAction Stop).Path
+    if ((Split-Path -Path $volumeRoot -Leaf) -ne 'embasic-tur260-only') {
+        throw 'Physical exFAT volume must be isolated to the TUR260 disposable fixture directory.'
+    }
+    $driveLetter = $volumeRoot.Substring(0, 1)
+    $testVolume = Get-Volume -DriveLetter $driveLetter -ErrorAction Stop
+    if ($testVolume.FileSystem -ne 'exFAT' -or
+        $testVolume.FileSystemLabel -ne 'EMBASIC_T260') {
+        throw 'Physical unsupported-hardlink acceptance refused an unverified exFAT test volume.'
+    }
+}
 if ($JdiRenderRace) {
     if ([string]::IsNullOrWhiteSpace($ExePath)) {
         throw 'JDI render race requires an explicitly separate ephemeral test EXE.'
@@ -294,6 +311,8 @@ try {
     # This is deliberately not a claim of official UYAP compatibility.
     $fixtureDir = Join-Path $env:RUNNER_TEMP $(if ($JdiRenderRace) {
         'embasic-tur244-jdi-robot-fixtures'
+    } elseif (-not [string]::IsNullOrWhiteSpace($UnsupportedLinkVolumeDirectory)) {
+        'embasic-tur260-exfat-robot-fixtures'
     } else {
         'embasic-tur214-robot-fixtures'
     })
@@ -390,6 +409,8 @@ try {
     if ($pdfOrderGrid -eq $beforeMove) { throw 'Physical PDF-order preparation did not move the first card.' }
     $outputDir = Join-Path $env:RUNNER_TEMP $(if ($JdiRenderRace) {
         'embasic-tur244-jdi-robot-output'
+    } elseif (-not [string]::IsNullOrWhiteSpace($UnsupportedLinkVolumeDirectory)) {
+        'embasic-tur260-exfat-robot-output'
     } else {
         'embasic-tur216-robot-output'
     })
@@ -481,6 +502,54 @@ try {
         throw 'Previously accepted PDF changed after physical overwrite refusal.'
     }
     Write-Host 'PACKAGED-PDF-OVERWRITE-REFUSAL-PASS: existing synthetic PDF SHA-256 preserved.'
+
+    if (-not [string]::IsNullOrWhiteSpace($UnsupportedLinkVolumeDirectory)) {
+        # TUR260: a fresh PDF target on a separately mounted real exFAT VHD
+        # cannot be hard-linked to the staged PDF. This is an actual physical
+        # file-system failure, NOT a test-injected exception or an NTFS alias.
+        # We already have a genuinely approved two-page PDF on the runner
+        # NTFS disk; its SHA must survive while the exFAT target stays absent.
+        $foreignTarget = Join-Path $volumeRoot 'tur260-unsupported-link.pdf'
+        if (Test-Path -LiteralPath $foreignTarget) {
+            throw 'TUR260 foreign PDF destination already exists.'
+        }
+        $firstShaBefore = (Get-FileHash -LiteralPath $first -Algorithm SHA256).Hash
+        $secondShaBefore = (Get-FileHash -LiteralPath $second -Algorithm SHA256).Hash
+        $pendingForeignBefore = @(Get-ChildItem -LiteralPath $volumeRoot -Filter '.embasic-pending-*.pdf' -File)
+        if ($pendingForeignBefore.Count -ne 0) {
+            throw 'Foreign exFAT volume contains unexpected PDF staging before physical save.'
+        }
+        & java -cp $classes PackagedInputRobot save
+        if ($LASTEXITCODE -ne 0) { throw 'Physical exFAT Ctrl+S failed.' }
+        $exfatChooser = Wait-DialogTitle 'PDF olarak kaydet' 15
+        & java -cp $classes PackagedInputRobot choosepdf $foreignTarget
+        if ($LASTEXITCODE -ne 0) { throw 'Physical exFAT filename selection failed.' }
+        # Existing PDF on NTFS must stay valid; the new exFAT target must
+        # fail without a user overwrite confirmation or success dialog.
+        $exfatErrorDialog = Wait-DialogTitle 'Embasic UDF hatası' 60
+        if (Test-Path -LiteralPath $foreignTarget) {
+            throw 'Physical unsupported-hardlink operation published a PDF unexpectedly.'
+        }
+        if ((Get-FileHash -LiteralPath $outputPdf -Algorithm SHA256).Hash -ne $approvedSha) {
+            throw 'Previously approved PDF SHA changed after physical exFAT save rejection.'
+        }
+        if ((Get-FileHash -LiteralPath $first -Algorithm SHA256).Hash -ne $firstShaBefore -or
+            (Get-FileHash -LiteralPath $second -Algorithm SHA256).Hash -ne $secondShaBefore) {
+            throw 'Physical exFAT save rejection changed an input synthetic UDF.'
+        }
+        if (@(Get-ChildItem -LiteralPath $volumeRoot -Filter '.embasic-pending-*.pdf' -File).Count -ne 0 -or
+            @(Get-ChildItem -LiteralPath $volumeRoot -Filter '.embasic-backup-*' -File).Count -ne 0 -or
+            @(Get-ChildItem -LiteralPath $outputDir -Filter '.embasic-pending-*.pdf' -File).Count -ne 0) {
+            throw 'Physical exFAT failure leaked staging or backup file.'
+        }
+        & java -cp $classes PackagedInputRobot cancel
+        if ($LASTEXITCODE -ne 0) { throw 'Physical exFAT error modal dismissal failed.' }
+        Wait-NoOwnedDialog 10
+        if ((Get-FileHash -LiteralPath $outputPdf -Algorithm SHA256).Hash -ne $approvedSha) {
+            throw 'Approved PDF changed after exFAT error modal dismissal.'
+        }
+        Write-Host 'PACKAGED-UNSUPPORTED-HARDLINK-EXFAT-PASS: real separate exFAT VHD denied new PDF link, physical Ctrl+S and error modal, no target/staging/backup, source SHA and previous approved PDF SHA unchanged.'
+    }
 
     if ($JdiRenderRace) {
         # TUR244: Only an ephemeral EXE exposes loopback JDWP. Arm a distinct
