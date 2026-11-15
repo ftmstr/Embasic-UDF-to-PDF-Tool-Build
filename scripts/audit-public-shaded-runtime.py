@@ -140,8 +140,8 @@ def inspect(lines: list[str], repository: Path, shaded: Path) -> dict:
         for group, name, version in sorted(observed):
             coord = (group, name, version)
             relative = Path(*group.split(".")) / name / version / (name + "-" + version)
-            jar_path = cache / relative.with_suffix(".jar")
-            pom_path = cache / relative.with_suffix(".pom")
+            jar_path = cache / (str(relative) + ".jar")
+            pom_path = cache / (str(relative) + ".pom")
             pom_raw = safe_file(pom_path, cache, 1024 * 1024)
             jar_raw = safe_file(jar_path, cache, MAX_JAR)
             licenses = licenses_from_pom(pom_raw, coord)
