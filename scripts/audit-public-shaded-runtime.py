@@ -111,14 +111,17 @@ def extract_class(z: zipfile.ZipFile, name: str) -> bytes:
     except (KeyError, OSError, RuntimeError, zipfile.BadZipFile) as exc:
         raise AuditError("selected_class_missing_or_corrupt") from exc
 
+def is_legal_text_member(name: str) -> bool:
+    """Recognize common dependency LICENSE/NOTICE variants, including SPDX suffixes."""
+    leaf = name.rsplit("/", 1)[-1].lower()
+    stems = ("license", "licence", "notice", "copying")
+    return leaf in stems or leaf.startswith(tuple(
+        stem + separator for stem in stems for separator in (".", "-", "_")
+    ))
+
 def notice_paths(z: zipfile.ZipFile) -> list[str]:
-    out = []
-    for item in z.infolist():
-        leaf = item.filename.rsplit("/", 1)[-1].lower()
-        if not item.is_dir() and (leaf in ("license", "licence", "notice", "copying")
-                                  or leaf.startswith(("license.", "licence.", "notice.", "copying."))):
-            out.append(item.filename)
-    return sorted(out)[:40]
+    return sorted(item.filename for item in z.infolist()
+                  if not item.is_dir() and is_legal_text_member(item.filename))[:40]
 
 def notice_content_evidence(z: zipfile.ZipFile) -> list[dict]:
     """Hash actual notice/license bytes without publishing their text.
@@ -128,11 +131,7 @@ def notice_content_evidence(z: zipfile.ZipFile) -> list[dict]:
     """
     paths = notice_paths(z)
     total = sum(1 for item in z.infolist()
-                if not item.is_dir() and
-                (item.filename.rsplit("/", 1)[-1].lower() in
-                 ("license", "licence", "notice", "copying") or
-                 item.filename.rsplit("/", 1)[-1].lower().startswith(
-                     ("license.", "licence.", "notice.", "copying."))))
+                if not item.is_dir() and is_legal_text_member(item.filename))
     if total != len(paths):
         raise AuditError("truncated_license_notice_inventory")
     evidence = []
