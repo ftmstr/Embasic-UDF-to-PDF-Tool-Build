@@ -56,8 +56,10 @@ jobs:
       # Opt-in PDFBox timing in CI only: identify font lookup vs embedding cost
       # without logging document text or font paths. This is instrumentation,
       # not a performance improvement or a release approval.
-      - name: Compile + JUnit test + shaded JAR build (no binary publication)
-        run: mvn -B -ntp -f app/pom.xml "-Dembasic.diagnostics.fontTiming=true" clean verify
+      - name: Synthetic runtime-shade license evidence regression
+        run: python scripts/test-audit-public-shaded-runtime.py
+      - name: Compile + JUnit test + audit actual shaded runtime JARs (NO-GO)
+        run: python scripts/audit-public-shaded-runtime.py --build
       - name: CLI synthetic UDF to PDF smoke
         run: python app/scripts/smoke_cli.py app/target/embasic-public-desktop-0.1.0-SNAPSHOT-all.jar
 
