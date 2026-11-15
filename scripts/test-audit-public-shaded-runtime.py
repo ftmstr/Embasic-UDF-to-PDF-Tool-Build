@@ -46,6 +46,10 @@ class AuditSyntheticTest(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
+    def test_platform_maven_launcher(self):
+        self.assertEqual(audit.maven_launcher("win32"), "mvn.cmd")
+        self.assertEqual(audit.maven_launcher("linux"), "mvn")
+
     def test_four_runtime_components_exact_hashes_block_release(self):
         result = audit.inspect(self.lines, self.cache, self.shade)
         self.assertEqual(result["resolved_shade_component_count"], 4)

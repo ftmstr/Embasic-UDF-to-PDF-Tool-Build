@@ -146,6 +146,7 @@ $ciColor = if ($ci.Conclusion -eq 'success') { 'Green' } elseif ($ci.Conclusion 
 Write-Host "  GITHUB CI  : $($ci.Status) / $($ci.Conclusion)" -ForegroundColor $ciColor
 if ($ci.Url) { Write-Host "  CI URL     : $($ci.Url)" -ForegroundColor Gray }
 Write-Host '  ROBOT GUI   : CI_VERIFIED_LIMITED — paketli Windows Robot/JDI kabulü var; dış kullanıcı beta NOT_RUN' -ForegroundColor Yellow
+Write-Host '  SHADE DEPENDENCY : Dört transitif JAR/POM SHA kaniti; lisans ve NOTICE hak incelemesi NO-GO' -ForegroundColor Yellow
 Write-Host '  YAYIN GATE: KAPALI — hak/lisans, gercek UDF, arayuz kabul testleri eksik' -ForegroundColor Red
 Write-Host ''
 Write-Host ("  ILK BETA ICIN PLANLAMA : {0} — {1}" -f $report.Forecast.BetaEarliest,$report.Forecast.BetaLatest) -ForegroundColor Cyan

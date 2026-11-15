@@ -183,8 +183,11 @@ def inspect(lines: list[str], repository: Path, shaded: Path) -> dict:
         "hostile_cas": "NO_GO",
     }
 
+def maven_launcher(platform: str) -> str:
+    return "mvn.cmd" if platform == "win32" else "mvn"
+
 def run_maven() -> list[str]:
-    command = ["mvn", "-B", "-ntp", "-f", "app/pom.xml",
+    command = [maven_launcher(sys.platform), "-B", "-ntp", "-f", "app/pom.xml",
                "-Dembasic.diagnostics.fontTiming=true", "clean", "verify"]
     try:
         proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
