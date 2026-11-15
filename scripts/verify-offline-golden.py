@@ -34,7 +34,13 @@ def pdf_envelope(path: Path) -> bool:
         stream.seek(max(0, path.stat().st_size - 1024))
         tail = stream.read()
     # Only PDF whitespace may follow the final EOF marker; arbitrary trailing bytes fail closed.
-    return re.search(rb"%%EOF[\x00\x09\x0a\x0c\x0d\x20]*\Z", tail) is not None
+    # Reject a bare EOF token without the final cross-reference pointer.
+    # This is envelope validation, not full PDF parsing or UYAP equivalence.
+    match = re.search(rb"startxref[\x09\x0a\x0c\x0d\x20]+([0-9]+)[\x09\x0a\x0c\x0d\x20]+%%EOF[\x00\x09\x0a\x0c\x0d\x20]*\Z", tail)
+    if match is None:
+        return False
+    offset = int(match.group(1))
+    return 0 < offset < path.stat().st_size - len(tail) + match.start()
 
 def verify(record: dict, source: Path, reference: Path, output: Path) -> str:
     if not isinstance(record, dict) or set(record) != set(FIELDS):
