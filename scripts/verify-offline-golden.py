@@ -50,7 +50,7 @@ def verify(record: dict, source: Path, reference: Path, output: Path) -> str:
         return "BLOCKED"
     try:
         paths = [p.resolve(strict=True) for p in (source, reference, output)]
-        if len(set(paths)) != 3 or not all(p.is_file() and not p.is_symlink()
+        if len(set(paths)) != 3 or len({(p.stat().st_dev, p.stat().st_ino) for p in paths}) != 3 or not all(p.is_file() and not p.is_symlink()
                                            for p in (source, reference, output)):
             return "BLOCKED"
         if any(p.stat().st_size == 0 for p in paths):
@@ -63,6 +63,15 @@ def verify(record: dict, source: Path, reference: Path, output: Path) -> str:
     # An offline record is evidence only; never asserts native compatibility.
     return record["result"]
 
+def unique_keys(pairs: list[tuple[str, object]]) -> dict:
+    """Reject duplicate JSON keys instead of silently trusting the last value."""
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate evidence key")
+        result[key] = value
+    return result
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--record", required=True, type=Path)
@@ -73,7 +82,7 @@ def main() -> int:
     try:
         if args.record.is_symlink() or args.record.stat().st_size > 64 * 1024:
             raise ValueError("unsafe record")
-        record = json.loads(args.record.read_text(encoding="utf-8"))
+        record = json.loads(args.record.read_text(encoding="utf-8"), object_pairs_hook=unique_keys)
         status = verify(record, args.source, args.reference, args.output)
     except (OSError, ValueError, UnicodeError, json.JSONDecodeError):
         status = "BLOCKED"
