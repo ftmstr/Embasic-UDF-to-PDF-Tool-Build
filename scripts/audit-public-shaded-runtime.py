@@ -213,12 +213,27 @@ def inspect(lines: list[str], repository: Path, shaded: Path) -> dict:
                 "sample_class_sha256_identical": sha256(original),
                 "license_or_notice_review": "NOT_VERIFIED",
             })
+    # Actionable, exact-byte review queue for the independent app/ release gate.
+    # Missing or transformed legal text must never silently disappear into a
+    # component-level summary; matching bytes still require human legal review.
+    unresolved_notice_members = [
+        {"maven_coordinate": component["maven_coordinate"],
+         "member": entry["member"], "sha256": entry["sha256"],
+         "bytes": entry["bytes"], "review": "REQUIRES_HUMAN_NOTICE_REVIEW"}
+        for component in components
+        for entry in component["upstream_license_notice_content_sha256_unreviewed"]
+        if not any(match["sha256"] == entry["sha256"] and match["exact_bytes_present"]
+                   for match in component["upstream_notice_exact_byte_matches"])
+    ]
     digest = sha256(json.dumps(components, sort_keys=True, separators=(",", ":")).encode("utf-8"))
     return {
         "status": "BLOCKED", "publication_allowed": False,
         "resolved_shade_component_count": len(components),
         "resolved_shade_components": components,
         "resolved_evidence_sha256": digest,
+        "unresolved_upstream_license_notice_members": unresolved_notice_members,
+        "unresolved_upstream_license_notice_count": len(unresolved_notice_members),
+        "independent_app_license_notice_clearance": "NOT_VERIFIED",
         "shaded_jar_sha256": sha256(bundle_bytes),
         "shaded_license_notice_member_names": shaded_notices,
         "shaded_license_notice_content_sha256_unreviewed": shaded_notice_hashes,
