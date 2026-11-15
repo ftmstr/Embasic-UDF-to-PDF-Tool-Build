@@ -225,6 +225,25 @@ def inspect(lines: list[str], repository: Path, shaded: Path) -> dict:
         if not any(match["sha256"] == entry["sha256"] and match["exact_bytes_present"]
                    for match in component["upstream_notice_exact_byte_matches"])
     ]
+    # Even if every upstream legal-text byte survives shading, the actual
+    # declared licenses and redistribution duties remain unapproved. A JAR
+    # without recognizable legal text must be queued, not silently treated
+    # as an empty set of obligations.
+    component_legal_review_queue = [
+        {
+            "maven_coordinate": component["maven_coordinate"],
+            "declared_pom_licenses": component["declared_pom_licenses_unreviewed"],
+            "upstream_legal_text_member_count": len(
+                component["upstream_license_notice_content_sha256_unreviewed"]
+            ),
+            "missing_or_transformed_legal_text_member_count": sum(
+                not match["exact_bytes_present"]
+                for match in component["upstream_notice_exact_byte_matches"]
+            ),
+            "review": "REQUIRES_INDEPENDENT_LICENSE_AND_NOTICE_CLEARANCE",
+        }
+        for component in components
+    ]
     digest = sha256(json.dumps(components, sort_keys=True, separators=(",", ":")).encode("utf-8"))
     return {
         "status": "BLOCKED", "publication_allowed": False,
@@ -233,6 +252,8 @@ def inspect(lines: list[str], repository: Path, shaded: Path) -> dict:
         "resolved_evidence_sha256": digest,
         "unresolved_upstream_license_notice_members": unresolved_notice_members,
         "unresolved_upstream_license_notice_count": len(unresolved_notice_members),
+        "component_legal_review_queue": component_legal_review_queue,
+        "component_legal_review_count": len(component_legal_review_queue),
         "independent_app_license_notice_clearance": "NOT_VERIFIED",
         "shaded_jar_sha256": sha256(bundle_bytes),
         "shaded_license_notice_member_names": shaded_notices,
