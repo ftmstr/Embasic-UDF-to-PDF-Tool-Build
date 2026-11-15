@@ -33,17 +33,23 @@ def sha256(data: bytes) -> str:
 
 def safe_file(path: Path, root: Path, limit: int) -> bytes:
     """No symlink hops, missing files, or unbounded reads."""
-    allowed = root.resolve(strict=True)
-    candidate = path.absolute()
-    if not candidate.is_relative_to(allowed):
-        raise AuditError("path_outside_audit_root")
-    for parent in (candidate, *candidate.parents):
-        if parent == allowed:
+    # Windows temporary paths can have different long/short aliases. Resolve
+    # both sides before membership comparison, but reject symlink hops first.
+    lexical = path.absolute()
+    root_lexical = root.absolute()
+    if root_lexical.is_symlink():
+        raise AuditError("symlink_artifact")
+    for parent in (lexical, *lexical.parents):
+        if parent == root_lexical:
             break
         if parent.is_symlink():
             raise AuditError("symlink_artifact")
-    if not candidate.is_file() or candidate.is_symlink():
+    if not lexical.is_file() or lexical.is_symlink():
         raise AuditError("artifact_missing_or_symlink")
+    allowed = root.resolve(strict=True)
+    candidate = lexical.resolve(strict=True)
+    if not candidate.is_relative_to(allowed):
+        raise AuditError("path_outside_audit_root")
     size = candidate.stat().st_size
     if size <= 0 or size > limit:
         raise AuditError("artifact_size_limit")

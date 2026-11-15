@@ -145,7 +145,10 @@ def inventory(repo: Path):
 
 def export_local(repo: Path, target: Path, manifest: dict):
     target = target.absolute()
-    if target.is_relative_to(repo.resolve()):
+    # Windows may expose the same temporary directory through two aliases;
+    # check canonical existing parent before choosing the output file.
+    canonical_target = target.parent.resolve(strict=True) / target.name
+    if canonical_target.is_relative_to(repo.resolve()):
         raise AuditError("manifest_output_inside_public_repo")
     try:
         fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
