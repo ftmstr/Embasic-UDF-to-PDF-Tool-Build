@@ -62,6 +62,16 @@ jobs:
         run: python scripts/test-audit-public-shaded-runtime.py
       - name: Compile + JUnit test + audit actual shaded runtime JARs (NO-GO)
         run: python scripts/audit-public-shaded-runtime.py --build
+      # Record the actual resolved runtime graph at this exact checkout, not merely
+      # the direct POM declarations. This is evidence only: no artifact upload,
+      # redistribution permission, or UYAP compatibility assertion.
+      - name: Record resolved Public app runtime Maven dependency tree (NO-GO)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "PUBLIC_APP_EVIDENCE_COMMIT=$(git rev-parse HEAD)"
+          mvn -B -ntp -f app/pom.xml org.apache.maven.plugins:maven-dependency-plugin:3.7.1:tree -Dscope=runtime -DoutputType=text
+
       - name: CLI synthetic UDF to PDF smoke
         run: python app/scripts/smoke_cli.py app/target/embasic-public-desktop-0.1.0-SNAPSHOT-all.jar
 
