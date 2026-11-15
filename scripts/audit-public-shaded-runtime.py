@@ -114,7 +114,12 @@ def extract_class(z: zipfile.ZipFile, name: str) -> bytes:
 def is_legal_text_member(name: str) -> bool:
     """Recognize common dependency LICENSE/NOTICE variants, including SPDX suffixes."""
     leaf = name.rsplit("/", 1)[-1].lower()
-    stems = ("license", "licence", "notice", "copying")
+    # Apache and other redistributed Java libraries can carry mandatory
+    # attribution in DEPENDENCIES, COPYRIGHT, or THIRD-PARTY files rather
+    # than a file whose basename begins LICENSE/NOTICE. Inventory these
+    # as unreviewed legal material; do not infer redistribution permission.
+    stems = ("license", "licence", "notice", "copying", "copyright",
+             "dependencies", "third-party", "third_party", "thirdparty")
     return leaf in stems or leaf.startswith(tuple(
         stem + separator for stem in stems for separator in (".", "-", "_")
     ))
