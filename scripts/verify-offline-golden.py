@@ -33,7 +33,8 @@ def pdf_envelope(path: Path) -> bool:
             return False
         stream.seek(max(0, path.stat().st_size - 1024))
         tail = stream.read()
-    # Reject an EOF marker embedded in trailing arbitrary bytes. Only whitespace\n    # may follow the final marker in this deliberately conservative acceptance gate.\n    return re.search(rb"%%EOF[\\x00\\x09\\x0a\\x0c\\x0d\\x20]*\\Z", tail) is not None
+    # Only PDF whitespace may follow the final EOF marker; arbitrary trailing bytes fail closed.
+    return re.search(rb"%%EOF[\x00\x09\x0a\x0c\x0d\x20]*\Z", tail) is not None
 
 def verify(record: dict, source: Path, reference: Path, output: Path) -> str:
     if not isinstance(record, dict) or set(record) != set(FIELDS):
