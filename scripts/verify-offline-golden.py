@@ -26,6 +26,15 @@ def digest(path: Path) -> str:
             h.update(block)
     return h.hexdigest()
 
+def pdf_envelope(path: Path) -> bool:
+    """Minimal PDF envelope check; not a parser or visual-equivalence proof."""
+    with path.open("rb") as stream:
+        if not stream.read(1024).startswith(b"%PDF-"):
+            return False
+        stream.seek(max(0, path.stat().st_size - 1024))
+        tail = stream.read()
+    return b"%%EOF" in tail
+
 def verify(record: dict, source: Path, reference: Path, output: Path) -> str:
     if not isinstance(record, dict) or set(record) != set(FIELDS):
         return "BLOCKED"
@@ -54,6 +63,8 @@ def verify(record: dict, source: Path, reference: Path, output: Path) -> str:
                                            for p in (source, reference, output)):
             return "BLOCKED"
         if any(p.stat().st_size == 0 for p in paths):
+            return "BLOCKED"
+        if not all(pdf_envelope(p) for p in (reference, output)):
             return "BLOCKED"
         if any(digest(p) != record[k] for p, k in zip(paths,
                ("input_sha256", "reference_pdf_sha256", "output_sha256"))):
