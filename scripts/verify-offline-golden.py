@@ -29,7 +29,7 @@ def digest(path: Path) -> str:
 def pdf_envelope(path: Path) -> bool:
     """Minimal PDF envelope check; not a parser or visual-equivalence proof."""
     with path.open("rb") as stream:
-        if not stream.read(1024).startswith(b"%PDF-"):
+        if re.match(rb"%PDF-(?:1\.[0-7]|2\.0)(?:\r\n|\r|\n)", stream.read(1024)) is None:
             return False
         stream.seek(max(0, path.stat().st_size - 1024))
         tail = stream.read()
