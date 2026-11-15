@@ -48,10 +48,17 @@ def pdf_envelope(path: Path) -> bool:
     with path.open("rb") as stream:
         stream.seek(offset)
         target = stream.read(128)
-    return (target.startswith(b"xref") and
-            (len(target) == 4 or target[4:5] in b"\x00\x09\x0a\x0c\x0d\x20")) or bool(
-        re.match(rb"[0-9]+[ \t]+[0-9]+[ \t]+obj(?:[\x09\x0a\x0c\x0d\x20])", target)
-    )
+    if target.startswith(b"xref") and (len(target) == 4 or target[4:5] in b"\x00\x09\x0a\x0c\x0d\x20"):
+        return True
+    # An arbitrary indirect object is not an xref stream. Require its dictionary
+    # to identify /Type /XRef before the stream keyword, within a bounded read.
+    if re.match(rb"[0-9]+[ \t]+[0-9]+[ \t]+obj[\x09\x0a\x0c\x0d\x20]", target) is None:
+        return False
+    with path.open("rb") as stream:
+        stream.seek(offset)
+        header = stream.read(4096)
+    dictionary = re.search(rb"\x3c\x3c(.*?)\x3e\x3e[\x09\x0a\x0c\x0d\x20]*stream\b", header, re.DOTALL)
+    return bool(dictionary and re.search(rb"/Type[\x09\x0a\x0c\x0d\x20]*/XRef\b", dictionary.group(1)))
 
 def verify(record: dict, source: Path, reference: Path, output: Path) -> str:
     if not isinstance(record, dict) or set(record) != set(FIELDS):
