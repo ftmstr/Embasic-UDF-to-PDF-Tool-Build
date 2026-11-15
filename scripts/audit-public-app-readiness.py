@@ -91,15 +91,43 @@ def inventory(repo: Path):
         dependencies.append({"group_id": group, "artifact_id": artifact,
                              "version": version, "scope": scope})
     dependencies.sort(key=lambda x: (x["group_id"], x["artifact_id"], x["scope"]))
+    # Build plugins and shade configuration affect what the distributable contains.
+    # Record their exact declared coordinates; this is NOT a transitive SBOM.
+    plugins = []
+    for plugin in root.findall(f"{ns}build/{ns}plugins/{ns}plugin"):
+        def plugin_val(field):
+            element = plugin.find(ns + field)
+            return "" if element is None or element.text is None else element.text.strip()
+        group = plugin_val("groupId") or "org.apache.maven.plugins"
+        artifact, version = plugin_val("artifactId"), plugin_val("version")
+        if not artifact or not version or any("${" in x for x in (group, artifact, version)):
+            raise AuditError("unresolved_build_plugin")
+        plugins.append({"group_id": group, "artifact_id": artifact, "version": version})
+    plugins.sort(key=lambda x: (x["group_id"], x["artifact_id"]))
+    shade = [p for p in plugins if p["artifact_id"] == "maven-shade-plugin"]
+    if len(shade) > 1:
+        raise AuditError("duplicate_shade_plugin")
+    shade_config = "NOT_CONFIGURED"
+    if shade:
+        shade_node = next(p for p in root.findall(f"{ns}build/{ns}plugins/{ns}plugin")
+                          if (p.findtext(ns + "artifactId") or "").strip() == "maven-shade-plugin")
+        executions = shade_node.findall(f"{ns}executions/{ns}execution")
+        shade_config = "DECLARED_UNREVIEWED"
+        if not any("shade" in [(g.text or "").strip() for g in e.findall(f"{ns}goals/{ns}goal")]
+                   for e in executions):
+            raise AuditError("shade_goal_missing")
     present = set(git(repo, "ls-tree", "-r", "--name-only", "HEAD").decode("utf-8").splitlines())
     files.sort(key=lambda x: x["path"])
     manifest = {"schema_version": 1, "commit_sha": sha, "app_files": files,
-                "direct_maven_dependencies": dependencies}
+                "direct_maven_dependencies": dependencies,
+                "declared_build_plugins": plugins, "shade_configuration": shade_config}
     digest = hashlib.sha256(json.dumps(manifest, sort_keys=True, ensure_ascii=False,
                             separators=(",", ":")).encode("utf-8")).hexdigest()
     summary = {"commit_sha": sha, "tracked_app_file_count": len(files),
                "tracked_app_bytes": total, "exact_commit_manifest_sha256": digest,
                "direct_dependency_count": len(dependencies),
+               "declared_build_plugin_count": len(plugins),
+               "shade_configuration": shade_config,
                "source_license_document": "PRESENT_UNREVIEWED" if present & {"LICENSE", "app/LICENSE"} else "MISSING",
                "third_party_notice_document": "PRESENT_UNREVIEWED" if present & {"THIRD-PARTY-NOTICES.txt", "app/THIRD-PARTY-NOTICES.txt"} else "MISSING",
                "shaded_transitive_dependencies": "NOT_REVIEWED",
