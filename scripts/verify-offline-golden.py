@@ -49,8 +49,8 @@ def pdf_envelope(path: Path) -> bool:
         stream.seek(offset)
         target = stream.read(128)
     return (target.startswith(b"xref") and
-            (len(target) == 4 or target[4:5] in b"\\x00\\x09\\x0a\\x0c\\x0d\\x20")) or bool(
-        re.match(rb"[0-9]+[ \\t]+[0-9]+[ \\t]+obj(?:[\\x09\\x0a\\x0c\\x0d\\x20])", target)
+            (len(target) == 4 or target[4:5] in b"\x00\x09\x0a\x0c\x0d\x20")) or bool(
+        re.match(rb"[0-9]+[ \t]+[0-9]+[ \t]+obj(?:[\x09\x0a\x0c\x0d\x20])", target)
     )
 
 def verify(record: dict, source: Path, reference: Path, output: Path) -> str:
