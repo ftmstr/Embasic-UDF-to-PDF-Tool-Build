@@ -5,11 +5,13 @@ on:
     branches: [main, "ci/**"]
     paths:
       - "app/**"
+      - "scripts/**"
       - ".github/workflows/public-mvp-ci.yml"
   pull_request:
     branches: [main]
     paths:
       - "app/**"
+      - "scripts/**"
       - ".github/workflows/public-mvp-ci.yml"
   workflow_dispatch:
     inputs:
