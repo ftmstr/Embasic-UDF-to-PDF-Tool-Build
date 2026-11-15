@@ -120,6 +120,35 @@ def notice_paths(z: zipfile.ZipFile) -> list[str]:
             out.append(item.filename)
     return sorted(out)[:40]
 
+def notice_content_evidence(z: zipfile.ZipFile) -> list[dict]:
+    """Hash actual notice/license bytes without publishing their text.
+
+    This is an evidence inventory, NOT a license-compatibility decision.
+    Refuse truncated inventories and oversized legal text rather than omit it.
+    """
+    paths = notice_paths(z)
+    total = sum(1 for item in z.infolist()
+                if not item.is_dir() and
+                (item.filename.rsplit("/", 1)[-1].lower() in
+                 ("license", "licence", "notice", "copying") or
+                 item.filename.rsplit("/", 1)[-1].lower().startswith(
+                     ("license.", "licence.", "notice.", "copying."))))
+    if total != len(paths):
+        raise AuditError("truncated_license_notice_inventory")
+    evidence = []
+    for name in paths:
+        member = z.getinfo(name)
+        if member.file_size > 1024 * 1024:
+            raise AuditError("license_notice_member_too_large")
+        try:
+            data = z.read(member)
+        except (OSError, RuntimeError, zipfile.BadZipFile) as exc:
+            raise AuditError("unreadable_license_notice_member") from exc
+        if len(data) != member.file_size:
+            raise AuditError("license_notice_member_size_mismatch")
+        evidence.append({"member": name, "sha256": sha256(data), "bytes": len(data)})
+    return evidence
+
 def parse_shade_lines(lines: list[str]) -> set[tuple[str, str, str]]:
     observed = []
     for line in lines:
@@ -143,6 +172,7 @@ def inspect(lines: list[str], repository: Path, shaded: Path) -> dict:
     components = []
     with open_jar(shaded, bundle_root) as bundle:
         shaded_notices = notice_paths(bundle)
+        shaded_notice_hashes = notice_content_evidence(bundle)
         for group, name, version in sorted(observed):
             coord = (group, name, version)
             relative = Path(*group.split(".")) / name / version / (name + "-" + version)
@@ -158,12 +188,14 @@ def inspect(lines: list[str], repository: Path, shaded: Path) -> dict:
                 if original != copied:
                     raise AuditError("selected_shaded_class_differs")
                 notices = notice_paths(upstream)
+                notice_hashes = notice_content_evidence(upstream)
             components.append({
                 "maven_coordinate": ":".join(coord),
                 "pom_sha256": sha256(pom_raw),
                 "jar_sha256": sha256(jar_raw),
                 "declared_pom_licenses_unreviewed": licenses,
                 "upstream_license_notice_member_names": notices,
+                "upstream_license_notice_content_sha256_unreviewed": notice_hashes,
                 "sample_class_sha256_identical": sha256(original),
                 "license_or_notice_review": "NOT_VERIFIED",
             })
@@ -175,6 +207,7 @@ def inspect(lines: list[str], repository: Path, shaded: Path) -> dict:
         "resolved_evidence_sha256": digest,
         "shaded_jar_sha256": sha256(bundle_bytes),
         "shaded_license_notice_member_names": shaded_notices,
+        "shaded_license_notice_content_sha256_unreviewed": shaded_notice_hashes,
         "complete_shaded_byte_provenance": "NOT_VERIFIED",
         "transitive_source_and_license_approval": "NOT_VERIFIED",
         "source_notice_artwork_redistribution": "NO_GO",
