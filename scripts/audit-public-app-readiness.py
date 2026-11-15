@@ -94,6 +94,7 @@ def inventory(repo: Path):
     # Build plugins and shade configuration affect what the distributable contains.
     # Record their exact declared coordinates; this is NOT a transitive SBOM.
     plugins = []
+    seen_plugins = set()
     for plugin in root.findall(f"{ns}build/{ns}plugins/{ns}plugin"):
         def plugin_val(field):
             element = plugin.find(ns + field)
@@ -102,11 +103,16 @@ def inventory(repo: Path):
         artifact, version = plugin_val("artifactId"), plugin_val("version")
         if not artifact or not version or any("${" in x for x in (group, artifact, version)):
             raise AuditError("unresolved_build_plugin")
+        if (group, artifact) in seen_plugins:
+            raise AuditError("duplicate_build_plugin")
+        seen_plugins.add((group, artifact))
         plugins.append({"group_id": group, "artifact_id": artifact, "version": version})
     plugins.sort(key=lambda x: (x["group_id"], x["artifact_id"]))
-    shade = [p for p in plugins if p["artifact_id"] == "maven-shade-plugin"]
-    if len(shade) > 1:
-        raise AuditError("duplicate_shade_plugin")
+    shade = [p for p in plugins if p["artifact_id"] == "maven-shade-plugin"
+             and p["group_id"] == "org.apache.maven.plugins"]
+    if any(p["artifact_id"] == "maven-shade-plugin" and p["group_id"] != "org.apache.maven.plugins"
+           for p in plugins):
+        raise AuditError("unexpected_shade_plugin_group")
     shade_config = "NOT_CONFIGURED"
     if shade:
         shade_node = next(p for p in root.findall(f"{ns}build/{ns}plugins/{ns}plugin")
