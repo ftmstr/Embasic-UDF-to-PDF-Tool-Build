@@ -40,7 +40,18 @@ def pdf_envelope(path: Path) -> bool:
     if match is None:
         return False
     offset = int(match.group(1))
-    return 0 < offset < path.stat().st_size - len(tail) + match.start()
+    # The pointer must identify an actual xref table or xref-stream object,
+    # not merely an arbitrary byte position within the file.
+    xref_position = path.stat().st_size - len(tail) + match.start()
+    if not 0 < offset < xref_position:
+        return False
+    with path.open("rb") as stream:
+        stream.seek(offset)
+        target = stream.read(128)
+    return (target.startswith(b"xref") and
+            (len(target) == 4 or target[4:5] in b"\\x00\\x09\\x0a\\x0c\\x0d\\x20")) or bool(
+        re.match(rb"[0-9]+[ \\t]+[0-9]+[ \\t]+obj(?:[\\x09\\x0a\\x0c\\x0d\\x20])", target)
+    )
 
 def verify(record: dict, source: Path, reference: Path, output: Path) -> str:
     if not isinstance(record, dict) or set(record) != set(FIELDS):
