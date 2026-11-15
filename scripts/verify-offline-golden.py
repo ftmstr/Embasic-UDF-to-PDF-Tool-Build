@@ -49,7 +49,13 @@ def pdf_envelope(path: Path) -> bool:
         stream.seek(offset)
         target = stream.read(128)
     if target.startswith(b"xref") and (len(target) == 4 or target[4:5] in b"\x00\x09\x0a\x0c\x0d\x20"):
-        return True
+        # A bare xref marker is not a table. Require a subsection header and
+        # at least one fixed-width cross-reference entry before accepting it.
+        # This remains a bounded envelope check, not a complete PDF parser.
+        with path.open("rb") as stream:
+            stream.seek(offset)
+            table_head = stream.read(4096)
+        return re.match(rb"xref[\x09\x0a\x0c\x0d\x20]+[0-9]+[\x09\x0a\x0c\x0d\x20]+[1-9][0-9]*[\x09\x0a\x0c\x0d\x20]+[0-9]{10}[\x09\x20]+[0-9]{5}[\x09\x20]+[nf](?=[\x09\x0a\x0c\x0d\x20])", table_head) is not None
     # An arbitrary indirect object is not an xref stream. Require its dictionary
     # to identify /Type /XRef before the stream keyword, within a bounded read.
     if re.match(rb"[0-9]+[ \t]+[0-9]+[ \t]+obj[\x09\x0a\x0c\x0d\x20]", target) is None:
