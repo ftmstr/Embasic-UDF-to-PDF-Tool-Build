@@ -173,6 +173,9 @@ def inspect(lines: list[str], repository: Path, shaded: Path) -> dict:
     with open_jar(shaded, bundle_root) as bundle:
         shaded_notices = notice_paths(bundle)
         shaded_notice_hashes = notice_content_evidence(bundle)
+        # Match exact bytes regardless of path; Shade may relocate or merge
+        # META-INF notices. Missing bytes remain an explicit review finding.
+        shaded_notice_digests = {entry["sha256"] for entry in shaded_notice_hashes}
         for group, name, version in sorted(observed):
             coord = (group, name, version)
             relative = Path(*group.split(".")) / name / version / (name + "-" + version)
@@ -196,6 +199,17 @@ def inspect(lines: list[str], repository: Path, shaded: Path) -> dict:
                 "declared_pom_licenses_unreviewed": licenses,
                 "upstream_license_notice_member_names": notices,
                 "upstream_license_notice_content_sha256_unreviewed": notice_hashes,
+                "upstream_notice_exact_byte_match_status": (
+                    "NO_UPSTREAM_NOTICE_FOUND" if not notice_hashes else
+                    "ALL_EXACT_BYTES_PRESENT" if all(
+                        entry["sha256"] in shaded_notice_digests for entry in notice_hashes
+                    ) else "MISSING_OR_TRANSFORMED_NOTICE_BYTES"
+                ),
+                "upstream_notice_exact_byte_matches": [
+                    {"sha256": entry["sha256"],
+                     "exact_bytes_present": entry["sha256"] in shaded_notice_digests}
+                    for entry in notice_hashes
+                ],
                 "sample_class_sha256_identical": sha256(original),
                 "license_or_notice_review": "NOT_VERIFIED",
             })
