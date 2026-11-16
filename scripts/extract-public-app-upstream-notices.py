@@ -115,7 +115,8 @@ def main():
     args.out.mkdir(parents=True, exist_ok=True)
     manifest = {"release_approved": False, "legal_review": "NOT_VERIFIED",
                 "purpose": "upstream attribution evidence only; do not distribute",
-                "members": evidence, "source_jars": source_jars, "missing": missing,\n                "shared_meta_inf_collision_review": collisions,
+                "members": evidence, "source_jars": source_jars, "missing": missing,
+                "shared_meta_inf_collision_review": collisions,
                 "shaded_reconciliation": shaded}
     (args.out / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps({"extracted": len(evidence), "missing": len(missing), "release_approved": False}))
