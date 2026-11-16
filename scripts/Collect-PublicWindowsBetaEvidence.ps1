@@ -19,7 +19,12 @@ if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'AppExecutable mu
 if ([IO.Path]::GetExtension($exe).ToLowerInvariant() -ne '.exe') { throw 'Expected Windows .exe app-image launcher' }
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 $out = (Resolve-Path -LiteralPath $OutputDirectory).ProviderPath
-if ($exe.StartsWith($out + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+# Reject evidence written into the app-image tree (including its launcher directory).
+# Compare complete directory boundaries, not arbitrary string prefixes.
+$appDirectory = [IO.Path]::GetDirectoryName($exe).TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+$outDirectory = $out.TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
+if ($outDirectory.Equals($appDirectory, [StringComparison]::OrdinalIgnoreCase) -or
+    $outDirectory.StartsWith($appDirectory + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
     throw 'Evidence output must be outside the application directory'
 }
 $stamp = [DateTimeOffset]::UtcNow.ToString('yyyyMMddTHHmmssZ')
