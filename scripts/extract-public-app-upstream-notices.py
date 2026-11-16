@@ -2,6 +2,7 @@
 """Extract component-specific upstream legal texts for review; never approve release."""
 import argparse
 import hashlib
+from io import BytesIO
 import json
 from pathlib import Path
 from zipfile import BadZipFile, ZipFile
@@ -39,7 +40,7 @@ def main():
                             "sha256": hashlib.sha256(jar_bytes).hexdigest(),
                             "bytes": len(jar_bytes)})
         try:
-            with ZipFile(jar) as archive:
+            with ZipFile(BytesIO(jar_bytes)) as archive:
                 names = archive.namelist()
                 for member in MEMBERS:
                     # Ambiguous duplicate ZIP names cannot be trusted as legal evidence.
