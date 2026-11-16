@@ -48,7 +48,8 @@ def pdf_envelope(path: Path) -> bool:
     with path.open("rb") as stream:
         stream.seek(offset)
         target = stream.read(128)
-    # An xref token must have a real PDF whitespace boundary (never NUL or empty).\n    if target.startswith(b"xref") and (len(target) == 4 or target[4:5] in (b"\t", b"\n", b"\x0c", b"\r", b" ")):
+    # An xref token must have a real PDF whitespace boundary (never NUL or empty).
+    if target.startswith(b"xref") and (len(target) == 4 or target[4:5] in (b"\t", b"\n", b"\x0c", b"\r", b" ")):
         # A bare xref marker is not a table. Require a subsection header and
         # at least one fixed-width cross-reference entry before accepting it.
         # This remains a bounded envelope check, not a complete PDF parser.
