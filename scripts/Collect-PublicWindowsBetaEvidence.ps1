@@ -26,8 +26,7 @@ $stamp = [DateTimeOffset]::UtcNow.ToString('yyyyMMddTHHmmssZ')
 $target = Join-Path $out ("public-windows-beta-" + $stamp + ".json")
 if (Test-Path -LiteralPath $target) { throw 'Evidence filename collision' }
 $os = Get-CimInstance Win32_OperatingSystem
-$java = Get-Command java -ErrorAction SilentlyContinue
-$javaVersion = if ($java) { (& java -version 2>&1 | Select-Object -First 1 | Out-String).Trim() } else { 'NOT_FOUND' }
+$javaVersion = 'NOT_VERIFIED' # Record the actual runtime separately; PATH is not proof of bundled Java.
 $evidence = [ordered]@{
     schema = 'embasic-public-windows-beta-evidence-v1'
     captured_utc = [DateTimeOffset]::UtcNow.ToString('o')
