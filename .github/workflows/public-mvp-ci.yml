@@ -143,6 +143,7 @@ jobs:
               $dashboard.ReleaseReadiness.RuntimeShadedLicenseEvidence -ne 'EXACT_UPSTREAM_AND_SHADED_JAR_SHA256_NO_GO' -or
               $dashboard.ReleaseReadiness.SourceAndNotices -ne 'NO_GO' -or
               $dashboard.ReleaseReadiness.LegalSharedNamespace -ne 'BLOCKED_COMPONENT_ATTRIBUTION_REVIEW' -or
+              $dashboard.ReleaseReadiness.LocalWindowsBetaEvidence -ne 'SAFE_PATH_PRECREATE_AND_EXCLUSIVE_WRITE_UNVERIFIED' -or
               $dashboard.ReleaseReadiness.PhysicalUnsupportedHardlinkExfat -ne 'NOT_RUN' -or
               $dashboard.ReleaseReadiness.LegacySourceGate -notmatch 'independent_public_mvp_source_review_required') {
             throw 'Public MVP readiness must stay fail-closed without independent evidence'
@@ -169,5 +170,35 @@ jobs:
           if (-not (Test-Path -LiteralPath $launcher)) { throw "Packaged launcher not found" }
           & python app/scripts/smoke_packaged.py $launcher
           if ($LASTEXITCODE -ne 0) { throw "Packaged launcher conversion failed" }
+
+      - name: Validate local-only Windows beta evidence collector without a user-beta claim
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $app = Join-Path $env:RUNNER_TEMP 'embasic-mvp-output/EmbasicUdfToPdfPublicMVP/EmbasicUdfToPdfPublicMVP.exe'
+          if (-not (Test-Path -LiteralPath $app -PathType Leaf)) { throw 'Physical Windows evidence launcher missing' }
+          $out = Join-Path $env:RUNNER_TEMP 'embasic-local-beta-evidence'
+          & pwsh -NoProfile -File scripts/Collect-PublicWindowsBetaEvidence.ps1 -AppExecutable $app -OutputDirectory $out
+          if ($LASTEXITCODE -ne 0) { throw 'Local beta evidence collector failed on packaged launcher' }
+          $evidenceFiles = @(Get-ChildItem -LiteralPath $out -File -Filter 'public-windows-beta-*.json')
+          if ($evidenceFiles.Count -ne 1) { throw 'Expected exactly one unuploaded evidence JSON' }
+          $evidence = Get-Content -LiteralPath $evidenceFiles[0].FullName -Raw | ConvertFrom-Json
+          $actualHash = (Get-FileHash -LiteralPath $app -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($evidence.executable_sha256 -ne $actualHash -or
+              $evidence.executable_bytes -ne (Get-Item -LiteralPath $app).Length -or
+              $evidence.W01 -ne 'NOT_RUN' -or $evidence.W07 -ne 'NOT_RUN' -or
+              $evidence.release -ne 'NO-GO' -or $evidence.native_UYAP -ne 'NOT_VERIFIED' -or
+              $evidence.exFAT_physical -ne 'NOT_RUN') {
+            throw 'Unverified beta evidence fields must stay NO-GO'
+          }
+          $forbidden = Join-Path (Split-Path -Parent $app) 'no-evidence-inside-image'
+          if (Test-Path -LiteralPath $forbidden) { throw 'Unexpected pre-existing forbidden directory' }
+          & pwsh -NoProfile -File scripts/Collect-PublicWindowsBetaEvidence.ps1 -AppExecutable $app -OutputDirectory $forbidden *> $null
+          if ($LASTEXITCODE -eq 0 -or (Test-Path -LiteralPath $forbidden)) {
+            throw 'Forbidden beta output must be rejected before directory creation'
+          }
+          Write-Host 'WINDOWS_BETA_EVIDENCE_PREFLIGHT_PASS: packaged exe stable SHA/bytes; forbidden output leaves no directory; W01/W07=NOT_RUN; release=NO-GO'
+          # No human operator, external beta, zip, install or uploaded document.
 
 # Does not publish executable artifacts or bypass source/license/rights release gates.
