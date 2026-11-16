@@ -98,10 +98,24 @@ def main():
             except (BadZipFile, OSError, RuntimeError, ValueError) as exc:
                 shaded["status"] = "UNREADABLE"
                 shaded["error_type"] = type(exc).__name__
+    # Shade merges component-level META-INF paths into one shared namespace.
+    # Record actual upstream collisions explicitly so a matching single NOTICE
+    # cannot be mistaken for complete component-specific attribution.
+    collisions = []
+    for member in MEMBERS:
+        records = [r for r in evidence if r["member"] == member]
+        hashes = {r["sha256"] for r in records}
+        collisions.append({
+            "member": member,
+            "upstream_components": sorted(r["component"] for r in records),
+            "distinct_upstream_sha256": len(hashes),
+            "component_attribution_review_required": len(records) > 1,
+            "shaded_single_path_cannot_prove_all_attributions": len(hashes) > 1,
+        })
     args.out.mkdir(parents=True, exist_ok=True)
     manifest = {"release_approved": False, "legal_review": "NOT_VERIFIED",
                 "purpose": "upstream attribution evidence only; do not distribute",
-                "members": evidence, "source_jars": source_jars, "missing": missing,
+                "members": evidence, "source_jars": source_jars, "missing": missing,\n                "shared_meta_inf_collision_review": collisions,
                 "shaded_reconciliation": shaded}
     (args.out / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps({"extracted": len(evidence), "missing": len(missing), "release_approved": False}))
