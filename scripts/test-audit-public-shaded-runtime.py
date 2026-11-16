@@ -27,7 +27,8 @@ class AuditSyntheticTest(unittest.TestCase):
         self.shade = self.root / "target" / "app-all.jar"
         self.shade.parent.mkdir()
         self.lines = []
-        shaded = {"META-INF/LICENSE.txt": b"synthetic license marker"}
+        shaded = {"META-INF/LICENSE.txt": b"synthetic license marker",
+                  "META-INF/NOTICE.txt": b"synthetic notice marker"}
         for i, (coordinate, selected) in enumerate(sorted(audit.CLASSES.items())):
             group, artifact, version = coordinate
             base = self.cache.joinpath(*group.split("."), artifact, version)
@@ -36,6 +37,7 @@ class AuditSyntheticTest(unittest.TestCase):
             value = bytes((i, 99, 77, 23))
             with ZipFile(base / (artifact + "-" + version + ".jar"), "w") as jar:
                 jar.writestr(selected, value)
+                jar.writestr("META-INF/LICENSE.txt", "synthetic component license " + artifact)
                 jar.writestr("META-INF/NOTICE.txt", "synthetic")
             shaded[selected] = value
             self.lines.append("[INFO] Including " + group + ":" + artifact + ":jar:" + version + " in the shaded jar.")
@@ -45,6 +47,50 @@ class AuditSyntheticTest(unittest.TestCase):
 
     def tearDown(self):
         self.tmp.cleanup()
+
+    def test_shared_legal_namespace_detects_distinct_and_identical_sources(self):
+        report = audit.inspect(self.lines, self.cache, self.shade)
+        paths = {e["member"]: e for e in report["shared_legal_namespace_collisions"]}
+        self.assertEqual(report["shared_legal_namespace_collision_count"], 2)
+        self.assertEqual(paths["META-INF/LICENSE.txt"]["source_count"], 4)
+        self.assertEqual(paths["META-INF/LICENSE.txt"]["status"],
+                         "DISTINCT_UPSTREAM_LEGAL_BYTES_COLLIDE")
+        self.assertEqual(paths["META-INF/NOTICE.txt"]["status"],
+                         "SHARED_LEGAL_PATH_ATTRIBUTION_REVIEW_REQUIRED")
+        self.assertFalse(paths["META-INF/NOTICE.txt"]["shaded_exact_for_all"])
+        self.assertEqual(report["legal_attribution_clearance"],
+                         "BLOCKED_SHARED_NAMESPACE_OR_INDEPENDENT_REVIEW")
+        self.assertEqual(report["unresolved_upstream_license_notice_count"], 8)
+        self.assertFalse(report["publication_allowed"])
+
+    def test_missing_upstream_notice_fails_closed(self):
+        coord, selected = sorted(audit.CLASSES.items())[0]
+        group, artifact, version = coord
+        path = self.cache.joinpath(*group.split("."), artifact, version,
+                                   artifact + "-" + version + ".jar")
+        with ZipFile(path, "w") as archive:
+            archive.writestr(selected, b"synthetic class")
+            archive.writestr("META-INF/LICENSE.txt", b"synthetic license")
+        with self.assertRaisesRegex(audit.AuditError, "upstream_license_or_notice_missing"):
+            audit.inspect(self.lines, self.cache, self.shade)
+
+    def test_missing_shaded_notice_fails_closed(self):
+        with ZipFile(self.shade, "w") as archive:
+            archive.writestr("META-INF/LICENSE.txt", b"synthetic license")
+        with self.assertRaisesRegex(audit.AuditError, "shaded_license_or_notice_missing"):
+            audit.inspect(self.lines, self.cache, self.shade)
+
+    def test_empty_upstream_legal_member_fails_closed(self):
+        coord, selected = sorted(audit.CLASSES.items())[0]
+        group, artifact, version = coord
+        path = self.cache.joinpath(*group.split("."), artifact, version,
+                                   artifact + "-" + version + ".jar")
+        with ZipFile(path, "w") as archive:
+            archive.writestr(selected, b"synthetic class")
+            archive.writestr("META-INF/LICENSE.txt", b"")
+            archive.writestr("META-INF/NOTICE.txt", b"synthetic")
+        with self.assertRaisesRegex(audit.AuditError, "license_notice_member_empty_or_too_large"):
+            audit.inspect(self.lines, self.cache, self.shade)
 
     def test_platform_maven_launcher(self):
         self.assertEqual(audit.maven_launcher("win32"), "mvn.cmd")

@@ -107,6 +107,7 @@ $report = [pscustomobject]@{
         LegacySourceGate='BLOCKED: independent_public_mvp_source_review_required'
         PublicAppInventory='EXACT_COMMIT_SHA256_ONLY_NOT_LICENSE_APPROVAL'
         RuntimeShadedLicenseEvidence='EXACT_UPSTREAM_AND_SHADED_JAR_SHA256_NO_GO'
+        LegalSharedNamespace='BLOCKED_COMPONENT_ATTRIBUTION_REVIEW'
         NativeUyapGolden='NOT_VERIFIED'
         AllUdfVersions='NOT_VERIFIED'
         SourceAndNotices='NO_GO'

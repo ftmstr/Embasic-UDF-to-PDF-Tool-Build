@@ -142,6 +142,7 @@ jobs:
               $dashboard.ReleaseReadiness.NativeUyapGolden -ne 'NOT_VERIFIED' -or
               $dashboard.ReleaseReadiness.RuntimeShadedLicenseEvidence -ne 'EXACT_UPSTREAM_AND_SHADED_JAR_SHA256_NO_GO' -or
               $dashboard.ReleaseReadiness.SourceAndNotices -ne 'NO_GO' -or
+              $dashboard.ReleaseReadiness.LegalSharedNamespace -ne 'BLOCKED_COMPONENT_ATTRIBUTION_REVIEW' -or
               $dashboard.ReleaseReadiness.PhysicalUnsupportedHardlinkExfat -ne 'NOT_RUN' -or
               $dashboard.ReleaseReadiness.LegacySourceGate -notmatch 'independent_public_mvp_source_review_required') {
             throw 'Public MVP readiness must stay fail-closed without independent evidence'

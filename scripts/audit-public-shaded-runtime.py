@@ -142,8 +142,8 @@ def notice_content_evidence(z: zipfile.ZipFile) -> list[dict]:
     evidence = []
     for name in paths:
         member = z.getinfo(name)
-        if member.file_size > 1024 * 1024:
-            raise AuditError("license_notice_member_too_large")
+        if member.file_size <= 0 or member.file_size > 1024 * 1024:
+            raise AuditError("license_notice_member_empty_or_too_large")
         try:
             data = z.read(member)
         except (OSError, RuntimeError, zipfile.BadZipFile) as exc:
@@ -180,6 +180,11 @@ def inspect(lines: list[str], repository: Path, shaded: Path) -> dict:
         # Match exact bytes regardless of path; Shade may relocate or merge
         # META-INF notices. Missing bytes remain an explicit review finding.
         shaded_notice_digests = {entry["sha256"] for entry in shaded_notice_hashes}
+        shaded_by_path = {entry["member"]: entry["sha256"] for entry in shaded_notice_hashes}
+        if not all(any(entry["member"].rsplit("/", 1)[-1].lower().startswith(prefix)
+                       for entry in shaded_notice_hashes)
+                   for prefix in ("license", "notice")):
+            raise AuditError("shaded_license_or_notice_missing")
         for group, name, version in sorted(observed):
             coord = (group, name, version)
             relative = Path(*group.split(".")) / name / version / (name + "-" + version)
@@ -196,6 +201,10 @@ def inspect(lines: list[str], repository: Path, shaded: Path) -> dict:
                     raise AuditError("selected_shaded_class_differs")
                 notices = notice_paths(upstream)
                 notice_hashes = notice_content_evidence(upstream)
+                if not all(any(entry["member"].rsplit("/", 1)[-1].lower().startswith(prefix)
+                               for entry in notice_hashes)
+                           for prefix in ("license", "notice")):
+                    raise AuditError("upstream_license_or_notice_missing")
             components.append({
                 "maven_coordinate": ":".join(coord),
                 "pom_sha256": sha256(pom_raw),
@@ -217,6 +226,36 @@ def inspect(lines: list[str], repository: Path, shaded: Path) -> dict:
                 "sample_class_sha256_identical": sha256(original),
                 "license_or_notice_review": "NOT_VERIFIED",
             })
+    # Shared META-INF legal names are ambiguous even when a single shaded
+    # member happens to have the same SHA as one or more upstream files.
+    # Explicitly preserve every upstream component's attribution obligation.
+    legal_sources_by_path = {}
+    for component in components:
+        for entry in component["upstream_license_notice_content_sha256_unreviewed"]:
+            legal_sources_by_path.setdefault(entry["member"], []).append({
+                "maven_coordinate": component["maven_coordinate"],
+                "sha256": entry["sha256"],
+            })
+    collisions = []
+    for member, sources in sorted(legal_sources_by_path.items()):
+        if len(sources) < 2:
+            continue
+        distinct_hashes = {source["sha256"] for source in sources}
+        collisions.append({
+            "member": member,
+            "upstream_sources": sorted(sources, key=lambda s: s["maven_coordinate"]),
+            "source_count": len(sources),
+            "distinct_upstream_sha256_count": len(distinct_hashes),
+            "shaded_member_present": member in shaded_by_path,
+            "shaded_exact_for_all": (
+                member in shaded_by_path and
+                all(source["sha256"] == shaded_by_path[member] for source in sources)
+            ),
+            "status": ("DISTINCT_UPSTREAM_LEGAL_BYTES_COLLIDE"
+                       if len(distinct_hashes) > 1 else
+                       "SHARED_LEGAL_PATH_ATTRIBUTION_REVIEW_REQUIRED"),
+        })
+    collision_names = {record["member"] for record in collisions}
     # Actionable, exact-byte review queue for the independent app/ release gate.
     # Missing or transformed legal text must never silently disappear into a
     # component-level summary; matching bytes still require human legal review.
@@ -226,8 +265,10 @@ def inspect(lines: list[str], repository: Path, shaded: Path) -> dict:
          "bytes": entry["bytes"], "review": "REQUIRES_HUMAN_NOTICE_REVIEW"}
         for component in components
         for entry in component["upstream_license_notice_content_sha256_unreviewed"]
-        if not any(match["sha256"] == entry["sha256"] and match["exact_bytes_present"]
-                   for match in component["upstream_notice_exact_byte_matches"])
+        if entry["member"] in collision_names or not any(
+            match["sha256"] == entry["sha256"] and match["exact_bytes_present"]
+            for match in component["upstream_notice_exact_byte_matches"]
+        )
     ]
     # Even if every upstream legal-text byte survives shading, the actual
     # declared licenses and redistribution duties remain unapproved. A JAR
@@ -254,6 +295,9 @@ def inspect(lines: list[str], repository: Path, shaded: Path) -> dict:
         "resolved_shade_component_count": len(components),
         "resolved_shade_components": components,
         "resolved_evidence_sha256": digest,
+        "shared_legal_namespace_collisions": collisions,
+        "shared_legal_namespace_collision_count": len(collisions),
+        "legal_attribution_clearance": "BLOCKED_SHARED_NAMESPACE_OR_INDEPENDENT_REVIEW",
         "unresolved_upstream_license_notice_members": unresolved_notice_members,
         "unresolved_upstream_license_notice_count": len(unresolved_notice_members),
         "component_legal_review_queue": component_legal_review_queue,
