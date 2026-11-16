@@ -72,6 +72,16 @@ jobs:
           echo "PUBLIC_APP_EVIDENCE_COMMIT=$(git rev-parse HEAD)"
           mvn -B -ntp -f app/pom.xml org.apache.maven.plugins:maven-dependency-plugin:3.7.1:tree -Dscope=runtime -DoutputType=text
 
+      # Capture all six component-specific legal records from the exact Maven
+      # cache resolved by this checkout. Fail closed if any upstream member is
+      # absent; never upload these legal texts as distributable artifacts.
+      - name: Extract upstream FontBox/PDFBox IO legal evidence (NO-GO)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/extract-public-app-upstream-notices.py --out "${RUNNER_TEMP}/public-app-legal-evidence"
+          python -c 'import json,os,pathlib; p=pathlib.Path(os.environ["RUNNER_TEMP"])/"public-app-legal-evidence"/"manifest.json"; m=json.loads(p.read_text(encoding="utf-8")); assert len(m["members"]) == 6 and not m["missing"] and m["release_approved"] is False and m["legal_review"] == "NOT_VERIFIED"'
+
       - name: CLI synthetic UDF to PDF smoke
         run: python app/scripts/smoke_cli.py app/target/embasic-public-desktop-0.1.0-SNAPSHOT-all.jar
 
