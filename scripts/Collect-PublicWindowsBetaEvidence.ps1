@@ -19,6 +19,17 @@ if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw 'AppExecutable mu
 if ([IO.Path]::GetExtension($exe).ToLowerInvariant() -ne '.exe') { throw 'Expected Windows .exe app-image launcher' }
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
 $out = (Resolve-Path -LiteralPath $OutputDirectory).ProviderPath
+# A junction/symlink can make an apparently external evidence path resolve into
+# the app-image tree. Fail closed instead of trusting string-only path checks.
+foreach ($candidate in @($out, [IO.Path]::GetDirectoryName($exe))) {
+    $current = Get-Item -LiteralPath $candidate -Force -ErrorAction Stop
+    while ($null -ne $current) {
+        if (($current.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+            throw ('Reparse-point path component is not allowed for beta evidence: ' + $current.FullName)
+        }
+        $current = $current.Parent
+    }
+}
 # Reject evidence written into the app-image tree (including its launcher directory).
 # Compare complete directory boundaries, not arbitrary string prefixes.
 $appDirectory = [IO.Path]::GetDirectoryName($exe).TrimEnd([IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar)
