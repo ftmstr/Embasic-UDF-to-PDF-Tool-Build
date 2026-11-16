@@ -80,7 +80,7 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/extract-public-app-upstream-notices.py --out "${RUNNER_TEMP}/public-app-legal-evidence"
-          python -c 'import json,os,pathlib; p=pathlib.Path(os.environ["RUNNER_TEMP"])/"public-app-legal-evidence"/"manifest.json"; m=json.loads(p.read_text(encoding="utf-8")); assert len(m["members"]) == 6 and not m["missing"] and m["release_approved"] is False and m["legal_review"] == "NOT_VERIFIED"'
+          python -c 'import json,os,pathlib,sys; p=pathlib.Path(os.environ["RUNNER_TEMP"])/"public-app-legal-evidence"/"manifest.json"; m=json.loads(p.read_text(encoding="utf-8")); r=m["shaded_reconciliation"]; findings=r["findings"]; valid={"EXACT","DIFFERENT","ABSENT","AMBIGUOUS","INVALID_SIZE"}; ok=len(m["members"])==6 and not m["missing"] and m["release_approved"] is False and m["legal_review"]=="NOT_VERIFIED" and r["status"]=="REVIEW_REQUIRED" and len(findings)==6 and all(f["status"] in valid for f in findings) and {(f["component"],f["member"]) for f in findings}=={(f["component"],f["member"]) for f in m["members"]}; print("SHADED_LEGAL_RECONCILIATION="+r["status"]+" FINDINGS="+str(len(findings))+" STATUS_COUNTS="+str({k:sum(f["status"]==k for f in findings) for k in sorted(valid)})); sys.exit(0 if ok else 1)'
 
       - name: CLI synthetic UDF to PDF smoke
         run: python app/scripts/smoke_cli.py app/target/embasic-public-desktop-0.1.0-SNAPSHOT-all.jar
