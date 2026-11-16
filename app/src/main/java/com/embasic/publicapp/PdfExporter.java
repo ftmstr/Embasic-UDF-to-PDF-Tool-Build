@@ -56,6 +56,12 @@ public final class PdfExporter {
             // Zero-width and bidi format controls have no defined placement in
             // the synthetic PDF subset. Reject them before font loading rather
             // than silently dropping, reordering, or hiding visible text.
+            // Unicode noncharacters have no assigned text semantics. Reject
+            // them before PDFBox font lookup instead of producing a PDF whose
+            // text extraction or glyph rendering can differ across viewers.
+            if ((cp >= 0xFDD0 && cp <= 0xFDEF) || (cp & 0xFFFE) == 0xFFFE)
+                throw new IllegalArgumentException("PDF için tanımsız Unicode karakteri: U+"
+                        + Integer.toHexString(cp).toUpperCase(Locale.ROOT));
             int category = Character.getType(cp);
             // PDFBox showText() does not perform Arabic/Indic shaping or
             // bidirectional paragraph layout. Combining marks need tested
