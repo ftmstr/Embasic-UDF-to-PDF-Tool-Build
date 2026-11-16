@@ -18,6 +18,7 @@ def main():
     p.add_argument("--m2", type=Path, default=Path.home() / ".m2/repository")
     p.add_argument("--out", type=Path, required=True)
     p.add_argument("--version", default="3.0.8")
+    p.add_argument("--shaded-jar", type=Path, default=Path("app/target/embasic-public-desktop-0.1.0-SNAPSHOT-all.jar"))
     args = p.parse_args()
     if not args.version.replace(".", "").isdigit():
         p.error("invalid version")
@@ -63,10 +64,45 @@ def main():
                                      "bytes": len(payload), "extracted_path": str(destination)})
         except (BadZipFile, OSError, RuntimeError, ValueError) as exc:
             missing.append(f"{jar}:unreadable archive ({type(exc).__name__})")
+    # Compare upstream legal records against the actual shaded runtime archive.
+    # Missing/changed records are findings, never an automatic legal conclusion.
+    shaded = {"status": "NOT_VERIFIED", "path": str(args.shaded_jar), "findings": []}
+    if args.shaded_jar.is_file() and not args.shaded_jar.is_symlink():
+        if not 0 < args.shaded_jar.stat().st_size <= MAX_SOURCE_JAR_BYTES:
+            shaded["status"] = "INVALID_SIZE"
+        else:
+            try:
+                shaded_bytes = args.shaded_jar.read_bytes()
+                if len(shaded_bytes) > MAX_SOURCE_JAR_BYTES:
+                    shaded["status"] = "INVALID_SIZE"
+                else:
+                    shaded["sha256"] = hashlib.sha256(shaded_bytes).hexdigest()
+                    with ZipFile(BytesIO(shaded_bytes)) as bundle:
+                        names = bundle.namelist()
+                        for record in evidence:
+                            member = record["member"]
+                            count = names.count(member)
+                            finding = {"component": record["component"], "member": member}
+                            if count != 1:
+                                finding["status"] = "ABSENT" if count == 0 else "AMBIGUOUS"
+                            else:
+                                info = bundle.getinfo(member)
+                                if not 0 < info.file_size <= MAX_LEGAL_MEMBER_BYTES:
+                                    finding["status"] = "INVALID_SIZE"
+                                else:
+                                    data = bundle.read(member)
+                                    finding["status"] = ("EXACT" if hashlib.sha256(data).hexdigest()
+                                                         == record["sha256"] else "DIFFERENT")
+                            shaded["findings"].append(finding)
+                    shaded["status"] = "REVIEW_REQUIRED"
+            except (BadZipFile, OSError, RuntimeError, ValueError) as exc:
+                shaded["status"] = "UNREADABLE"
+                shaded["error_type"] = type(exc).__name__
     args.out.mkdir(parents=True, exist_ok=True)
     manifest = {"release_approved": False, "legal_review": "NOT_VERIFIED",
                 "purpose": "upstream attribution evidence only; do not distribute",
-                "members": evidence, "source_jars": source_jars, "missing": missing}
+                "members": evidence, "source_jars": source_jars, "missing": missing,
+                "shaded_reconciliation": shaded}
     (args.out / "manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps({"extracted": len(evidence), "missing": len(missing), "release_approved": False}))
     return 1 if missing else 0
