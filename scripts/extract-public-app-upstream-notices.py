@@ -6,6 +6,9 @@ import json
 from pathlib import Path
 from zipfile import BadZipFile, ZipFile
 
+MAX_SOURCE_JAR_BYTES = 64 * 1024 * 1024
+MAX_LEGAL_MEMBER_BYTES = 1024 * 1024
+
 COMPONENTS = ("fontbox", "pdfbox-io")
 MEMBERS = ("META-INF/DEPENDENCIES", "META-INF/LICENSE", "META-INF/NOTICE")
 
@@ -22,10 +25,16 @@ def main():
     source_jars = []
     for component in COMPONENTS:
         jar = args.m2 / "org/apache/pdfbox" / component / args.version / f"{component}-{args.version}.jar"
-        if not jar.is_file():
+        if jar.is_symlink() or not jar.is_file():
             missing.append(str(jar))
             continue
+        if not 0 < jar.stat().st_size <= MAX_SOURCE_JAR_BYTES:
+            missing.append(f"{jar}:source archive size outside bounded limit")
+            continue
         jar_bytes = jar.read_bytes()
+        if len(jar_bytes) > MAX_SOURCE_JAR_BYTES:
+            missing.append(f"{jar}:source archive changed during read")
+            continue
         source_jars.append({"component": component, "path": str(jar),
                             "sha256": hashlib.sha256(jar_bytes).hexdigest(),
                             "bytes": len(jar_bytes)})
@@ -37,14 +46,21 @@ def main():
                     if names.count(member) != 1:
                         missing.append(f"{jar}:{member}:expected exactly one ZIP entry")
                         continue
+                    info = archive.getinfo(member)
+                    if not 0 < info.file_size <= MAX_LEGAL_MEMBER_BYTES:
+                        missing.append(f"{jar}:{member}:empty or oversized legal record")
+                        continue
                     payload = archive.read(member)
+                    if len(payload) != info.file_size:
+                        missing.append(f"{jar}:{member}:size mismatch")
+                        continue
                     destination = args.out / component / member
                     destination.parent.mkdir(parents=True, exist_ok=True)
                     destination.write_bytes(payload)
                     evidence.append({"component": component, "source_jar": str(jar),
                                      "member": member, "sha256": hashlib.sha256(payload).hexdigest(),
                                      "bytes": len(payload), "extracted_path": str(destination)})
-        except (BadZipFile, OSError, RuntimeError) as exc:
+        except (BadZipFile, OSError, RuntimeError, ValueError) as exc:
             missing.append(f"{jar}:unreadable archive ({type(exc).__name__})")
     args.out.mkdir(parents=True, exist_ok=True)
     manifest = {"release_approved": False, "legal_review": "NOT_VERIFIED",
