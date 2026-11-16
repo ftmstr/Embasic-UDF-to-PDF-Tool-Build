@@ -68,8 +68,10 @@ class AuditSyntheticTest(unittest.TestCase):
         group, artifact, version = coord
         path = self.cache.joinpath(*group.split("."), artifact, version,
                                    artifact + "-" + version + ".jar")
+        with ZipFile(path) as existing:
+            original_class = existing.read(selected)
         with ZipFile(path, "w") as archive:
-            archive.writestr(selected, b"synthetic class")
+            archive.writestr(selected, original_class)
             archive.writestr("META-INF/LICENSE.txt", b"synthetic license")
         with self.assertRaisesRegex(audit.AuditError, "upstream_license_or_notice_missing"):
             audit.inspect(self.lines, self.cache, self.shade)
@@ -85,8 +87,10 @@ class AuditSyntheticTest(unittest.TestCase):
         group, artifact, version = coord
         path = self.cache.joinpath(*group.split("."), artifact, version,
                                    artifact + "-" + version + ".jar")
+        with ZipFile(path) as existing:
+            original_class = existing.read(selected)
         with ZipFile(path, "w") as archive:
-            archive.writestr(selected, b"synthetic class")
+            archive.writestr(selected, original_class)
             archive.writestr("META-INF/LICENSE.txt", b"")
             archive.writestr("META-INF/NOTICE.txt", b"synthetic")
         with self.assertRaisesRegex(audit.AuditError, "license_notice_member_empty_or_too_large"):
