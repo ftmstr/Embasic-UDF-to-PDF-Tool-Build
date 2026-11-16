@@ -63,6 +63,13 @@ public final class PdfExporter {
                 throw new IllegalArgumentException("PDF için tanımsız Unicode karakteri: U+"
                         + Integer.toHexString(cp).toUpperCase(Locale.ROOT));
             int category = Character.getType(cp);
+            // Unassigned and private-use scalars have no portable glyph or
+            // text-extraction meaning in the supported public PDF subset.
+            // Reject them rather than silently emitting .notdef glyphs;
+            // a future explicitly licensed custom-font path needs its own proof.
+            if (category == Character.UNASSIGNED || category == Character.PRIVATE_USE)
+                throw new IllegalArgumentException("PDF için doğrulanmamış Unicode kod noktası: U+"
+                        + Integer.toHexString(cp).toUpperCase(Locale.ROOT));
             // PDFBox showText() does not perform Arabic/Indic shaping or
             // bidirectional paragraph layout. Combining marks need tested
             // mark placement. Reject these before any PDF is staged, rather
