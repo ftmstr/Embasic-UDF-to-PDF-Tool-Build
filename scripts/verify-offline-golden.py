@@ -36,7 +36,7 @@ def pdf_envelope(path: Path) -> bool:
     # Only PDF whitespace may follow the final EOF marker; arbitrary trailing bytes fail closed.
     # Reject a bare EOF token without the final cross-reference pointer.
     # This is envelope validation, not full PDF parsing or UYAP equivalence.
-    match = re.search(rb"startxref[\x09\x0a\x0c\x0d\x20]+([0-9]+)[\x09\x0a\x0c\x0d\x20]+%%EOF[\x00\x09\x0a\x0c\x0d\x20]*\Z", tail)
+    match = re.search(rb"startxref[\x09\x0a\x0c\x0d\x20]+([0-9]+)[\x09\x0a\x0c\x0d\x20]+%%EOF[\x09\x0a\x0c\x0d\x20]*\Z", tail)
     if match is None:
         return False
     offset = int(match.group(1))
