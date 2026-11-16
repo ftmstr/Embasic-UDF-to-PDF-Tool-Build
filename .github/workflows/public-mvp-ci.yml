@@ -198,6 +198,9 @@ jobs:
           if ($LASTEXITCODE -eq 0 -or (Test-Path -LiteralPath $forbidden)) {
             throw 'Forbidden beta output must be rejected before directory creation'
           }
+          # The expected negative subprocess exits 1. Clear its native exit
+          # status or the otherwise successful GitHub Actions pwsh step fails.
+          $global:LASTEXITCODE = 0
           Write-Host 'WINDOWS_BETA_EVIDENCE_PREFLIGHT_PASS: packaged exe stable SHA/bytes; forbidden output leaves no directory; W01/W07=NOT_RUN; release=NO-GO'
           # No human operator, external beta, zip, install or uploaded document.
 
