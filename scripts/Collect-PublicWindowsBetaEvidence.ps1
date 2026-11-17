@@ -129,7 +129,7 @@ foreach ($entry in $freshEntries) {
 }
 if ($fresh.Count -ne $manifestMap.Count) { throw 'App-image file set changed during hashing' }
 foreach ($file in $fresh) {
-    $name = $file.FullName.Substring($prefix.Length).Replace('\\', '/')
+    $name = $file.FullName.Substring($prefix.Length).Replace([IO.Path]::DirectorySeparatorChar, '/')
     if (-not $manifestMap.ContainsKey($name.ToUpperInvariant())) { throw 'Unexpected app-image member' }
     # Re-read every packaged byte after enumeration: identical names and sizes
     # alone cannot detect an in-place edit during the manifest pass.
