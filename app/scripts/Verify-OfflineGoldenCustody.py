@@ -70,6 +70,13 @@ def main():
     parser.add_argument("--reference-pdf", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args()
+    # Never allow a report destination to replace evidence or traverse a symlink.
+    # resolve() also catches aliases such as ./evidence/../evidence/file.udf.
+    evidence = [args.manifest, args.udf, args.reference_pdf]
+    output = args.report
+    if output.is_symlink() or output.resolve() in {item.resolve() for item in evidence}:
+        print("NO_GO: report path aliases evidence or is a symlink", file=sys.stderr)
+        return 1
     report = {"schema": 1, "status": "NO_GO", "native_uyap": "NOT_VERIFIED",
               "visual_equivalence": "NOT_VERIFIED", "release_approval": "NOT_VERIFIED"}
     try:
@@ -80,7 +87,13 @@ def main():
         report["custody"] = "BYTE_IDENTITY_VERIFIED_ONLY"
     except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
         report["error"] = str(exc)
+    if args.report.parent.is_symlink():
+        print("NO_GO: report parent is a symlink", file=sys.stderr)
+        return 1
     args.report.parent.mkdir(parents=True, exist_ok=True)
+    if args.report.is_symlink():
+        print("NO_GO: report destination changed to symlink", file=sys.stderr)
+        return 1
     args.report.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(report.get("custody", "NO_GO") + ": " + str(args.report))
     return 0 if report.get("custody") == "BYTE_IDENTITY_VERIFIED_ONLY" else 1
