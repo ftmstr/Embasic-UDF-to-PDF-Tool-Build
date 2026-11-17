@@ -122,6 +122,19 @@ foreach ($file in $fresh) {
     if (($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'App-image reparse point appeared' }
     $name = $file.FullName.Substring($prefix.Length).Replace('\', '/')
     if (-not $manifestMap.ContainsKey($name.ToUpperInvariant())) { throw 'Unexpected app-image member' }
+    # Re-read every packaged byte after enumeration: identical names and sizes
+    # alone cannot detect an in-place edit during the manifest pass.
+    $expected = $manifestMap[$name.ToUpperInvariant()]
+    $verifyStream = New-Object IO.FileStream($file.FullName, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+    try {
+        if ($verifyStream.Length -ne $expected.bytes) { throw 'App-image member size changed after manifest hashing' }
+        $verifyHasher = [Security.Cryptography.SHA256]::Create()
+        try { $verifyDigest = ([BitConverter]::ToString($verifyHasher.ComputeHash($verifyStream))).Replace('-', '').ToLowerInvariant() }
+        finally { $verifyHasher.Dispose() }
+        if ($verifyStream.Length -ne $expected.bytes -or $verifyDigest -ne $expected.sha256) {
+            throw 'App-image member content changed after manifest hashing'
+        }
+    } finally { $verifyStream.Dispose() }
 }
 if ($ExpectedAppImageSha256 -and -not $appImageSha.Equals($ExpectedAppImageSha256, [StringComparison]::OrdinalIgnoreCase)) {
     throw 'Full application image SHA-256 differs from independently supplied expected manifest'
