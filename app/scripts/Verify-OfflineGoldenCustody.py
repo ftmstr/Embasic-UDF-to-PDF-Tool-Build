@@ -129,6 +129,9 @@ def main():
         manifest = read_manifest(args.manifest)
         report.update(verify(manifest, args.udf, args.reference_pdf))
         report["custody"] = "BYTE_IDENTITY_VERIFIED_ONLY"
+        # A verified custody result must not retain the initial failure status.
+        # This does NOT approve rendering parity, native UYAP, or publication.
+        report["status"] = "CUSTODY_VERIFIED_ONLY"
     except (OSError, ValueError, TypeError, UnicodeError, json.JSONDecodeError) as exc:
         report["error"] = str(exc)
     if args.report.parent.is_symlink():
