@@ -14,6 +14,7 @@ from pathlib import Path
 
 COMPONENTS = ("pdfbox", "fontbox", "pdfbox-io")
 MEMBERS = ("META-INF/DEPENDENCIES", "META-INF/LICENSE", "META-INF/NOTICE")
+MAX_LEGAL_MEMBER_BYTES = 8 * 1024 * 1024  # fail closed on oversized ZIP members
 
 
 def sha256(data):
@@ -24,7 +25,19 @@ def unique_member(jar, name):
     matches = [entry for entry in jar.infolist() if entry.filename == name]
     if len(matches) != 1 or matches[0].is_dir():
         raise ValueError(f"{name}: expected one regular ZIP member; found {len(matches)}")
-    return jar.read(matches[0])
+    entry = matches[0]
+    # Reject oversized and encrypted entries before allocating memory.
+    if entry.file_size > MAX_LEGAL_MEMBER_BYTES or entry.flag_bits & 0x1:
+        raise ValueError(f"{name}: oversized or encrypted legal resource")
+    # A legal resource must be a regular file, never a UNIX symlink.
+    mode = (entry.external_attr >> 16) & 0o170000
+    if mode not in (0, 0o100000):
+        raise ValueError(f"{name}: non-regular ZIP member")
+    with jar.open(entry) as stream:
+        data = stream.read(MAX_LEGAL_MEMBER_BYTES + 1)
+        if len(data) > MAX_LEGAL_MEMBER_BYTES:
+            raise ValueError(f"{name}: decompressed size exceeds limit")
+        return data
 
 
 def main():
