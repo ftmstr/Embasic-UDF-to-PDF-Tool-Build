@@ -1,0 +1,64 @@
+name: Public app upstream legal byte parity (NO-GO gate)
+on:
+  push:
+    branches: [ci/secure-windows-bootstrap-20261018]
+    paths:
+      - 'app/pom.xml'
+      - 'app/scripts/Audit-ShadedLegalResources.py'
+      - '.github/workflows/public-app-legal-byte-parity.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  legal-byte-parity:
+    name: Original vs shaded JAR bytes (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+          cache-dependency-path: app/pom.xml
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Build actual shaded app JAR (no release)
+        shell: bash
+        run: mvn -B -ntp -f app/pom.xml -DskipTests package
+      - name: Retrieve pinned upstream Maven artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          for component in pdfbox fontbox pdfbox-io; do
+            mvn -B -ntp -f app/pom.xml org.apache.maven.plugins:maven-dependency-plugin:3.7.1:copy \
+              "-Dartifact=org.apache.pdfbox:${component}:3.0.8" \
+              "-DoutputDirectory=target/legal-input" \
+              -Dmdep.stripVersion=true
+          done
+      - name: Audit nine independent legal resources (fail closed)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python app/scripts/Audit-ShadedLegalResources.py \
+            --pdfbox app/target/legal-input/pdfbox.jar \
+            --fontbox app/target/legal-input/fontbox.jar \
+            --pdfbox-io app/target/legal-input/pdfbox-io.jar \
+            --shaded app/target/embasic-public-desktop-0.1.0-SNAPSHOT-all.jar \
+            --report app/target/legal-byte-parity.json
+      - name: Preserve audit evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: legal-byte-parity-${{ matrix.os }}
+          path: app/target/legal-byte-parity.json
+          if-no-files-found: warn
+          retention-days: 14
+# Byte parity is NOT legal approval, UYAP compatibility, or release permission.
