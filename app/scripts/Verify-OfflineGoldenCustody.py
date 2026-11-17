@@ -8,6 +8,7 @@ from a network or silently approving a release.
 import argparse
 import hashlib
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -91,10 +92,20 @@ def main():
         print("NO_GO: report parent is a symlink", file=sys.stderr)
         return 1
     args.report.parent.mkdir(parents=True, exist_ok=True)
-    if args.report.is_symlink():
-        print("NO_GO: report destination changed to symlink", file=sys.stderr)
+    # Exclusive creation prevents clobbering an existing report or evidence file.
+    # O_NOFOLLOW is available on POSIX; O_EXCL also rejects existing symlinks.
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(args.report, flags, 0o600)
+    except OSError as exc:
+        print("NO_GO: cannot exclusively create report: " + str(exc), file=sys.stderr)
         return 1
-    args.report.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            stream.write(json.dumps(report, indent=2, sort_keys=True) + "\n")
+    except OSError as exc:
+        print("NO_GO: report write failed: " + str(exc), file=sys.stderr)
+        return 1
     print(report.get("custody", "NO_GO") + ": " + str(args.report))
     return 0 if report.get("custody") == "BYTE_IDENTITY_VERIFIED_ONLY" else 1
 
