@@ -13,6 +13,16 @@
  <build><plugins>
   <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version><configuration><release>17</release></configuration></plugin>
   <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId><version>3.5.2</version></plugin>
+  <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-dependency-plugin</artifactId><version>3.7.1</version>
+   <executions><execution><id>preserve-upstream-legal-resources</id><phase>process-classes</phase><goals><goal>unpack</goal></goals>
+    <configuration><artifactItems>
+     <artifactItem><groupId>org.apache.pdfbox</groupId><artifactId>pdfbox</artifactId><version>3.0.8</version><type>jar</type><outputDirectory>${project.build.outputDirectory}/META-INF/embasic-upstream/pdfbox</outputDirectory><includes>META-INF/DEPENDENCIES,META-INF/LICENSE,META-INF/NOTICE</includes></artifactItem>
+     <artifactItem><groupId>org.apache.pdfbox</groupId><artifactId>fontbox</artifactId><version>3.0.8</version><type>jar</type><outputDirectory>${project.build.outputDirectory}/META-INF/embasic-upstream/fontbox</outputDirectory><includes>META-INF/DEPENDENCIES,META-INF/LICENSE,META-INF/NOTICE</includes></artifactItem>
+     <artifactItem><groupId>org.apache.pdfbox</groupId><artifactId>pdfbox-io</artifactId><version>3.0.8</version><type>jar</type><outputDirectory>${project.build.outputDirectory}/META-INF/embasic-upstream/pdfbox-io</outputDirectory><includes>META-INF/DEPENDENCIES,META-INF/LICENSE,META-INF/NOTICE</includes></artifactItem>
+    </artifactItems><overWriteReleases>true</overWriteReleases><overWriteSnapshots>true</overWriteSnapshots>
+    </configuration>
+   </execution></executions>
+  </plugin>
   <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-shade-plugin</artifactId><version>3.6.0</version>
    <executions><execution><phase>package</phase><goals><goal>shade</goal></goals>
    <configuration><shadedArtifactAttached>true</shadedArtifactAttached><shadedClassifierName>all</shadedClassifierName>
