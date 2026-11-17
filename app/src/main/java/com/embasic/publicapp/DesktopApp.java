@@ -954,7 +954,13 @@ public final class DesktopApp extends JFrame {
     }
 
     private JPanel card(Item item) {
-        JPanel card = new JPanel(new BorderLayout(3, 5));
+        JPanel card = new JPanel(new BorderLayout(3, 5)) {
+            @Override public javax.swing.JToolTip createToolTip() {
+                javax.swing.JToolTip tooltip = super.createToolTip();
+                tooltip.putClientProperty("html.disable", Boolean.TRUE);
+                return tooltip;
+            }
+        };
         ThumbnailSizing.Size size=ThumbnailSizing.at(thumbnailZoom.getValue());
         card.setPreferredSize(new Dimension(size.cardWidth(), size.cardHeight()));
         card.setBackground(cardColor());
@@ -971,7 +977,13 @@ public final class DesktopApp extends JFrame {
             card.setToolTipText(item.info);
         }
         JLabel preview = new JLabel(item.thumbnail == null ? (failedImport ? "HATA" : "UDF") : "",
-                thumbnailIcon(item, size), SwingConstants.CENTER);
+                thumbnailIcon(item, size), SwingConstants.CENTER) {
+            @Override public javax.swing.JToolTip createToolTip() {
+                javax.swing.JToolTip tooltip = super.createToolTip();
+                tooltip.putClientProperty("html.disable", Boolean.TRUE);
+                return tooltip;
+            }
+        };
         preview.setPreferredSize(new Dimension(size.imageWidth(), size.imageHeight()));
         preview.setForeground(failedImport ? new Color(228, 115, 100) : foreground());
         if (failedImport) preview.setToolTipText(item.info);
