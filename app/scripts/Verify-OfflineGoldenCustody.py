@@ -52,6 +52,31 @@ def digest_file(path, limit):
         os.close(fd)
 
 
+def read_manifest(path):
+    # Open once: path.stat() followed by read_text() could read a replaced,
+    # unbounded or non-regular file. Keep the same descriptor for both checks.
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    if path.is_symlink():
+        raise ValueError("manifest must not be a symlink")
+    fd = os.open(path, flags)
+    try:
+        before = os.fstat(fd)
+        if not stat.S_ISREG(before.st_mode) or before.st_size <= 0 or before.st_size > MAX_MANIFEST:
+            raise ValueError("manifest must be a nonempty bounded regular file")
+        with os.fdopen(fd, "rb", closefd=False) as stream:
+            data = stream.read(MAX_MANIFEST + 1)
+        after = os.fstat(fd)
+        if len(data) != before.st_size or (
+            before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns
+        ) != (
+            after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns
+        ):
+            raise ValueError("manifest changed during bounded read")
+        return json.loads(data.decode("utf-8"))
+    finally:
+        os.close(fd)
+
+
 def verify(manifest, udf, pdf):
     if set(manifest) != {"schema", "rights", "udf_sha256", "pdf_sha256", "reference"}:
         raise ValueError("unexpected or missing manifest fields")
@@ -101,12 +126,10 @@ def main():
     report = {"schema": 1, "status": "NO_GO", "native_uyap": "NOT_VERIFIED",
               "visual_equivalence": "NOT_VERIFIED", "release_approval": "NOT_VERIFIED"}
     try:
-        if args.manifest.is_symlink() or not args.manifest.is_file() or args.manifest.stat().st_size > MAX_MANIFEST:
-            raise ValueError("manifest missing, symlinked or oversized")
-        manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
+        manifest = read_manifest(args.manifest)
         report.update(verify(manifest, args.udf, args.reference_pdf))
         report["custody"] = "BYTE_IDENTITY_VERIFIED_ONLY"
-    except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+    except (OSError, ValueError, TypeError, UnicodeError, json.JSONDecodeError) as exc:
         report["error"] = str(exc)
     if args.report.parent.is_symlink():
         print("NO_GO: report parent is a symlink", file=sys.stderr)
