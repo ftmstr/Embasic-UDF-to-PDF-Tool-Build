@@ -102,6 +102,14 @@ foreach ($item in $allItems) {
     $manifestMap[$key] = [pscustomobject][ordered]@{ path=$relative; bytes=$size; sha256=$digest }
 }
 if ($manifestMap.Count -lt 10 -or $manifestMap.Count -gt 8192) { throw 'Packaged file count limit' }
+# The launcher is hashed before the manifest. Both evidence fields must refer
+# to identical bytes, not two different launcher versions observed in one run.
+$launcherKey = [IO.Path]::GetFileName($exe).ToUpperInvariant()
+if (-not $manifestMap.ContainsKey($launcherKey) -or
+    $manifestMap[$launcherKey].bytes -ne $launcherBytes -or
+    $manifestMap[$launcherKey].sha256 -ne $launcherSha) {
+    throw 'Launcher changed between standalone hash and app-image manifest'
+}
 $sortedNames = [string[]]@($manifestMap.Values | ForEach-Object { $_.path })
 [Array]::Sort($sortedNames, [StringComparer]::Ordinal)
 $manifestRecords = New-Object 'System.Collections.Generic.List[object]'
