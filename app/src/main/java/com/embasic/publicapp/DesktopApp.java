@@ -1615,7 +1615,15 @@ public final class DesktopApp extends JFrame {
         picker.setDialogTitle("PDF olarak kaydet");
         picker.setSelectedFile(new java.io.File("Embasic-Birlesik.pdf"));
         if (picker.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return;
-        Path target = picker.getSelectedFile().toPath().toAbsolutePath().normalize();
+        // A native chooser may approve without returning a selected file.
+        // Never crash the EDT or leave the workspace in a misleading save state.
+        java.io.File chosen = picker.getSelectedFile();
+        if (chosen == null || chosen.getName().isBlank()) {
+            JOptionPane.showMessageDialog(this, "PDF için geçerli bir dosya adı seçin.",
+                    "Kaydetme hedefi eksik", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        Path target = chosen.toPath().toAbsolutePath().normalize();
         if (!target.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".pdf"))
             target = target.resolveSibling(target.getFileName() + ".pdf");
         boolean overwrite = java.nio.file.Files.exists(target);
