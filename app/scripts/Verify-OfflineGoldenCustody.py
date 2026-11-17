@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 import sys
+import stat
 from pathlib import Path
 
 MAX_MANIFEST = 64 * 1024
@@ -18,18 +19,37 @@ MAX_PDF = 256 * 1024 * 1024
 
 
 def digest_file(path, limit):
-    if not path.is_file() or path.is_symlink():
-        raise ValueError("input must be an existing regular non-symlink file")
-    size = path.stat().st_size
-    if size <= 0 or size > limit:
-        raise ValueError("input size outside accepted bounds")
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        while chunk := stream.read(1024 * 1024):
-            digest.update(chunk)
-    if path.stat().st_size != size:
-        raise ValueError("input changed during hashing")
-    return digest.hexdigest(), size
+    # Bind the hash to one opened file descriptor, not a path that may be
+    # swapped between stat() and open(). Never read beyond the size limit.
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
+    if path.is_symlink():
+        raise ValueError("input must not be a symlink")
+    fd = os.open(path, flags)
+    try:
+        before = os.fstat(fd)
+        if not stat.S_ISREG(before.st_mode):
+            raise ValueError("input must be a regular file")
+        size = before.st_size
+        if size <= 0 or size > limit:
+            raise ValueError("input size outside accepted bounds")
+        digest = hashlib.sha256()
+        read_bytes = 0
+        with os.fdopen(fd, "rb", closefd=False) as stream:
+            while read_bytes < size:
+                chunk = stream.read(min(1024 * 1024, size - read_bytes))
+                if not chunk:
+                    raise ValueError("input truncated during hashing")
+                read_bytes += len(chunk)
+                digest.update(chunk)
+            if stream.read(1):
+                raise ValueError("input grew during hashing")
+        after = os.fstat(fd)
+        if (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
+                after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns):
+            raise ValueError("input changed during hashing")
+        return digest.hexdigest(), size
+    finally:
+        os.close(fd)
 
 
 def verify(manifest, udf, pdf):
