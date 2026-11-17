@@ -17,6 +17,15 @@ MEMBERS = ("META-INF/DEPENDENCIES", "META-INF/LICENSE", "META-INF/NOTICE")
 MAX_LEGAL_MEMBER_BYTES = 8 * 1024 * 1024  # fail closed on oversized ZIP members
 
 
+def sha256_file(path):
+    """Stream SHA-256 of the complete input archive for audit provenance."""
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def sha256(data):
     return hashlib.sha256(data).hexdigest()
 
@@ -52,6 +61,13 @@ def main():
     report = {"schema": 1, "status": "FAIL", "source_approval": "NOT_VERIFIED",
               "legal_approval": "NOT_VERIFIED", "checks": []}
     try:
+        # Bind the nine member comparisons to exact input archives, not merely
+        # their component/version labels. This does not establish provenance or rights.
+        report["input_archive_sha256"] = {
+            component: sha256_file(getattr(args, component.replace("-", "_")))
+            for component in COMPONENTS
+        }
+        report["shaded_archive_sha256"] = sha256_file(args.shaded)
         with zipfile.ZipFile(args.shaded) as shaded:
             for component in COMPONENTS:
                 with zipfile.ZipFile(getattr(args, component.replace("-", "_"))) as original:
