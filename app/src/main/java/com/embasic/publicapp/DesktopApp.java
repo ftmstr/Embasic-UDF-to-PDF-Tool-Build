@@ -1677,7 +1677,16 @@ public final class DesktopApp extends JFrame {
         // Swing renders strings beginning with <html> as markup in option panes.
         // Import/parse errors may contain untrusted UDF text: show it as plain,
         // selectable, wrapped text without permitting HTML or image loading.
-        javax.swing.JTextArea message = new javax.swing.JTextArea(friendly(e), 8, 64);
+        // Bound the text handed to Swing: a malformed document or nested
+        // exception may supply megabytes of diagnostic text and stall the EDT.
+        // Keep the beginning (usually the actionable cause) and disclose truncation.
+        String diagnostic = friendly(e);
+        final int maxDiagnosticChars = 16_384;
+        if (diagnostic.length() > maxDiagnosticChars) {
+            diagnostic = diagnostic.substring(0, maxDiagnosticChars)
+                    + "\n… (Hata açıklaması 16384 karakterle sınırlandırıldı)";
+        }
+        javax.swing.JTextArea message = new javax.swing.JTextArea(diagnostic, 8, 64);
         message.setEditable(false);
         message.setLineWrap(true);
         message.setWrapStyleWord(true);
