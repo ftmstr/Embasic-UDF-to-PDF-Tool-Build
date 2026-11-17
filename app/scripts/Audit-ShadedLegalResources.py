@@ -43,7 +43,7 @@ def main():
             for component in COMPONENTS:
                 with zipfile.ZipFile(getattr(args, component.replace("-", "_"))) as original:
                     for member in MEMBERS:
-                        target = f"{args.namespace.rstrip('/')}/{component}/{member.split('/')[-1]}"
+                        target = f"{args.namespace.rstrip('/')}/{component}/{member}"
                         entry = {"component": component, "source_member": member,
                                  "shaded_member": target, "status": "FAIL"}
                         report["checks"].append(entry)
