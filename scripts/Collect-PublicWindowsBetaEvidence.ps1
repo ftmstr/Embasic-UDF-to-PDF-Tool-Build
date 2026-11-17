@@ -116,11 +116,20 @@ $canonical = 'embasic-app-image-sha256-v1' + $lf + [string]::Join($lf, $lines.To
 $h = [Security.Cryptography.SHA256]::Create()
 try { $appImageSha = ([BitConverter]::ToString($h.ComputeHash([Text.Encoding]::UTF8.GetBytes($canonical)))).Replace('-', '').ToLowerInvariant() }
 finally { $h.Dispose() }
-$fresh = @(Get-ChildItem -LiteralPath $appDirectory -Recurse -Force -File -ErrorAction Stop)
+# Re-enumerate directories too: -File would hide a newly inserted junction.
+$freshEntries = @(Get-ChildItem -LiteralPath $appDirectory -Recurse -Force -ErrorAction Stop)
+if ($freshEntries.Count -ne $allItems.Count) { throw 'App-image entry set changed during hashing' }
+$fresh = New-Object 'System.Collections.Generic.List[System.IO.FileInfo]'
+foreach ($entry in $freshEntries) {
+    if (($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'App-image reparse point appeared' }
+    if (-not $entry.FullName.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { throw 'App-image verification path escaped root' }
+    if ($entry.PSIsContainer) { continue }
+    if (-not ($entry -is [IO.FileInfo])) { throw 'Unsupported app-image entry appeared' }
+    [void]$fresh.Add($entry)
+}
 if ($fresh.Count -ne $manifestMap.Count) { throw 'App-image file set changed during hashing' }
 foreach ($file in $fresh) {
-    if (($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'App-image reparse point appeared' }
-    $name = $file.FullName.Substring($prefix.Length).Replace('\', '/')
+    $name = $file.FullName.Substring($prefix.Length).Replace('\\', '/')
     if (-not $manifestMap.ContainsKey($name.ToUpperInvariant())) { throw 'Unexpected app-image member' }
     # Re-read every packaged byte after enumeration: identical names and sizes
     # alone cannot detect an in-place edit during the manifest pass.
