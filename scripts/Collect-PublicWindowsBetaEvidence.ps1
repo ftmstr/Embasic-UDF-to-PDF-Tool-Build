@@ -125,8 +125,31 @@ $h = [Security.Cryptography.SHA256]::Create()
 try { $appImageSha = ([BitConverter]::ToString($h.ComputeHash([Text.Encoding]::UTF8.GetBytes($canonical)))).Replace('-', '').ToLowerInvariant() }
 finally { $h.Dispose() }
 # Re-enumerate directories too: -File would hide a newly inserted junction.
+# Compare directory names as well as file names: equal entry counts alone
+# would accept a removed empty directory replaced by a different empty one.
+$initialDirectories = @{}
+foreach ($entry in $allItems) {
+    if ($entry.PSIsContainer) {
+        $directoryName = $entry.FullName.Substring($prefix.Length).Replace([IO.Path]::DirectorySeparatorChar, '/')
+        $directoryKey = $directoryName.ToUpperInvariant()
+        if ($initialDirectories.ContainsKey($directoryKey)) { throw 'Duplicate app-image directory' }
+        $initialDirectories[$directoryKey] = $true
+    }
+}
 $freshEntries = @(Get-ChildItem -LiteralPath $appDirectory -Recurse -Force -ErrorAction Stop)
 if ($freshEntries.Count -ne $allItems.Count) { throw 'App-image entry set changed during hashing' }
+$freshDirectories = @{}
+foreach ($entry in $freshEntries) {
+    if ($entry.PSIsContainer) {
+        $directoryName = $entry.FullName.Substring($prefix.Length).Replace([IO.Path]::DirectorySeparatorChar, '/')
+        $directoryKey = $directoryName.ToUpperInvariant()
+        if ($freshDirectories.ContainsKey($directoryKey) -or -not $initialDirectories.ContainsKey($directoryKey)) {
+            throw 'Unexpected app-image directory after hashing'
+        }
+        $freshDirectories[$directoryKey] = $true
+    }
+}
+if ($freshDirectories.Count -ne $initialDirectories.Count) { throw 'App-image directory set changed during hashing' }
 $fresh = New-Object 'System.Collections.Generic.List[System.IO.FileInfo]'
 foreach ($entry in $freshEntries) {
     if (($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'App-image reparse point appeared' }
