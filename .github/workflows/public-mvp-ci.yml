@@ -143,7 +143,7 @@ jobs:
               $dashboard.ReleaseReadiness.RuntimeShadedLicenseEvidence -ne 'EXACT_UPSTREAM_AND_SHADED_JAR_SHA256_NO_GO' -or
               $dashboard.ReleaseReadiness.SourceAndNotices -ne 'NO_GO' -or
               $dashboard.ReleaseReadiness.LegalSharedNamespace -ne 'BLOCKED_COMPONENT_ATTRIBUTION_REVIEW' -or
-              $dashboard.ReleaseReadiness.LocalWindowsBetaEvidence -ne 'SAFE_PATH_PRECREATE_AND_EXCLUSIVE_WRITE_UNVERIFIED' -or
+              $dashboard.ReleaseReadiness.LocalWindowsBetaEvidence -ne 'FULL_APP_IMAGE_SHA_MANIFEST_USER_BETA_UNVERIFIED' -or
               $dashboard.ReleaseReadiness.PhysicalUnsupportedHardlinkExfat -ne 'NOT_RUN' -or
               $dashboard.ReleaseReadiness.LegacySourceGate -notmatch 'independent_public_mvp_source_review_required') {
             throw 'Public MVP readiness must stay fail-closed without independent evidence'
@@ -185,7 +185,13 @@ jobs:
           if ($evidenceFiles.Count -ne 1) { throw 'Expected exactly one unuploaded evidence JSON' }
           $evidence = Get-Content -LiteralPath $evidenceFiles[0].FullName -Raw | ConvertFrom-Json
           $actualHash = (Get-FileHash -LiteralPath $app -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($evidence.executable_sha256 -ne $actualHash -or
+          if ($evidence.app_image_manifest_schema -ne 'embasic-app-image-sha256-v1' -or
+              $evidence.app_image_manifest_sha256 -notmatch '^[a-f0-9]{64}$' -or
+              $evidence.app_image_file_count -lt 10 -or
+              $evidence.app_image_files.Count -ne $evidence.app_image_file_count -or
+              $evidence.bundled_java_runtime_in_manifest -ne $true -or
+              $evidence.bundled_java_runtime_license_review -ne 'NOT_VERIFIED' -or
+              $evidence.executable_sha256 -ne $actualHash -or
               $evidence.executable_bytes -ne (Get-Item -LiteralPath $app).Length -or
               $evidence.W01 -ne 'NOT_RUN' -or $evidence.W07 -ne 'NOT_RUN' -or
               $evidence.release -ne 'NO-GO' -or $evidence.native_UYAP -ne 'NOT_VERIFIED' -or
@@ -201,6 +207,38 @@ jobs:
           # The expected negative subprocess exits 1. Clear its native exit
           # status or the otherwise successful GitHub Actions pwsh step fails.
           $global:LASTEXITCODE = 0
+          # Independent per-file SHA and membership check on the real
+          # disposable jpackage app-image. No file or JSON is uploaded.
+          $root = Split-Path -Parent $app
+          $seen = @{}
+          foreach ($entry in $evidence.app_image_files) {
+            $rel = [string]$entry.path
+            if ($seen.ContainsKey($rel)) { throw 'Duplicate image manifest path' }
+            $seen[$rel] = $true
+            $file = Join-Path $root ($rel.Replace('/', [IO.Path]::DirectorySeparatorChar))
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or
+                $entry.bytes -ne (Get-Item -LiteralPath $file).Length -or
+                $entry.sha256 -ne (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()) {
+              throw ('App-image file mismatched: ' + $rel)
+            }
+          }
+          if (@(Get-ChildItem -LiteralPath $root -Recurse -File -Force).Count -ne $evidence.app_image_file_count -or
+              -not $seen.ContainsKey('runtime/lib/modules')) { throw 'Incomplete bundled Java image evidence' }
+          $matched = Join-Path $env:RUNNER_TEMP 'embasic-matched-app-image'
+          & pwsh -NoProfile -File scripts/Collect-PublicWindowsBetaEvidence.ps1 -AppExecutable $app -OutputDirectory $matched -ExpectedAppImageSha256 $evidence.app_image_manifest_sha256 *> $null
+          if ($LASTEXITCODE -ne 0) { throw 'Matching app-image SHA was rejected' }
+          $extra = Join-Path $root 'app/embasic-tamper-probe.txt'
+          $reject = Join-Path $env:RUNNER_TEMP 'embasic-tampered-app-image'
+          if (Test-Path -LiteralPath $extra) { throw 'Unexpected tamper probe file present' }
+          try {
+            [IO.File]::WriteAllText($extra, 'rights-clean synthetic package change')
+            & pwsh -NoProfile -File scripts/Collect-PublicWindowsBetaEvidence.ps1 -AppExecutable $app -OutputDirectory $reject -ExpectedAppImageSha256 $evidence.app_image_manifest_sha256 *> $null
+            if ($LASTEXITCODE -eq 0 -or @(Get-ChildItem -LiteralPath $reject -File -ErrorAction SilentlyContinue).Count -gt 0) {
+              throw 'Tampered app-image must fail before evidence creation'
+            }
+          } finally { if (Test-Path -LiteralPath $extra) { Remove-Item -LiteralPath $extra -Force } }
+          $global:LASTEXITCODE = 0
+          Write-Host 'WINDOWS_FULL_APP_IMAGE_SHA_PASS: launcher, app files and bundled JRE verified; added file rejected; NO-GO'
           Write-Host 'WINDOWS_BETA_EVIDENCE_PREFLIGHT_PASS: packaged exe stable SHA/bytes; forbidden output leaves no directory; W01/W07=NOT_RUN; release=NO-GO'
           # No human operator, external beta, zip, install or uploaded document.
 

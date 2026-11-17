@@ -114,7 +114,7 @@ $report = [pscustomobject]@{
         HostileExistingTargetCas='NO_GO'
         PhysicalUnsupportedHardlinkExfat='NOT_RUN'
         ExternalUserBeta='NOT_RUN'
-        LocalWindowsBetaEvidence='SAFE_PATH_PRECREATE_AND_EXCLUSIVE_WRITE_UNVERIFIED'
+        LocalWindowsBetaEvidence='FULL_APP_IMAGE_SHA_MANIFEST_USER_BETA_UNVERIFIED'
     }
 }
 if ($AsJson) {

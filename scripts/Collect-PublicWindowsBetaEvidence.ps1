@@ -10,7 +10,8 @@
 param(
     [Parameter(Mandatory=$true)][string]$AppExecutable,
     [Parameter(Mandatory=$true)][string]$OutputDirectory,
-    [ValidatePattern('^[0-9a-fA-F]{64}$')][string]$ExpectedLauncherSha256
+    [ValidatePattern('^[0-9a-fA-F]{64}$')][string]$ExpectedLauncherSha256,
+    [ValidatePattern('^[0-9a-fA-F]{64}$')][string]$ExpectedAppImageSha256
 )
 $ErrorActionPreference = 'Stop'
 # Use unresolved provider paths before any side effects: Resolve-Path of a
@@ -66,6 +67,65 @@ try {
         }
     } finally { $hasher.Dispose() }
 } finally { $stream.Dispose() }
+# Bind local beta evidence to the entire Windows jpackage app-image.
+# Includes application JAR, launcher and bundled Java runtime (not release approval).
+foreach ($needed in @('app', 'runtime', 'runtime/lib/modules')) {
+    $part = Join-Path $appDirectory $needed
+    if (-not (Test-Path -LiteralPath $part)) { throw ('App-image member absent: ' + $needed) }
+    Assert-NoReparseComponents $part
+}
+$allItems = @(Get-ChildItem -LiteralPath $appDirectory -Recurse -Force -ErrorAction Stop)
+if ($allItems.Count -lt 10 -or $allItems.Count -gt 12000) { throw 'App-image entry count limit' }
+$prefix = $appDirectory + [IO.Path]::DirectorySeparatorChar
+$manifestMap = @{}
+$manifestBytes = [long]0
+foreach ($item in $allItems) {
+    if (($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'App-image junction or symlink refused' }
+    if (-not $item.FullName.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { throw 'App-image path escaped root' }
+    if ($item.PSIsContainer) { continue }
+    if (-not ($item -is [IO.FileInfo])) { throw 'Unsupported filesystem entry' }
+    $relative = $item.FullName.Substring($prefix.Length).Replace('\', '/')
+    if (-not $relative -or $relative -match '[\r\n|]' -or $relative.Split('/') -contains '..') { throw 'Ambiguous file path' }
+    $key = $relative.ToUpperInvariant()
+    if ($manifestMap.ContainsKey($key)) { throw 'Duplicate case-insensitive filename' }
+    $fileStream = New-Object IO.FileStream($item.FullName, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+    try {
+        $size = [long]$fileStream.Length
+        if ($size -gt 1073741824) { throw 'Oversized packaged file' }
+        $h = [Security.Cryptography.SHA256]::Create()
+        try { $digest = ([BitConverter]::ToString($h.ComputeHash($fileStream))).Replace('-', '').ToLowerInvariant() }
+        finally { $h.Dispose() }
+        if ($fileStream.Length -ne $size) { throw 'File changed during evidence hashing' }
+    } finally { $fileStream.Dispose() }
+    $manifestBytes += $size
+    if ($manifestBytes -gt 2147483648) { throw 'Packaged image exceeds 2GiB evidence budget' }
+    $manifestMap[$key] = [pscustomobject][ordered]@{ path=$relative; bytes=$size; sha256=$digest }
+}
+if ($manifestMap.Count -lt 10 -or $manifestMap.Count -gt 8192) { throw 'Packaged file count limit' }
+$sortedNames = [string[]]@($manifestMap.Values | ForEach-Object { $_.path })
+[Array]::Sort($sortedNames, [StringComparer]::Ordinal)
+$manifestRecords = New-Object 'System.Collections.Generic.List[object]'
+$lines = New-Object 'System.Collections.Generic.List[string]'
+foreach ($name in $sortedNames) {
+    $rec = $manifestMap[$name.ToUpperInvariant()]
+    [void]$manifestRecords.Add($rec)
+    [void]$lines.Add(($rec.path + '|' + [string]$rec.bytes + '|' + $rec.sha256))
+}
+$lf = [string][char]10
+$canonical = 'embasic-app-image-sha256-v1' + $lf + [string]::Join($lf, $lines.ToArray()) + $lf
+$h = [Security.Cryptography.SHA256]::Create()
+try { $appImageSha = ([BitConverter]::ToString($h.ComputeHash([Text.Encoding]::UTF8.GetBytes($canonical)))).Replace('-', '').ToLowerInvariant() }
+finally { $h.Dispose() }
+$fresh = @(Get-ChildItem -LiteralPath $appDirectory -Recurse -Force -File -ErrorAction Stop)
+if ($fresh.Count -ne $manifestMap.Count) { throw 'App-image file set changed during hashing' }
+foreach ($file in $fresh) {
+    if (($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'App-image reparse point appeared' }
+    $name = $file.FullName.Substring($prefix.Length).Replace('\', '/')
+    if (-not $manifestMap.ContainsKey($name.ToUpperInvariant())) { throw 'Unexpected app-image member' }
+}
+if ($ExpectedAppImageSha256 -and -not $appImageSha.Equals($ExpectedAppImageSha256, [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'Full application image SHA-256 differs from independently supplied expected manifest'
+}
 $stamp = [DateTimeOffset]::UtcNow.ToString('yyyyMMddTHHmmssZ')
 $target = Join-Path $out ("public-windows-beta-" + $stamp + ".json")
 if (Test-Path -LiteralPath $target) { throw 'Evidence filename collision' }
@@ -79,6 +139,14 @@ $evidence = [ordered]@{
     executable_sha256 = $launcherSha
     expected_launcher_sha256 = $(if ($ExpectedLauncherSha256) { $ExpectedLauncherSha256.ToLowerInvariant() } else { 'NOT_PROVIDED' })
     executable_bytes = $launcherBytes
+    app_image_manifest_schema = 'embasic-app-image-sha256-v1'
+    app_image_manifest_sha256 = $appImageSha
+    expected_app_image_sha256 = $(if ($ExpectedAppImageSha256) { $ExpectedAppImageSha256.ToLowerInvariant() } else { 'NOT_PROVIDED' })
+    app_image_file_count = $manifestMap.Count
+    app_image_total_bytes = $manifestBytes
+    app_image_files = $manifestRecords.ToArray()
+    bundled_java_runtime_in_manifest = $true
+    bundled_java_runtime_license_review = 'NOT_VERIFIED'
     windows_caption = $os.Caption
     windows_version = $os.Version
     windows_build = $os.BuildNumber

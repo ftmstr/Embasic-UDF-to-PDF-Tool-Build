@@ -5,6 +5,7 @@ on:
     branches: ["ci/secure-windows-bootstrap-20261018"]
     paths:
       - "app/**"
+      - "scripts/Collect-PublicWindowsBetaEvidence.ps1"
       - ".github/workflows/public-mvp-windows-app-image-check.yml"
   workflow_dispatch:
 
