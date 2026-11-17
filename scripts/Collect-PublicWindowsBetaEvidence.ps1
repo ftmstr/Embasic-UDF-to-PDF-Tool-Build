@@ -84,7 +84,7 @@ foreach ($item in $allItems) {
     if (-not $item.FullName.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { throw 'App-image path escaped root' }
     if ($item.PSIsContainer) { continue }
     if (-not ($item -is [IO.FileInfo])) { throw 'Unsupported filesystem entry' }
-    $relative = $item.FullName.Substring($prefix.Length).Replace('\', '/')
+    $relative = $item.FullName.Substring($prefix.Length).Replace([IO.Path]::DirectorySeparatorChar, '/')
     if (-not $relative -or $relative -match '[\r\n|]' -or $relative.Split('/') -contains '..') { throw 'Ambiguous file path' }
     $key = $relative.ToUpperInvariant()
     if ($manifestMap.ContainsKey($key)) { throw 'Duplicate case-insensitive filename' }
