@@ -1674,7 +1674,17 @@ public final class DesktopApp extends JFrame {
         return message == null ? root.getClass().getSimpleName() : message;
     }
     private void showError(Throwable e) {
-        JOptionPane.showMessageDialog(this, friendly(e), "Embasic UDF hatası", JOptionPane.ERROR_MESSAGE);
+        // Swing renders strings beginning with <html> as markup in option panes.
+        // Import/parse errors may contain untrusted UDF text: show it as plain,
+        // selectable, wrapped text without permitting HTML or image loading.
+        javax.swing.JTextArea message = new javax.swing.JTextArea(friendly(e), 8, 64);
+        message.setEditable(false);
+        message.setLineWrap(true);
+        message.setWrapStyleWord(true);
+        message.setCaretPosition(0);
+        javax.swing.JScrollPane details = new javax.swing.JScrollPane(message);
+        details.setPreferredSize(new Dimension(520, 160));
+        JOptionPane.showMessageDialog(this, details, "Embasic UDF hatası", JOptionPane.ERROR_MESSAGE);
     }
 
     public static void main(String[] args) {
