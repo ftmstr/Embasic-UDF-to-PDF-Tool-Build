@@ -3,8 +3,12 @@ on:
   push:
     branches: [ci/secure-windows-bootstrap-20261018]
     paths:
-      - 'app/pom.xml'
-      - 'app/scripts/Audit-ShadedLegalResources.py'
+      - 'app/**'
+      - '.github/workflows/public-app-legal-byte-parity.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'app/**'
       - '.github/workflows/public-app-legal-byte-parity.yml'
   workflow_dispatch:
 permissions:
