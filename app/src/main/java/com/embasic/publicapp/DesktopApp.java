@@ -539,9 +539,11 @@ public final class DesktopApp extends JFrame {
                 List<Path> paths = chooserPaths(chooser.getSelectedFiles(),
                         chooser.getSelectedFile());
                 addFiles(paths);
-            } catch (IllegalArgumentException ex) {
+            } catch (IllegalArgumentException | SecurityException ex) {
                 // A multi-selection is one action. Never silently omit files from
                 // the PDF queue when the chooser exceeds capacity or has duplicates.
+                // A Windows file provider can deny access while converting an
+                // approved entry; keep the error on the normal GUI feedback path.
                 showError(ex);
             }
         } finally {
