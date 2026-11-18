@@ -60,6 +60,8 @@ jobs:
       # not a performance improvement or a release approval.
       - name: Synthetic runtime-shade license evidence regression
         run: python scripts/test-audit-public-shaded-runtime.py
+      - name: Validate offline rights-gated PDF audit result parsing (no native fixtures)
+        run: python app/scripts/test-run-offline-golden-pdf-metrics.py
       - name: Compile + JUnit test + audit actual shaded runtime JARs (NO-GO)
         run: python scripts/audit-public-shaded-runtime.py --build
       # Record the actual resolved runtime graph at this exact checkout, not merely
