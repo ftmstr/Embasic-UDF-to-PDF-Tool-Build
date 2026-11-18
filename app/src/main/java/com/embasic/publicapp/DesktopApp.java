@@ -1628,9 +1628,19 @@ public final class DesktopApp extends JFrame {
                     "Kaydetme hedefi eksik", JOptionPane.WARNING_MESSAGE);
             return;
         }
-        Path target = chosen.toPath().toAbsolutePath().normalize();
-        if (!target.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".pdf"))
-            target = target.resolveSibling(target.getFileName() + ".pdf");
+        // A chooser can return an invalid or inaccessible path (for example a
+        // malformed path supplied by a custom file-system provider). Do not let
+        // path conversion exceptions escape on Swing's event dispatch thread.
+        Path target;
+        try {
+            target = chosen.toPath().toAbsolutePath().normalize();
+            if (!target.getFileName().toString().toLowerCase(Locale.ROOT).endsWith(".pdf"))
+                target = target.resolveSibling(target.getFileName() + ".pdf");
+        } catch (java.nio.file.InvalidPathException | SecurityException ex) {
+            JOptionPane.showMessageDialog(this, "PDF kaydetme yolu geçersiz veya erişim engellendi.",
+                    "Kaydetme hedefi geçersiz", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
         boolean overwrite = java.nio.file.Files.exists(target);
         if (overwrite && JOptionPane.showConfirmDialog(this, "Mevcut PDF'nin üzerine yazılsın mı?",
                 "Dosya mevcut", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE) != JOptionPane.YES_OPTION) return;
