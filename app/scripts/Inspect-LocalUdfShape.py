@@ -158,7 +158,10 @@ def inventory(path):
                         raise Refused("ENCRYPTED_MEMBER")
                     if info.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
                         raise Refused("UNSUPPORTED_COMPRESSION")
-                    key = info.filename.casefold()
+                    key = info.filename.rstrip("/").casefold()
+                    # ZIP directories and files must not share a logical path.
+                    # Otherwise content.xml/ and content.xml are distinct ZIP
+                    # names but ambiguous to filesystem-based consumers.
                     if key in unique:
                         raise Refused("DUPLICATE_MEMBER")
                     unique.add(key)
