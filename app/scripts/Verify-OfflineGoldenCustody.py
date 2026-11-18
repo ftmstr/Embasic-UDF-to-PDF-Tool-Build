@@ -54,7 +54,7 @@ def digest_file(path, limit, required_prefix=None):
             # A PDF header alone can be forged on arbitrary or truncated data.
             # Require the terminal EOF marker within the bounded trailing window.
             # This is only a structural sanity check, not a parser or parity proof.
-            if required_prefix is not None and not tail.rstrip(b"\\x00\\x09\\x0a\\x0c\\x0d\\x20").endswith(b"%%EOF"):
+            if required_prefix is not None and not tail.rstrip(b"\x00\x09\x0a\x0c\x0d\x20").endswith(b"%%EOF"):
                 raise ValueError("reference PDF terminal EOF marker missing")
         after = os.fstat(fd)
         if (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
