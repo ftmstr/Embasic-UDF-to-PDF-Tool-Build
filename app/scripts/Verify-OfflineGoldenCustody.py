@@ -18,7 +18,7 @@ MAX_UDF = 64 * 1024 * 1024
 MAX_PDF = 256 * 1024 * 1024
 
 
-def digest_file(path, limit):
+def digest_file(path, limit, required_prefix=None):
     # Bind the hash to one opened file descriptor, not a path that may be
     # swapped between stat() and open(). Never read beyond the size limit.
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOFOLLOW", 0)
@@ -34,11 +34,16 @@ def digest_file(path, limit):
             raise ValueError("input size outside accepted bounds")
         digest = hashlib.sha256()
         read_bytes = 0
+        prefix_checked = required_prefix is None
         with os.fdopen(fd, "rb", closefd=False) as stream:
             while read_bytes < size:
                 chunk = stream.read(min(1024 * 1024, size - read_bytes))
                 if not chunk:
                     raise ValueError("input truncated during hashing")
+                if not prefix_checked:
+                    if not chunk.startswith(required_prefix):
+                        raise ValueError("reference PDF signature missing")
+                    prefix_checked = True
                 read_bytes += len(chunk)
                 digest.update(chunk)
             if stream.read(1):
@@ -107,7 +112,7 @@ def verify(manifest, udf, pdf):
     if not isinstance(reference["review_id"], str) or not reference["review_id"].strip():
         raise ValueError("reference review ID missing")
     actual_udf, udf_size = digest_file(udf, MAX_UDF)
-    actual_pdf, pdf_size = digest_file(pdf, MAX_PDF)
+    actual_pdf, pdf_size = digest_file(pdf, MAX_PDF, required_prefix=b"%PDF-")
     for key, actual in (("udf_sha256", actual_udf), ("pdf_sha256", actual_pdf)):
         expected = manifest[key]
         if not isinstance(expected, str) or len(expected) != 64 or any(c not in "0123456789abcdef" for c in expected):
