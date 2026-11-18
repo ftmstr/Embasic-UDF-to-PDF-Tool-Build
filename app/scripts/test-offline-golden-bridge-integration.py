@@ -50,13 +50,15 @@ def execute(args: list[str], *, success_code: int, description: str):
 
 
 def assert_report(path: Path, expected_status: str, expected_jar: str,
-                  expected_udf: str, expected_reference: str) -> dict:
+                  expected_udf: str, expected_reference: str,
+                  expected_provenance: str = "EXTERNAL_PDF_RENDER_PROVENANCE_UNVERIFIED") -> dict:
     if not path.is_file():
         raise AssertionError("golden bridge local report missing")
     with path.open("r", encoding="utf-8") as stream:
         evidence = json.load(stream)
     if (
-        evidence.get("schema") != "embasic-offline-golden-visual-v1"
+        evidence.get("candidate_provenance") != expected_provenance
+        or evidence.get("schema") != "embasic-offline-golden-visual-v1"
         or evidence.get("status") != expected_status
         or evidence.get("release") != "NO_GO"
         or evidence.get("native_uyap") != "NOT_VERIFIED"
@@ -168,6 +170,55 @@ def main() -> int:
             or "comparison" in refused
         ):
             raise AssertionError("untrusted JAR SHA produced visual acceptance")
+        # New provenance-bound mode: the verifier MUST regenerate its own
+        # candidate from the verified JAR and the declared original UDF,
+        # compare real PDFBox glyph/raster metrics and remove temp output.
+        def generated_command(report: Path, source: Path, rights: Path,
+                              jar_digest: str) -> list[str]:
+            return [
+                sys.executable, str(code), "--manifest", str(rights),
+                "--udf", str(source), "--reference-pdf", str(reference),
+                "--generate-candidate", "--app-jar", str(jar),
+                "--expected-app-jar-sha256", jar_digest,
+                "--report", str(report),
+            ]
+
+        bound_report = root / "exact-jar-generated-match.json"
+        execute(generated_command(bound_report, first, manifest, expected_jar),
+                success_code=0, description="verified-JAR generated PDF parity")
+        generated = assert_report(
+            bound_report, "METRICS_MATCH_REVIEW_REQUIRED",
+            expected_jar, sha256(first), sha256(reference),
+            "LOCAL_TEMP_RENDER_EXACT_JAR_SHA_REVIEW_REQUIRED")
+        if generated.get("generated_candidate_retained") is not False:
+            raise AssertionError("generated candidate cleanup not explicitly recorded")
+        # Source differs but the custody manifest is explicit, and the
+        # independent original reference stays untouched.
+        changed_manifest = root / "different-source-rights.json"
+        changed_rights = dict(declaration)
+        changed_rights["udf_sha256"] = sha256(second)
+        changed_manifest.write_text(json.dumps(changed_rights, sort_keys=True),
+                                    encoding="utf-8")
+        changed_bound_report = root / "exact-jar-generated-difference.json"
+        execute(generated_command(changed_bound_report, second,
+                                  changed_manifest, expected_jar),
+                success_code=2, description="verified-JAR generated difference")
+        changed = assert_report(
+            changed_bound_report, "DIFFERENCE_REVIEW_REQUIRED",
+            expected_jar, sha256(second), sha256(reference),
+            "LOCAL_TEMP_RENDER_EXACT_JAR_SHA_REVIEW_REQUIRED")
+        if changed["comparison"]["different_pixels"] == 0 and all(
+            p["text"] == "MATCH" for p in changed["comparison"]["pages"]
+        ):
+            raise AssertionError("generated different-source PDF wrongly matched")
+        blocked_bound_report = root / "exact-jar-generated-sha-blocked.json"
+        execute(generated_command(blocked_bound_report, first, manifest, "0" * 64),
+                success_code=3, description="invalid exact JAR SHA blocked before render")
+        blocked = json.loads(blocked_bound_report.read_text(encoding="utf-8"))
+        if blocked.get("status") != "BLOCKED" or "comparison" in blocked:
+            raise AssertionError("unsigned renderer incorrectly produced metrics")
+        if any(root.glob(".embasic-offline-candidate-*")):
+            raise AssertionError("private local output directory not removed")
         # No actual UYAP documents, output artifacts or sensitive paths escape
         # the rights-clean ephemeral runner directory.
     print("OFFLINE_GOLDEN_BRIDGE_SYNTHETIC_ONLY=PASS "

@@ -8,6 +8,7 @@ It never sends evidence, PDF text or screenshots anywhere.
 from __future__ import annotations
 
 import argparse
+from contextlib import nullcontext
 import hashlib
 import importlib.util
 import json
@@ -18,6 +19,7 @@ import stat
 import subprocess
 import sys
 import threading
+import tempfile
 
 MAX_PDF = 64 * 1024 * 1024
 MAX_JAR = 128 * 1024 * 1024
@@ -214,7 +216,9 @@ def run(args) -> int:
     }
     status = 3
     try:
-        inputs = [args.manifest, args.udf, args.reference_pdf, args.candidate_pdf, args.app_jar]
+        inputs = [args.manifest, args.udf, args.reference_pdf, args.app_jar]
+        if not args.generate_candidate:
+            inputs.append(args.candidate_pdf)
         ensure_distinct(inputs, args.report)
         if not SHA256.fullmatch(args.expected_app_jar_sha256):
             raise ValueError("independent expected application JAR digest required")
@@ -229,46 +233,79 @@ def run(args) -> int:
         jar_sha, jar_bytes, jar_id = custody.digest_file(args.app_jar, MAX_JAR)
         if jar_sha != args.expected_app_jar_sha256:
             raise ValueError("application JAR not the independently expected build")
-        cand_sha, cand_bytes, cand_id = custody.digest_file(
-            args.candidate_pdf, MAX_PDF, required_prefix=b"%PDF-"
-        )
-        source_id = custody.digest_file(args.udf, custody.MAX_UDF)[2]
-        reference_id = custody.digest_file(
-            args.reference_pdf, MAX_PDF, required_prefix=b"%PDF-"
-        )[2]
-        if len({jar_id, cand_id, source_id, reference_id}) != 4:
-            raise ValueError("candidate, source, reference, and build files must differ")
-        metrics = run_bounded_comparator(
-            [args.java, "-Xmx512m", "-Djava.awt.headless=true",
-             "-cp", str(args.app_jar.resolve()),
-             "com.embasic.publicapp.OfficialPdfReferenceAudit",
-             str(args.reference_pdf.resolve()), str(args.candidate_pdf.resolve())]
-        )
-        # Reconfirm source bytes before publishing a result; an immutable
-        # filesystem snapshot and a trusted signed artifact are still needed.
-        if custody.digest_file(args.manifest, custody.MAX_MANIFEST)[0] != manifest_sha or (
-            custody.digest_file(args.app_jar, MAX_JAR)[0] != jar_sha
-        ) or (
-            custody.digest_file(args.candidate_pdf, MAX_PDF, required_prefix=b"%PDF-")[0] != cand_sha
-        ) or (
-            custody.digest_file(args.reference_pdf, MAX_PDF, required_prefix=b"%PDF-")[0]
-            != source["pdf_sha256"]
-        ) or (
-            custody.digest_file(args.udf, custody.MAX_UDF)[0] != source["udf_sha256"]
-        ):
-            raise ValueError("evidence changed during local PDF visual comparison")
-        report.update({
-            "status": metrics["verdict"],
-            "custody": "BYTE_IDENTITY_VERIFIED_ONLY",
-            "rights_manifest_sha256": manifest_sha,
-            "udf_sha256": source["udf_sha256"],
-            "reference_pdf_sha256": source["pdf_sha256"],
-            "candidate_pdf_sha256": cand_sha,
-            "candidate_pdf_bytes": cand_bytes,
-            "app_jar_sha256": jar_sha, "app_jar_bytes": jar_bytes,
-            "comparison": metrics,
-        })
-        status = 0 if metrics["verdict"] == "METRICS_MATCH_REVIEW_REQUIRED" else 2
+        # The legacy candidate-PDF mode is preserved for independently
+        # produced documents. The opt-in local render mode is stricter: its
+        # candidate is produced from this UDF by the exact SHA-checked JAR.
+        # The transient private PDF is deleted even if parsing/renderer fails.
+        if args.generate_candidate:
+            ensure_report_parent(args.report)
+            candidate_context = tempfile.TemporaryDirectory(
+                prefix=".embasic-offline-candidate-", dir=str(args.report.parent.resolve())
+            )
+        else:
+            candidate_context = nullcontext(None)
+        with candidate_context as temp:
+            candidate = (Path(temp) / "generated-candidate.pdf"
+                         if args.generate_candidate else args.candidate_pdf)
+            provenance = ("LOCAL_TEMP_RENDER_EXACT_JAR_SHA_REVIEW_REQUIRED"
+                          if args.generate_candidate else
+                          "EXTERNAL_PDF_RENDER_PROVENANCE_UNVERIFIED")
+            if args.generate_candidate:
+                # Never buffer or persist renderer stdout/stderr. Its outputs
+                # are limited to a private temporary output directory and
+                # are NEVER uploaded, printed or silently retained.
+                rendered = subprocess.run(
+                    [args.java, "-Xmx512m", "-Djava.awt.headless=true",
+                     "-jar", str(args.app_jar.resolve()),
+                     "--merge", str(candidate), str(args.udf.resolve())],
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                    timeout=150, check=False,
+                )
+                if rendered.returncode != 0:
+                    raise ValueError("the exact-hash local candidate renderer refused the UDF")
+            cand_sha, cand_bytes, cand_id = custody.digest_file(
+                candidate, MAX_PDF, required_prefix=b"%PDF-"
+            )
+            source_id = custody.digest_file(args.udf, custody.MAX_UDF)[2]
+            reference_id = custody.digest_file(
+                args.reference_pdf, MAX_PDF, required_prefix=b"%PDF-"
+            )[2]
+            if len({jar_id, cand_id, source_id, reference_id}) != 4:
+                raise ValueError("candidate, source, reference, and build files must differ")
+            metrics = run_bounded_comparator(
+                [args.java, "-Xmx512m", "-Djava.awt.headless=true",
+                 "-cp", str(args.app_jar.resolve()),
+                 "com.embasic.publicapp.OfficialPdfReferenceAudit",
+                 str(args.reference_pdf.resolve()), str(candidate.resolve())]
+            )
+            # Rehash all inputs plus generated output before leaving the
+            # private directory. This is not an immutable filesystem snapshot.
+            if custody.digest_file(args.manifest, custody.MAX_MANIFEST)[0] != manifest_sha or (
+                custody.digest_file(args.app_jar, MAX_JAR)[0] != jar_sha
+            ) or (
+                custody.digest_file(candidate, MAX_PDF, required_prefix=b"%PDF-")[0] != cand_sha
+            ) or (
+                custody.digest_file(args.reference_pdf, MAX_PDF, required_prefix=b"%PDF-")[0]
+                != source["pdf_sha256"]
+            ) or (
+                custody.digest_file(args.udf, custody.MAX_UDF)[0] != source["udf_sha256"]
+            ):
+                raise ValueError("evidence changed during local PDF visual comparison")
+            report.update({
+                "status": metrics["verdict"],
+                "custody": "BYTE_IDENTITY_VERIFIED_ONLY",
+                "candidate_provenance": provenance,
+                "generated_candidate_retained": False if args.generate_candidate else None,
+                "rights_manifest_sha256": manifest_sha,
+                "udf_sha256": source["udf_sha256"],
+                "reference_pdf_sha256": source["pdf_sha256"],
+                "candidate_pdf_sha256": cand_sha,
+                "candidate_pdf_bytes": cand_bytes,
+                "app_jar_sha256": jar_sha, "app_jar_bytes": jar_bytes,
+                "comparison": metrics,
+            })
+            status = 0 if metrics["verdict"] == "METRICS_MATCH_REVIEW_REQUIRED" else 2
     except (OSError, ValueError, TypeError, UnicodeError, subprocess.TimeoutExpired) as ex:
         # Never copy untrusted PDF/JVM exception text, filenames or UYAP data.
         report["error_type"] = type(ex).__name__
@@ -295,7 +332,10 @@ def main():
     p.add_argument("--manifest", type=Path, required=True)
     p.add_argument("--udf", type=Path, required=True)
     p.add_argument("--reference-pdf", type=Path, required=True)
-    p.add_argument("--candidate-pdf", type=Path, required=True)
+    candidates = p.add_mutually_exclusive_group(required=True)
+    candidates.add_argument("--candidate-pdf", type=Path)
+    candidates.add_argument("--generate-candidate", action="store_true",
+                            help="Generate an ephemeral candidate with the verified JAR; delete it after metric comparison")
     p.add_argument("--app-jar", type=Path, required=True)
     p.add_argument("--expected-app-jar-sha256", required=True)
     p.add_argument("--report", type=Path, required=True)
