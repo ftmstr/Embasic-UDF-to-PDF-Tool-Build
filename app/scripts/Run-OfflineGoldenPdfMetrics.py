@@ -170,8 +170,11 @@ def run(args) -> int:
         if args.app_jar.suffix.lower() != ".jar":
             raise ValueError("expected a local shaded application JAR")
         custody = custody_module()
+        manifest_sha = custody.digest_file(args.manifest, custody.MAX_MANIFEST)[0]
         manifest = custody.read_manifest(args.manifest)
         source = custody.verify(manifest, args.udf, args.reference_pdf)
+        if custody.digest_file(args.manifest, custody.MAX_MANIFEST)[0] != manifest_sha:
+            raise ValueError("rights manifest changed during custody verification")
         jar_sha, jar_bytes, jar_id = custody.digest_file(args.app_jar, MAX_JAR)
         if jar_sha != args.expected_app_jar_sha256:
             raise ValueError("application JAR not the independently expected build")
@@ -197,7 +200,9 @@ def run(args) -> int:
         metrics = parse_metrics(result.stdout, result.returncode)
         # Reconfirm source bytes before publishing a result; an immutable
         # filesystem snapshot and a trusted signed artifact are still needed.
-        if custody.digest_file(args.app_jar, MAX_JAR)[0] != jar_sha or (
+        if custody.digest_file(args.manifest, custody.MAX_MANIFEST)[0] != manifest_sha or (
+            custody.digest_file(args.app_jar, MAX_JAR)[0] != jar_sha
+        ) or (
             custody.digest_file(args.candidate_pdf, MAX_PDF, required_prefix=b"%PDF-")[0] != cand_sha
         ) or (
             custody.digest_file(args.reference_pdf, MAX_PDF, required_prefix=b"%PDF-")[0]
@@ -209,7 +214,7 @@ def run(args) -> int:
         report.update({
             "status": metrics["verdict"],
             "custody": "BYTE_IDENTITY_VERIFIED_ONLY",
-            "rights_manifest_sha256": custody.digest_file(args.manifest, custody.MAX_MANIFEST)[0],
+            "rights_manifest_sha256": manifest_sha,
             "udf_sha256": source["udf_sha256"],
             "reference_pdf_sha256": source["pdf_sha256"],
             "candidate_pdf_sha256": cand_sha,
