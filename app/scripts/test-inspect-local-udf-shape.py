@@ -2,6 +2,7 @@
 """Rights-clean local ZIP/XML shape tests. No native UYAP fixtures."""
 import importlib.util
 import json
+import stat
 from pathlib import Path
 import tempfile
 import unittest
@@ -50,6 +51,21 @@ class ShapeTests(unittest.TestCase):
         self.assertEqual(result["all_versions"], "NOT_VERIFIED")
         self.assertNotIn("secretChild", json.dumps(result))
         self.assertNotIn(SENTINEL, json.dumps(result))
+
+    def test_zip_symlink_member_is_blocked(self):
+        target = self.root / "linked.udf"
+        link = zipfile.ZipInfo("content.xml")
+        link.create_system = 3
+        link.external_attr = (stat.S_IFLNK | 0o777) << 16
+        with zipfile.ZipFile(target, "w") as archive:
+            archive.writestr(link, "private-target")
+        self.assertEqual(inspect.inventory(target)["code"], "ZIP_LINK_MEMBER")
+
+    def test_unsupported_compression_is_blocked(self):
+        target = self.root / "bzip.udf"
+        with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_BZIP2) as archive:
+            archive.writestr("content.xml", "<template/>")
+        self.assertEqual(inspect.inventory(target)["code"], "UNSUPPORTED_COMPRESSION")
 
     def test_zip_traversal_is_blocked(self):
         result = inspect.inventory(self.make([
