@@ -72,7 +72,19 @@ def read_manifest(path):
             after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns
         ):
             raise ValueError("manifest changed during bounded read")
-        return json.loads(data.decode("utf-8"))
+        # Reject ambiguous duplicate JSON keys at every nesting level. Different
+        # parsers may otherwise disagree about rights or reference approvals.
+        def unique_object(pairs):
+            result = {}
+            for key, value in pairs:
+                if key in result:
+                    raise ValueError("duplicate manifest JSON key: " + key)
+                result[key] = value
+            return result
+        manifest = json.loads(data.decode("utf-8"), object_pairs_hook=unique_object)
+        if not isinstance(manifest, dict):
+            raise ValueError("manifest root must be an object")
+        return manifest
     finally:
         os.close(fd)
 
