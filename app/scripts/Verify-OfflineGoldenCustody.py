@@ -151,9 +151,14 @@ def main():
         report["status"] = "CUSTODY_VERIFIED_ONLY"
     except (OSError, ValueError, TypeError, UnicodeError, json.JSONDecodeError) as exc:
         report["error"] = str(exc)
-    if args.report.parent.is_symlink():
-        print("NO_GO: report parent is a symlink", file=sys.stderr)
-        return 1
+    # A symlink in ANY parent component can redirect the report outside the
+    # intended offline evidence directory. Checking only the immediate parent
+    # misses e.g. evidence/link/subdir/report.json. Reject before mkdir/open.
+    parent = args.report.parent.absolute()
+    for ancestor in (parent, *parent.parents):
+        if ancestor.is_symlink():
+            print("NO_GO: report ancestor is a symlink", file=sys.stderr)
+            return 1
     args.report.parent.mkdir(parents=True, exist_ok=True)
     # Exclusive creation prevents clobbering an existing report or evidence file.
     # O_NOFOLLOW is available on POSIX; O_EXCL also rejects existing symlinks.
