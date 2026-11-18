@@ -60,7 +60,7 @@ def digest_file(path, limit, required_prefix=None):
         if (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
                 after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns):
             raise ValueError("input changed during hashing")
-        return digest.hexdigest(), size
+        return digest.hexdigest(), size, (after.st_dev, after.st_ino)
     finally:
         os.close(fd)
 
@@ -123,12 +123,12 @@ def verify(manifest, udf, pdf):
         raise ValueError("reference review ID missing")
     # A PDF masquerading as both inputs cannot establish independent UDF/PDF custody.
     # Compare opened-file identities as well as resolved paths before hashing.
-    udf_stat = udf.stat()
-    pdf_stat = pdf.stat()
-    if (udf_stat.st_dev, udf_stat.st_ino) == (pdf_stat.st_dev, pdf_stat.st_ino):
+    actual_udf, udf_size, udf_identity = digest_file(udf, MAX_UDF)
+    actual_pdf, pdf_size, pdf_identity = digest_file(pdf, MAX_PDF, required_prefix=b"%PDF-")
+    # Compare the actual opened descriptors, not pre-open path.stat() results.
+    # A path may be replaced between stat and open, including with a hardlink.
+    if udf_identity == pdf_identity:
         raise ValueError("UDF and reference PDF must be distinct files")
-    actual_udf, udf_size = digest_file(udf, MAX_UDF)
-    actual_pdf, pdf_size = digest_file(pdf, MAX_PDF, required_prefix=b"%PDF-")
     for key, actual in (("udf_sha256", actual_udf), ("pdf_sha256", actual_pdf)):
         expected = manifest[key]
         if not isinstance(expected, str) or len(expected) != 64 or any(c not in "0123456789abcdef" for c in expected):
