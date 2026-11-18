@@ -141,6 +141,15 @@ def inventory(path):
                 content = None
                 for info in infos:
                     validate_entry(info.filename)
+                    # Inventory must never follow archive links or silently
+                    # accept encrypted/unsupported member encodings.
+                    unix_mode = (info.external_attr >> 16) & 0xffff
+                    if info.create_system == 3 and stat.S_IFMT(unix_mode) == stat.S_IFLNK:
+                        raise Refused("ZIP_LINK_MEMBER")
+                    if info.flag_bits & 0x1:
+                        raise Refused("ENCRYPTED_MEMBER")
+                    if info.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
+                        raise Refused("UNSUPPORTED_COMPRESSION")
                     key = info.filename.casefold()
                     if key in unique:
                         raise Refused("DUPLICATE_MEMBER")
@@ -170,7 +179,7 @@ def inventory(path):
                 check_xml(data, report)
             report["status"] = "SHAPE_ONLY_REVIEW_REQUIRED"
             report["code"] = "STRUCTURE_INSPECTED_NOT_SUPPORTED"
-        except (zipfile.BadZipFile, zipfile.LargeZipFile, EOFError, OSError) as exc:
+        except (zipfile.BadZipFile, zipfile.LargeZipFile, EOFError, OSError, RuntimeError, NotImplementedError) as exc:
             raise Refused("INVALID_ZIP") from exc
     except Refused as exc:
         report["code"] = str(exc)
