@@ -87,6 +87,12 @@ jobs:
       - name: CLI synthetic UDF to PDF smoke
         run: python app/scripts/smoke_cli.py app/target/embasic-public-desktop-0.1.0-SNAPSHOT-all.jar
 
+      # Verify the *new* offline custody+PDFBox bridge end-to-end using only
+      # rights-clean synthetic inputs, not a native UYAP reference. Fail closed
+      # on a changed PDF or forged exact JAR SHA; never upload evidence.
+      - name: Verify offline PDF golden bridge integration (synthetic evidence only)
+        run: python app/scripts/test-offline-golden-bridge-integration.py app/target/embasic-public-desktop-0.1.0-SNAPSHOT-all.jar
+
       # Measure a real, valid 160-file batch on both OS runners. This is a
       # performance baseline (wall time, Java CPU and peak RSS), not a claim of
       # physical Windows acceptance or a new JUnit pass count.
@@ -142,7 +148,7 @@ jobs:
           }
           if ($dashboard.ReleaseReadiness.PublicationAllowed -ne $false -or
               $dashboard.ReleaseReadiness.NativeUyapGolden -ne 'NOT_VERIFIED' -or
-              $dashboard.ReleaseReadiness.OfflineGoldenVisualMetrics -ne 'LOCAL_PDFBOX_STDOUT_BOUNDED_GOLDEN_NOT_RUN' -or
+              $dashboard.ReleaseReadiness.OfflineGoldenVisualMetrics -ne 'SYNTHETIC_BRIDGE_INTEGRATION_ONLY_NATIVE_GOLDEN_NOT_RUN' -or
               $dashboard.ReleaseReadiness.RuntimeShadedLicenseEvidence -ne 'EXACT_UPSTREAM_AND_SHADED_JAR_SHA256_NO_GO' -or
               $dashboard.ReleaseReadiness.SourceAndNotices -ne 'NO_GO' -or
               $dashboard.ReleaseReadiness.LegalSharedNamespace -ne 'BLOCKED_COMPONENT_ATTRIBUTION_REVIEW' -or
