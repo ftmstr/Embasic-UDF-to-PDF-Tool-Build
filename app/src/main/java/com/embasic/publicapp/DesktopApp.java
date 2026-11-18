@@ -1613,6 +1613,11 @@ public final class DesktopApp extends JFrame {
                 x -> x.document == null || x.sourceFingerprint == null)) return;
         JFileChooser picker = new JFileChooser();
         picker.setDialogTitle("PDF olarak kaydet");
+        // A native Windows chooser must offer PDF files, not arbitrary document
+        // types or directories. Keep the existing explicit .pdf normalization.
+        picker.setFileSelectionMode(JFileChooser.FILES_ONLY);
+        picker.setAcceptAllFileFilterUsed(false);
+        picker.setFileFilter(new FileNameExtensionFilter("PDF belgeleri (*.pdf)", "pdf"));
         picker.setSelectedFile(new java.io.File("Embasic-Birlesik.pdf"));
         if (picker.showSaveDialog(this) != JFileChooser.APPROVE_OPTION) return;
         // A native chooser may approve without returning a selected file.
