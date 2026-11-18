@@ -144,8 +144,16 @@ def inventory(path):
                     # Inventory must never follow archive links or silently
                     # accept encrypted/unsupported member encodings.
                     unix_mode = (info.external_attr >> 16) & 0xffff
-                    if info.create_system == 3 and stat.S_IFMT(unix_mode) == stat.S_IFLNK:
-                        raise Refused("ZIP_LINK_MEMBER")
+                    if info.create_system == 3:
+                        kind = stat.S_IFMT(unix_mode)
+                        if kind == stat.S_IFLNK:
+                            raise Refused("ZIP_LINK_MEMBER")
+                        if kind not in (0, stat.S_IFREG, stat.S_IFDIR):
+                            raise Refused("ZIP_SPECIAL_MEMBER")
+                        if kind == stat.S_IFDIR and not info.is_dir():
+                            raise Refused("ZIP_TYPE_MISMATCH")
+                        if kind == stat.S_IFREG and info.is_dir():
+                            raise Refused("ZIP_TYPE_MISMATCH")
                     if info.flag_bits & 0x1:
                         raise Refused("ENCRYPTED_MEMBER")
                     if info.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
