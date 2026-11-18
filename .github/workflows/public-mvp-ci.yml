@@ -142,7 +142,7 @@ jobs:
           }
           if ($dashboard.ReleaseReadiness.PublicationAllowed -ne $false -or
               $dashboard.ReleaseReadiness.NativeUyapGolden -ne 'NOT_VERIFIED' -or
-              $dashboard.ReleaseReadiness.OfflineGoldenVisualMetrics -ne 'LOCAL_PDFBOX_METRICS_TOOL_GOLDEN_NOT_RUN' -or
+              $dashboard.ReleaseReadiness.OfflineGoldenVisualMetrics -ne 'LOCAL_PDFBOX_STDOUT_BOUNDED_GOLDEN_NOT_RUN' -or
               $dashboard.ReleaseReadiness.RuntimeShadedLicenseEvidence -ne 'EXACT_UPSTREAM_AND_SHADED_JAR_SHA256_NO_GO' -or
               $dashboard.ReleaseReadiness.SourceAndNotices -ne 'NO_GO' -or
               $dashboard.ReleaseReadiness.LegalSharedNamespace -ne 'BLOCKED_COMPONENT_ATTRIBUTION_REVIEW' -or

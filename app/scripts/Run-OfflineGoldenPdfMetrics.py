@@ -17,6 +17,7 @@ import re
 import stat
 import subprocess
 import sys
+import threading
 
 MAX_PDF = 64 * 1024 * 1024
 MAX_JAR = 128 * 1024 * 1024
@@ -111,6 +112,56 @@ def parse_metrics(output: str, exit_code: int) -> dict:
     }
 
 
+def run_bounded_comparator(command: list[str], timeout: float = 240) -> dict:
+    """Bound JVM stdout while it runs, discard private stderr, enforce a timeout.
+
+    subprocess.run(capture_output=True) buffers arbitrarily much output in
+    process memory before a later size check. A malfunctioning renderer/JVM
+    must not exhaust the host just by emitting diagnostic text.
+    """
+    chunks: list[bytes] = []
+    reader_failed = []
+    with subprocess.Popen(command, stdout=subprocess.PIPE,
+                          stderr=subprocess.DEVNULL) as process:
+        def read_capped():
+            try:
+                data = process.stdout.read(MAX_JAVA_LOG + 1)
+                chunks.append(data)
+                if len(data) > MAX_JAVA_LOG:
+                    # Stop a process that is filling stdout. No raw content is
+                    # written to logs, disk, exceptions, or the JSON report.
+                    try:
+                        process.kill()
+                    except OSError:
+                        pass
+            except (OSError, ValueError):
+                reader_failed.append(True)
+                try:
+                    process.kill()
+                except OSError:
+                    pass
+
+        reader = threading.Thread(target=read_capped, daemon=True,
+                                  name="embasic-offline-pdf-stdout-cap")
+        reader.start()
+        try:
+            exit_code = process.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+            raise
+        finally:
+            # The process has exited (or was killed); the pipe must close
+            # promptly. Never join forever when output is malformed.
+            reader.join(timeout=5)
+        if reader.is_alive() or reader_failed or not chunks:
+            raise ValueError("comparator output stream was not safely captured")
+        if len(chunks[0]) > MAX_JAVA_LOG:
+            raise ValueError("comparator stdout exceeded local memory budget")
+        output = chunks[0].decode("utf-8", errors="replace")
+    return parse_metrics(output, exit_code)
+
+
 def ensure_distinct(inputs: list[Path], output: Path):
     resolved = [path.resolve(strict=True) for path in inputs]
     # Reject redirected ancestors too: a final regular file may still be reached
@@ -187,17 +238,12 @@ def run(args) -> int:
         )[2]
         if len({jar_id, cand_id, source_id, reference_id}) != 4:
             raise ValueError("candidate, source, reference, and build files must differ")
-        result = subprocess.run(
+        metrics = run_bounded_comparator(
             [args.java, "-Xmx512m", "-Djava.awt.headless=true",
              "-cp", str(args.app_jar.resolve()),
              "com.embasic.publicapp.OfficialPdfReferenceAudit",
-             str(args.reference_pdf.resolve()), str(args.candidate_pdf.resolve())],
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-            errors="replace", timeout=240, check=False,
+             str(args.reference_pdf.resolve()), str(args.candidate_pdf.resolve())]
         )
-        if len(result.stderr) > MAX_JAVA_LOG:
-            raise ValueError("unbounded comparator stderr")
-        metrics = parse_metrics(result.stdout, result.returncode)
         # Reconfirm source bytes before publishing a result; an immutable
         # filesystem snapshot and a trusted signed artifact are still needed.
         if custody.digest_file(args.manifest, custody.MAX_MANIFEST)[0] != manifest_sha or (

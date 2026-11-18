@@ -2,6 +2,8 @@
 """Rights-clean parser-only regression; does not claim native UYAP equivalence."""
 import importlib.util
 from pathlib import Path
+import subprocess
+import sys
 import unittest
 
 PATH = Path(__file__).with_name("Run-OfflineGoldenPdfMetrics.py")
@@ -40,6 +42,30 @@ class ParserRegression(unittest.TestCase):
             audit.parse_metrics(GOOD, 3)
         with self.assertRaises(ValueError):
             audit.parse_metrics(GOOD.replace("renderedPixels=100", "renderedPixels=0"), 0)
+
+    def test_process_output_is_bounded_before_render_completion(self):
+        payload = "import sys; sys.stdout.write('x'*100000); sys.stdout.flush()"
+        with self.assertRaisesRegex(ValueError, "exceeded local memory budget"):
+            audit.run_bounded_comparator([sys.executable, "-c", payload], timeout=5)
+
+    def test_bounded_process_suppresses_stderr_and_keeps_metrics_only(self):
+        payload = ("import sys; sys.stderr.write('sensitive internal UDF diagnostic'); "
+                   "sys.stdout.write(" + repr(GOOD) + ")")
+        result = audit.run_bounded_comparator([sys.executable, "-c", payload], timeout=5)
+        self.assertEqual(result["verdict"], "METRICS_MATCH_REVIEW_REQUIRED")
+        self.assertNotIn("sensitive", str(result))
+
+    def test_bounded_process_timeout_is_fail_closed(self):
+        with self.assertRaises(subprocess.TimeoutExpired):
+            audit.run_bounded_comparator(
+                [sys.executable, "-c", "import time; time.sleep(10)"], timeout=0.15
+            )
+
+    def test_bounded_process_rejects_nonsense_even_with_zero_exit(self):
+        with self.assertRaisesRegex(ValueError, "missing/duplicate comparator summary"):
+            audit.run_bounded_comparator(
+                [sys.executable, "-c", "print('not a PDF comparator result')"], timeout=5
+            )
 
 
 if __name__ == "__main__":
