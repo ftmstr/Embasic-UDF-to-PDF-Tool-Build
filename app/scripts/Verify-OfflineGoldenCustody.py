@@ -35,6 +35,7 @@ def digest_file(path, limit, required_prefix=None):
         digest = hashlib.sha256()
         read_bytes = 0
         prefix_checked = required_prefix is None
+        tail = b""
         with os.fdopen(fd, "rb", closefd=False) as stream:
             while read_bytes < size:
                 chunk = stream.read(min(1024 * 1024, size - read_bytes))
@@ -46,8 +47,15 @@ def digest_file(path, limit, required_prefix=None):
                     prefix_checked = True
                 read_bytes += len(chunk)
                 digest.update(chunk)
+                if required_prefix is not None:
+                    tail = (tail + chunk)[-4096:]
             if stream.read(1):
                 raise ValueError("input grew during hashing")
+            # A PDF header alone can be forged on arbitrary or truncated data.
+            # Require the terminal EOF marker within the bounded trailing window.
+            # This is only a structural sanity check, not a parser or parity proof.
+            if required_prefix is not None and not tail.rstrip(b"\\x00\\x09\\x0a\\x0c\\x0d\\x20").endswith(b"%%EOF"):
+                raise ValueError("reference PDF terminal EOF marker missing")
         after = os.fstat(fd)
         if (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns, before.st_ctime_ns) != (
                 after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns, after.st_ctime_ns):
