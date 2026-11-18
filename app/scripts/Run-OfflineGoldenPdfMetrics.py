@@ -113,8 +113,12 @@ def parse_metrics(output: str, exit_code: int) -> dict:
 
 def ensure_distinct(inputs: list[Path], output: Path):
     resolved = [path.resolve(strict=True) for path in inputs]
-    if any(path.is_symlink() or not path.is_file() for path in inputs):
-        raise ValueError("unsafe evidence input")
+    # Reject redirected ancestors too: a final regular file may still be reached
+    # through a symlinked directory outside the operator-approved offline tree.
+    if any(path.is_symlink() or not path.is_file() or
+           any(parent.is_symlink() for parent in (path.absolute().parent, *path.absolute().parents))
+           for path in inputs):
+        raise ValueError("unsafe evidence input or redirected ancestor")
     file_ids = [(os.stat(path, follow_symlinks=False).st_dev,
                  os.stat(path, follow_symlinks=False).st_ino) for path in inputs]
     if len(set(resolved)) != len(inputs) or len(set(file_ids)) != len(inputs):
