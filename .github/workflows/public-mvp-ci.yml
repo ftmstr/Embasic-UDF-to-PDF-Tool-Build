@@ -60,6 +60,10 @@ jobs:
       # not a performance improvement or a release approval.
       - name: Synthetic runtime-shade license evidence regression
         run: python scripts/test-audit-public-shaded-runtime.py
+      # Local-only compatibility shape; synthetic bytes and fixed vocabulary.
+      # No genuine UYAP source, competitor code or private output in CI.
+      - name: Test private local UDF structural inventory (no native UYAP)
+        run: python app/scripts/test-inspect-local-udf-shape.py
       - name: Validate offline rights-gated PDF audit result parsing (no native fixtures)
         run: python app/scripts/test-run-offline-golden-pdf-metrics.py
       - name: Compile + JUnit test + audit actual shaded runtime JARs (NO-GO)
@@ -148,6 +152,7 @@ jobs:
           }
           if ($dashboard.ReleaseReadiness.PublicationAllowed -ne $false -or
               $dashboard.ReleaseReadiness.NativeUyapGolden -ne 'NOT_VERIFIED' -or
+              $dashboard.ReleaseReadiness.LocalUdfShapeInspection -ne 'OFFLINE_STRUCTURE_ONLY_NATIVE_NOT_VERIFIED' -or
               $dashboard.ReleaseReadiness.OfflineGoldenVisualMetrics -ne 'EXACT_SHA_LOCAL_RENDER_PROVENANCE_SYNTHETIC_ONLY_NATIVE_GOLDEN_NOT_RUN' -or
               $dashboard.ReleaseReadiness.RuntimeShadedLicenseEvidence -ne 'EXACT_UPSTREAM_AND_SHADED_JAR_SHA256_NO_GO' -or
               $dashboard.ReleaseReadiness.SourceAndNotices -ne 'NO_GO' -or

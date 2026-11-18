@@ -111,6 +111,7 @@ $report = [pscustomobject]@{
         NativeUyapGolden='NOT_VERIFIED'
         OfflineGoldenVisualMetrics='EXACT_SHA_LOCAL_RENDER_PROVENANCE_SYNTHETIC_ONLY_NATIVE_GOLDEN_NOT_RUN'
         AllUdfVersions='NOT_VERIFIED'
+        LocalUdfShapeInspection='OFFLINE_STRUCTURE_ONLY_NATIVE_NOT_VERIFIED'
         SourceAndNotices='NO_GO'
         HostileExistingTargetCas='NO_GO'
         PhysicalUnsupportedHardlinkExfat='NOT_RUN'
