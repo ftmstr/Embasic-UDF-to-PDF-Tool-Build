@@ -61,6 +61,24 @@ class ShapeTests(unittest.TestCase):
             archive.writestr(link, "private-target")
         self.assertEqual(inspect.inventory(target)["code"], "ZIP_LINK_MEMBER")
 
+    def test_unix_special_member_is_blocked(self):
+        target = self.root / "special.udf"
+        device = zipfile.ZipInfo("content.xml")
+        device.create_system = 3
+        device.external_attr = (stat.S_IFCHR | 0o600) << 16
+        with zipfile.ZipFile(target, "w") as archive:
+            archive.writestr(device, "<template/>")
+        self.assertEqual(inspect.inventory(target)["code"], "ZIP_SPECIAL_MEMBER")
+
+    def test_unix_member_type_mismatch_is_blocked(self):
+        target = self.root / "mismatch.udf"
+        directory = zipfile.ZipInfo("content.xml")
+        directory.create_system = 3
+        directory.external_attr = (stat.S_IFDIR | 0o755) << 16
+        with zipfile.ZipFile(target, "w") as archive:
+            archive.writestr(directory, "<template/>")
+        self.assertEqual(inspect.inventory(target)["code"], "ZIP_TYPE_MISMATCH")
+
     def test_unsupported_compression_is_blocked(self):
         target = self.root / "bzip.udf"
         with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_BZIP2) as archive:
