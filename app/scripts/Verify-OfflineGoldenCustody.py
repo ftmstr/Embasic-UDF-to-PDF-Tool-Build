@@ -94,7 +94,9 @@ def read_manifest(path):
                     raise ValueError("duplicate manifest JSON key: " + key)
                 result[key] = value
             return result
-        manifest = json.loads(data.decode("utf-8"), object_pairs_hook=unique_object)
+        manifest = json.loads(data.decode("utf-8"), object_pairs_hook=unique_object,
+                              parse_constant=lambda value: (_ for _ in ()).throw(
+                                  ValueError("nonstandard JSON constant: " + value)))
         if not isinstance(manifest, dict):
             raise ValueError("manifest root must be an object")
         return manifest
@@ -119,6 +121,12 @@ def verify(manifest, udf, pdf):
         raise ValueError("unapproved reference origin")
     if not isinstance(reference["review_id"], str) or not reference["review_id"].strip():
         raise ValueError("reference review ID missing")
+    # A PDF masquerading as both inputs cannot establish independent UDF/PDF custody.
+    # Compare opened-file identities as well as resolved paths before hashing.
+    udf_stat = udf.stat()
+    pdf_stat = pdf.stat()
+    if (udf_stat.st_dev, udf_stat.st_ino) == (pdf_stat.st_dev, pdf_stat.st_ino):
+        raise ValueError("UDF and reference PDF must be distinct files")
     actual_udf, udf_size = digest_file(udf, MAX_UDF)
     actual_pdf, pdf_size = digest_file(pdf, MAX_PDF, required_prefix=b"%PDF-")
     for key, actual in (("udf_sha256", actual_udf), ("pdf_sha256", actual_pdf)):
