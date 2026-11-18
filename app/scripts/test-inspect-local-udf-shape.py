@@ -96,6 +96,12 @@ class ShapeTests(unittest.TestCase):
             ("Content.xml", "<template/>"), ("content.xml", "<template/>")]))
         self.assertEqual(result["code"], "DUPLICATE_MEMBER")
 
+    def test_file_and_directory_path_aliases_are_blocked(self):
+        result = inspect.inventory(self.make([
+            ("content.xml/", ""), ("content.xml", "<template/>")]))
+        self.assertEqual(result["code"], "DUPLICATE_MEMBER")
+        self.assertEqual(result["native_uyap"], "NOT_VERIFIED")
+
     def test_doctype_never_expands(self):
         result = inspect.inventory(self.make([
             ("content.xml", '<!DOCTYPE x [<!ENTITY a "foo">]><template>&a;</template>')]))
