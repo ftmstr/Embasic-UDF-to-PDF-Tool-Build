@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
+import java.util.zip.CRC32;
 import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilderFactory;
 import javax.xml.parsers.SAXParserFactory;
@@ -109,6 +110,11 @@ public final class UdfReader {
                             || normalized.equals("images") || normalized.startsWith("images/")))
                         throw new IllegalArgumentException("Desteklenmeyen UDF ZIP dizini: " + normalized);
                     DocumentElements.mediaPath(normalized + "/placeholder.png");
+                    // Directory markers must be truly empty, including their
+                    // declared ZIP sizes and CRC. File/directory aliases are
+                    // rejected separately by the normalized seen set.
+                    if (entry.getSize() != 0 || entry.getCrc() != 0)
+                        throw new IllegalArgumentException("UDF ZIP dizininde beklenmeyen veri var");
                     try (InputStream in = zip.getInputStream(entry)) {
                         if (in.read() != -1)
                             throw new IllegalArgumentException("UDF ZIP dizininde beklenmeyen veri var");
@@ -121,24 +127,20 @@ public final class UdfReader {
                 if (total > MAX_TOTAL_UNCOMPRESSED) throw new IllegalArgumentException("UDF ZIP çok büyük");
                 if (normalized.equals("content.xml")) {
                     if (data != null) throw new IllegalArgumentException("Birden fazla content.xml");
-                    try (InputStream in = zip.getInputStream(entry)) {
-                        byte[] bytes = in.readNBytes(MAX_CONTENT_XML + 1);
-                        if (bytes.length > MAX_CONTENT_XML) throw new IllegalArgumentException("UDF XML boyut sınırı aşıldı");
-                        data = bytes;
-                    }
+                    if (entry.getSize() > MAX_CONTENT_XML)
+                        throw new IllegalArgumentException("UDF XML boyut sınırı aşıldı");
+                    data = readVerifiedZipMember(zip, entry, MAX_CONTENT_XML);
                 } else if (normalized.endsWith(".png")
                         && (normalized.startsWith("media/") || normalized.startsWith("images/"))) {
                     // Exactly scoped resource namespace; no extraction to disk and no network fallback.
                     DocumentElements.mediaPath(normalized);
                     if (media.size() >= MAX_MEDIA_FILES || entry.getSize() > MAX_MEDIA_PNG)
                         throw new IllegalArgumentException("UDF PNG kaynak sınırı aşıldı");
-                    try (InputStream in = zip.getInputStream(entry)) {
-                        byte[] bytes = in.readNBytes(MAX_MEDIA_PNG + 1);
-                        if (bytes.length > MAX_MEDIA_PNG || (long) mediaTotal + bytes.length > MAX_MEDIA_TOTAL)
-                            throw new IllegalArgumentException("UDF PNG veri sınırı aşıldı");
-                        mediaTotal += bytes.length;
-                        media.put(normalized, bytes);
-                    }
+                    byte[] bytes = readVerifiedZipMember(zip, entry, MAX_MEDIA_PNG);
+                    if ((long) mediaTotal + bytes.length > MAX_MEDIA_TOTAL)
+                        throw new IllegalArgumentException("UDF PNG veri sınırı aşıldı");
+                    mediaTotal += bytes.length;
+                    media.put(normalized, bytes);
                 } else {
                     // Unknown archive payloads may contain document content or formatting.
                     // Never report a successful PDF after silently discarding them.
@@ -148,6 +150,33 @@ public final class UdfReader {
         }
         if (data == null) throw new IllegalArgumentException("UDF içinde content.xml bulunamadı");
         return parse(data, file.getFileName().toString(), media);
+    }
+
+    /**
+     * java.util.zip.ZipFile.getInputStream() does NOT validate an entry's
+     * declared CRC-32. A corrupted ZIP may otherwise be silently rendered as
+     * a PDF. Check both uncompressed byte length and CRC on bounded bytes,
+     * before the XML or PNG becomes a trusted document element.
+     *
+     * CRC-32 detects archive-integrity mismatch; it is NOT authenticity,
+     * a signature, a source-ownership proof or a native UYAP fidelity claim.
+     */
+    private static byte[] readVerifiedZipMember(ZipFile zip, ZipEntry entry, int maxBytes)
+            throws IOException {
+        long expectedSize = entry.getSize();
+        long expectedCrc = entry.getCrc();
+        if (expectedSize < 0 || expectedSize > maxBytes || expectedCrc < 0)
+            throw new IllegalArgumentException("UDF ZIP giriş boyutu veya CRC alanı geçersiz");
+        try (InputStream in = zip.getInputStream(entry)) {
+            byte[] bytes = in.readNBytes(maxBytes + 1);
+            if (bytes.length > maxBytes || bytes.length != expectedSize)
+                throw new IllegalArgumentException("UDF ZIP giriş veri boyutu tutarsız");
+            CRC32 crc = new CRC32();
+            crc.update(bytes);
+            if (crc.getValue() != expectedCrc)
+                throw new IllegalArgumentException("UDF ZIP CRC-32 bütünlük denetimi başarısız");
+            return bytes;
+        }
     }
 
     /** Public synthetic fixture contract: UTF-16 startOffset/length; other variants are not guessed. */

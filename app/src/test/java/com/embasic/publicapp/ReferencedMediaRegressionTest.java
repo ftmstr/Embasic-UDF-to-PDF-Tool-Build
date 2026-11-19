@@ -82,6 +82,57 @@ final class ReferencedMediaRegressionTest {
         return entries;
     }
 
+    /**
+     * Mutate the CRC or uncompressed length in the ZIP central directory
+     * without changing source bytes. Java ZipFile's input stream can still
+     * return those bytes: UdfReader must not trust such inconsistent archives.
+     * Only synthetic generated test ZIPs are modified here.
+     */
+    private static void corruptCentralMemberField(Path archive, String target, int offset)
+            throws Exception {
+        byte[] data = Files.readAllBytes(archive);
+        for (int index = 0; index <= data.length - 46; index++) {
+            if ((data[index] & 255) != 0x50 || (data[index + 1] & 255) != 0x4b
+                    || (data[index + 2] & 255) != 0x01 || (data[index + 3] & 255) != 0x02)
+                continue;
+            int nameLength = (data[index + 28] & 255) | ((data[index + 29] & 255) << 8);
+            if (index + 46 + nameLength > data.length) continue;
+            String name = new String(data, index + 46, nameLength, StandardCharsets.UTF_8);
+            if (!target.equals(name)) continue;
+            data[index + offset] ^= 1; // +16 CRC-32, +24 uncompressed size
+            Files.write(archive, data);
+            return;
+        }
+        throw new IllegalStateException("Synthetic ZIP central member not found");
+    }
+
+    @Test void modifiedCentralContentXmlCrcCannotBeConverted() throws Exception {
+        Path original = archive("content-central-crc.udf",
+                items(page("", "A4"), null, null));
+        corruptCentralMemberField(original, "content.xml", 16);
+        IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
+                () -> UdfReader.read(original));
+        assertTrue(failure.getMessage().contains("CRC-32"), failure.getMessage());
+    }
+
+    @Test void modifiedCentralPngCrcCannotBeConverted() throws Exception {
+        Path original = archive("png-central-crc.udf",
+                items(page(ref("media/logo.png"), "A4"), "media/logo.png", png()));
+        corruptCentralMemberField(original, "media/logo.png", 16);
+        IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
+                () -> UdfReader.read(original));
+        assertTrue(failure.getMessage().contains("CRC-32"), failure.getMessage());
+    }
+
+    @Test void modifiedCentralUncompressedSizeCannotBeConverted() throws Exception {
+        Path original = archive("content-central-length.udf",
+                items(page("", "A4"), null, null));
+        corruptCentralMemberField(original, "content.xml", 24);
+        IllegalArgumentException failure = assertThrows(IllegalArgumentException.class,
+                () -> UdfReader.read(original));
+        assertTrue(failure.getMessage().contains("boyutu"), failure.getMessage());
+    }
+
     @Test void zippedImageReferenceAndPageFormatsRoundTrip() throws Exception {
         for(String size:List.of("A5","LEGAL")) {
             Map<String,byte[]> canonical=items(page(ref("media/logo.png"),size),
