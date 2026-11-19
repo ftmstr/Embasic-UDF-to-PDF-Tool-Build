@@ -106,6 +106,54 @@ final class ReferencedMediaRegressionTest {
         throw new IllegalStateException("Synthetic ZIP central member not found");
     }
 
+    private static void corruptLocalHeaderName(Path archive, String target, String replacement)
+            throws Exception {
+        byte[] source = Files.readAllBytes(archive);
+        byte[] originalName = target.getBytes(StandardCharsets.UTF_8);
+        byte[] newName = replacement.getBytes(StandardCharsets.UTF_8);
+        assertEquals(originalName.length, newName.length,
+                "Keep local header lengths unchanged: central metadata remains valid");
+        for (int offset = 0; offset <= source.length - 30; offset++) {
+            if ((source[offset] & 255) != 0x50 || (source[offset + 1] & 255) != 0x4b
+                    || (source[offset + 2] & 255) != 0x03 || (source[offset + 3] & 255) != 0x04)
+                continue;
+            int nameLength = (source[offset + 26] & 255)
+                    | ((source[offset + 27] & 255) << 8);
+            if (nameLength != originalName.length || offset + 30 + nameLength > source.length)
+                continue;
+            boolean match = true;
+            for (int i = 0; i < nameLength; i++)
+                if (source[offset + 30 + i] != originalName[i]) {
+                    match = false;
+                    break;
+                }
+            if (!match) continue;
+            System.arraycopy(newName, 0, source, offset + 30, nameLength);
+            Files.write(archive, source);
+            return;
+        }
+        fail("Expected test-only ZIP local header missing");
+    }
+
+    @Test void conflictingLocalContentXmlNameIsRejectedBeforeRendering() throws Exception {
+        Path source = archive("local-xml-name.udf", items(page("", "A4"), null, null));
+        // Only the LOCAL filename changes. ZipFile still calls this "content.xml"
+        // and its decoded bytes and central CRC remain fully valid.
+        corruptLocalHeaderName(source, "content.xml", "private.xml");
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> UdfReader.read(source));
+        assertTrue(error.getMessage().contains("yerel"), error.getMessage());
+    }
+
+    @Test void conflictingLocalMediaNameIsRejectedBeforeRendering() throws Exception {
+        Path source = archive("local-png-name.udf",
+                items(page(ref("media/logo.png"), "A4"), "media/logo.png", png()));
+        corruptLocalHeaderName(source, "media/logo.png", "media/evil.png");
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> UdfReader.read(source));
+        assertTrue(error.getMessage().contains("yerel"), error.getMessage());
+    }
+
     @Test void modifiedCentralContentXmlCrcCannotBeConverted() throws Exception {
         Path original = archive("content-central-crc.udf",
                 items(page("", "A4"), null, null));

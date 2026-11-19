@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
+import java.util.zip.ZipInputStream;
 import java.util.zip.CRC32;
 import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -77,6 +78,10 @@ public final class UdfReader {
         int mediaTotal = 0;
         Map<String,byte[]> media = new HashMap<>();
         try (ZipFile zip = new ZipFile(file.toFile())) {
+            // ZipFile trusts CENTRAL names, whereas other ZIP readers trust LOCAL
+            // headers. A mismatch can reclassify a source XML or image without
+            // changing its payload or CRC; reject such ambiguous archives.
+            requireConsistentLocalZipRecords(file, zip);
             Enumeration<? extends ZipEntry> entries = zip.entries();
             int count = 0;
             Set<String> seen = new HashSet<>();
@@ -150,6 +155,61 @@ public final class UdfReader {
         }
         if (data == null) throw new IllegalArgumentException("UDF içinde content.xml bulunamadı");
         return parse(data, file.getFileName().toString(), media);
+    }
+
+    /**
+     * Compare all LOCAL ZIP records against the CENTRAL directory before any
+     * content.xml or media bytes are treated as document content. ZipFile
+     * resolves entry names from the central directory, while streaming ZIP
+     * readers resolve them from local headers. Checking only decompressed
+     * CRC-32 cannot detect a conflicting local filename.
+     *
+     * Consume each local stream at most once, with the same total 32 MiB
+     * decoded budget as the reader. A Map avoids depending on ZIP entry
+     * ordering, which need not match local header order.
+     */
+    private static void requireConsistentLocalZipRecords(Path file, ZipFile zip) {
+        Map<String, ZipEntry> declared = new HashMap<>();
+        Enumeration<? extends ZipEntry> entries = zip.entries();
+        int centralCount = 0;
+        while (entries.hasMoreElements()) {
+            ZipEntry entry = entries.nextElement();
+            if (++centralCount > MAX_ENTRIES || declared.putIfAbsent(entry.getName(), entry) != null)
+                throw new IllegalArgumentException("UDF ZIP merkez dizini girişleri tutarsız");
+            if (entry.getSize() < 0 || entry.getSize() > MAX_TOTAL_UNCOMPRESSED
+                    || entry.getCrc() < 0)
+                throw new IllegalArgumentException("UDF ZIP merkez dizini boyutu veya CRC geçersiz");
+        }
+        long aggregate = 0;
+        int localCount = 0;
+        byte[] buffer = new byte[64 * 1024];
+        try (ZipInputStream local = new ZipInputStream(Files.newInputStream(file))) {
+            ZipEntry entry;
+            while ((entry = local.getNextEntry()) != null) {
+                ZipEntry central = declared.remove(entry.getName());
+                if (++localCount > MAX_ENTRIES || central == null
+                        || entry.getMethod() != central.getMethod())
+                    throw new IllegalArgumentException("UDF ZIP yerel başlık ile merkez dizini uyuşmuyor");
+                long decoded = 0;
+                int length;
+                while ((length = local.read(buffer)) != -1) {
+                    decoded += length;
+                    aggregate += length;
+                    if (decoded > central.getSize() || aggregate > MAX_TOTAL_UNCOMPRESSED)
+                        throw new IllegalArgumentException("UDF ZIP yerel giriş veri sınırı aşıldı");
+                }
+                local.closeEntry();
+                if (decoded != central.getSize() || entry.getSize() != central.getSize()
+                        || entry.getCrc() != central.getCrc())
+                    throw new IllegalArgumentException("UDF ZIP yerel giriş bütünlüğü uyuşmuyor");
+            }
+        } catch (IOException ex) {
+            // ZIP streams can report document/member names in exceptions.
+            // Keep user-facing text generic; diagnostics stay chained for logs.
+            throw new IllegalArgumentException("UDF ZIP yerel başlık okunamadı", ex);
+        }
+        if (localCount != centralCount || !declared.isEmpty())
+            throw new IllegalArgumentException("UDF ZIP yerel başlık sayısı uyuşmuyor");
     }
 
     /**

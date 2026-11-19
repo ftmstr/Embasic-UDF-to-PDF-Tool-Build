@@ -1,0 +1,16 @@
+# TUR394 — Reject conflicting ZIP local vs central member identities before UDF→PDF
+
+2026-11-19 Europe/Istanbul. Public ftmstr/Embasic-UDF-to-PDF-Tool-Build branch ci/secure-windows-bootstrap-20261018 ONLY. Start SHA 6bc26d824fc56ca0369afc984da7dd6d56cd90c7 exact TUR393. Public HEAD, real TUR393 Windows/Linux and physical Windows EXE CI, Drive TUR393 report and enabled hourly automation verified; TUR393 latest, no newer tour. No Private access.
+
+## Reproduced material silent-ambiguity issue
+ZIP stores per-member names in both LOCAL headers and the CENTRAL directory. The current Java ZipFile iterates central names and verified decoded payload size/CRC (TUR393), but did not independently inspect local names. A rights-clean Java 21 experiment: change only the local header filename content.xml to private.xml, keeping same length and leaving central metadata + decompressed XML + CRC untouched. ZipFile lists content.xml, returns 27 bytes, while ZipInputStream lists private.xml and returns the same 27 bytes. A parser that treats the local name as authoritative therefore disagrees on which document was supplied. The existing CRC/size checks cannot catch this. No real UYAP sample was used.
+
+## Minimal fail-closed fix
+app/src/main/java/com/embasic/publicapp/UdfReader.java now performs a streaming local-vs-central ZIP integrity preflight before importing XML/PNG. Maps raw central filenames to ZipEntry, validates known size/CRC, requires each local filename and compression method match one central member, streams local payload bounded to the already-existing 32 MiB aggregate limit and central size, verifies local decoded size/CRC, and requires exactly the same set/count of entries. No assumption of identical record order. Refuses ambiguous/missing/extra local records and ZIP IO failures with sanitized user-facing messages. Existing individual XML/PNG CRC and bound checks, known synthetic format 1.0 contract, normal media/ and images/ directory markers, GUI ordering, PDF rendering and staged transactional commits unchanged.
+
+app/src/test/java/com/embasic/publicapp/ReferencedMediaRegressionTest.java adds exactly two focused rights-clean synthetic regression tests: local-only content.xml name changes while central XML bytes/CRC remain valid; local-only media/logo.png name changes while central PNG bytes/CRC remain valid. Expected Windows/Linux JUnit 219 total (218 PASS, 1 normal Robot SKIP). No duplicate general smoke loop added.
+
+## Release restrictions
+No authentic native UYAP version parity or golden, no independent Public app ownership/LICENSE/NOTICE rights approval, legacy Secure Bootstrap SOURCE_GATE BLOCKED, hostile existing-target CAS NO-GO, physical exFAT NOT_RUN and external physical Windows beta NOT_RUN. NO-GO. This is ZIP structural ambiguity prevention, NOT cryptographic authenticity or UYAP compatibility proof. No main merge/tag/release/installer/ZIP/binary distribution. Engineering estimate 44.3% unchanged.
+
+Append exact final SHA, actual Windows/Linux CI and hosted packaged GUI/JDI, Drive report confirmation when observed.
