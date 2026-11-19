@@ -86,7 +86,9 @@ public final class UdfReader {
                 for (String part : path.split("/", -1))
                     if (part.isEmpty() || part.equals(".") || part.equals(".."))
                         throw new IllegalArgumentException("UDF ZIP güvenli olmayan yol içeriyor");
-                String normalized = name.toLowerCase(Locale.ROOT);
+                // Directory trailing slash is a ZIP record marker, not a distinct logical path.
+                // A file and directory at the same path must not be interpreted differently.
+                String normalized = path.toLowerCase(Locale.ROOT);
                 if (!seen.add(normalized)) throw new IllegalArgumentException("UDF ZIP tekrarlanan giriş içeriyor");
                 if (entry.isDirectory()) {
                     // A ZIP directory is metadata, not an ignored payload. Accept
@@ -94,7 +96,7 @@ public final class UdfReader {
                     // reject directory records carrying bytes that would vanish.
                     if (!(normalized.startsWith("media/") || normalized.startsWith("images/")))
                         throw new IllegalArgumentException("Desteklenmeyen UDF ZIP dizini: " + normalized);
-                    DocumentElements.mediaPath(normalized + "placeholder.png");
+                    DocumentElements.mediaPath(normalized + "/placeholder.png");
                     try (InputStream in = zip.getInputStream(entry)) {
                         if (in.read() != -1)
                             throw new IllegalArgumentException("UDF ZIP dizininde beklenmeyen veri var");
