@@ -135,6 +135,97 @@ final class ReferencedMediaRegressionTest {
         fail("Expected test-only ZIP local header missing");
     }
 
+
+    private static void writeLe16(ByteArrayOutputStream out, int value) {
+        out.write(value & 255);
+        out.write((value >>> 8) & 255);
+    }
+
+    private static void writeLe32(ByteArrayOutputStream out, long value) {
+        writeLe16(out, (int) value);
+        writeLe16(out, (int) (value >>> 16));
+    }
+
+    private static void writeStoredLocal(ByteArrayOutputStream out, byte[] name,
+                                         byte[] payload, long crc) {
+        writeLe32(out, 0x04034b50);
+        writeLe16(out, 20); // version needed
+        writeLe16(out, 0); // flags
+        writeLe16(out, 0); // STORED
+        writeLe16(out, 0); // DOS time
+        writeLe16(out, 0); // DOS date
+        writeLe32(out, crc);
+        writeLe32(out, payload.length);
+        writeLe32(out, payload.length);
+        writeLe16(out, name.length);
+        writeLe16(out, 0); // extra
+        out.writeBytes(name);
+        out.writeBytes(payload);
+    }
+
+    @Test void crcCollisionDoesNotMakeDifferentLocalAndCentralXmlInterchangeable() throws Exception {
+        // Real Java 21 ZIP reader divergence reproduced using original,
+        // rights-clean XML. Both documents are well-formed synthetic 1.0,
+        // equal-sized, and have the same independently computed CRC-32.
+        String prefix = "<template format_id='1.0'><content>";
+        String suffix = "</content><elements><paragraph><content startOffset='0' length='12'/>"
+                + "</paragraph></elements></template>";
+        byte[] localXml = (prefix + "ILYZRZIDGILQ" + suffix).getBytes(StandardCharsets.UTF_8);
+        byte[] centralXml = (prefix + "XJDQSZRLQIDU" + suffix).getBytes(StandardCharsets.UTF_8);
+        assertEquals(localXml.length, centralXml.length);
+        assertFalse(java.util.Arrays.equals(localXml, centralXml));
+        java.util.zip.CRC32 localCrc = new java.util.zip.CRC32();
+        java.util.zip.CRC32 centralCrc = new java.util.zip.CRC32();
+        localCrc.update(localXml);
+        centralCrc.update(centralXml);
+        assertEquals(localCrc.getValue(), centralCrc.getValue(),
+                "Precomputed test data must genuinely collide, not forge metadata");
+        byte[] name = "content.xml".getBytes(StandardCharsets.UTF_8);
+        ByteArrayOutputStream zip = new ByteArrayOutputStream();
+        writeStoredLocal(zip, name, localXml, localCrc.getValue());
+        // Streaming ZIP stops at this non-entry marker. A malicious CENTRAL
+        // offset can still point to an unseen second local header.
+        zip.writeBytes(new byte[]{0, 17, 34, 51});
+        int hiddenOffset = zip.size();
+        writeStoredLocal(zip, name, centralXml, centralCrc.getValue());
+        int centralOffset = zip.size();
+        writeLe32(zip, 0x02014b50);
+        writeLe16(zip, 20); writeLe16(zip, 20);
+        writeLe16(zip, 0); writeLe16(zip, 0);
+        writeLe16(zip, 0); writeLe16(zip, 0);
+        writeLe32(zip, centralCrc.getValue());
+        writeLe32(zip, centralXml.length); writeLe32(zip, centralXml.length);
+        writeLe16(zip, name.length); writeLe16(zip, 0);
+        writeLe16(zip, 0); writeLe16(zip, 0);
+        writeLe16(zip, 0); writeLe32(zip, 0);
+        writeLe32(zip, hiddenOffset);
+        zip.writeBytes(name);
+        int centralSize = zip.size() - centralOffset;
+        writeLe32(zip, 0x06054b50);
+        writeLe16(zip, 0); writeLe16(zip, 0);
+        writeLe16(zip, 1); writeLe16(zip, 1);
+        writeLe32(zip, centralSize); writeLe32(zip, centralOffset);
+        writeLe16(zip, 0);
+        Path conflicting = folder.resolve("local-central-crc-collision.udf");
+        Files.write(conflicting, zip.toByteArray());
+
+        // Independently establish the actual difference between the Java APIs
+        // before evaluating the UDF fail-closed guard.
+        try (java.util.zip.ZipFile central = new java.util.zip.ZipFile(conflicting.toFile());
+             java.util.zip.ZipInputStream local =
+                     new java.util.zip.ZipInputStream(Files.newInputStream(conflicting))) {
+            var localEntry = local.getNextEntry();
+            assertEquals("content.xml", localEntry.getName());
+            assertArrayEquals(localXml, local.readAllBytes());
+            assertArrayEquals(centralXml,
+                    central.getInputStream(central.getEntry("content.xml")).readAllBytes());
+            assertNull(local.getNextEntry());
+        }
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> UdfReader.read(conflicting));
+        assertTrue(error.getMessage().contains("SHA-256"), error.getMessage());
+    }
+
     @Test void conflictingLocalContentXmlNameIsRejectedBeforeRendering() throws Exception {
         Path source = archive("local-xml-name.udf", items(page("", "A4"), null, null));
         // Only the LOCAL filename changes. ZipFile still calls this "content.xml"
