@@ -94,7 +94,10 @@ public final class UdfReader {
                     // A ZIP directory is metadata, not an ignored payload. Accept
                     // only canonical paths in the synthetic PNG namespace, and
                     // reject directory records carrying bytes that would vanish.
-                    if (!(normalized.startsWith("media/") || normalized.startsWith("images/")))
+                    // Canonical ZIP roots normalize from "media/" or "images/" to no slash.
+                    // Still reject file/directory aliases through the same logical seen set.
+                    if (!(normalized.equals("media") || normalized.startsWith("media/")
+                            || normalized.equals("images") || normalized.startsWith("images/")))
                         throw new IllegalArgumentException("Desteklenmeyen UDF ZIP dizini: " + normalized);
                     DocumentElements.mediaPath(normalized + "/placeholder.png");
                     try (InputStream in = zip.getInputStream(entry)) {

@@ -173,6 +173,20 @@ final class StructuredUdfRegressionTest {
         assertTrue(error.getMessage().contains("tekrarlanan giriş"), error.getMessage());
     }
 
+    @Test void canonicalImagesRootDirectoryMarkerRemainsValid(@TempDir Path folder) throws Exception {
+        // Normalize directory markers for duplicate checks without rejecting
+        // the two supported top-level PNG namespaces.
+        Path udf = folder.resolve("images-root.udf");
+        try (ZipOutputStream archive = new ZipOutputStream(Files.newOutputStream(udf))) {
+            archive.putNextEntry(new ZipEntry("content.xml"));
+            archive.write(container(para(0, 2), "").getBytes(StandardCharsets.UTF_8));
+            archive.closeEntry();
+            archive.putNextEntry(new ZipEntry("images/"));
+            archive.closeEntry();
+        }
+        assertEquals(1, UdfReader.read(udf).blocks().size());
+    }
+
     @Test void zippedSyntheticMixedUdfProducesVerifiedPdf(@TempDir Path folder) throws Exception {
         String contentXml=container(para(0,2)
                 + "<table widths='90'><row height='28'><cell>ZIP-TABLO</cell></row></table>"
