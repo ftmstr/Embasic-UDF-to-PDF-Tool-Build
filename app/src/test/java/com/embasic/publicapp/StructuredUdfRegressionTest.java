@@ -155,6 +155,24 @@ final class StructuredUdfRegressionTest {
             }
         }
     }
+    @Test void zipFileDirectoryAliasFailsClosed(@TempDir Path folder) throws Exception {
+        // A trailing slash cannot make the same logical ZIP path a second member.
+        Path udf = folder.resolve("alias.udf");
+        try (ZipOutputStream archive = new ZipOutputStream(Files.newOutputStream(udf))) {
+            archive.putNextEntry(new ZipEntry("content.xml"));
+            archive.write(container(para(0,2), "").getBytes(StandardCharsets.UTF_8));
+            archive.closeEntry();
+            archive.putNextEntry(new ZipEntry("media/asset.png/"));
+            archive.closeEntry();
+            archive.putNextEntry(new ZipEntry("media/asset.png"));
+            archive.write(pngBytes());
+            archive.closeEntry();
+        }
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> UdfReader.read(udf));
+        assertTrue(error.getMessage().contains("tekrarlanan giriş"), error.getMessage());
+    }
+
     @Test void zippedSyntheticMixedUdfProducesVerifiedPdf(@TempDir Path folder) throws Exception {
         String contentXml=container(para(0,2)
                 + "<table widths='90'><row height='28'><cell>ZIP-TABLO</cell></row></table>"
