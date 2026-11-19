@@ -19,6 +19,12 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import javax.xml.XMLConstants;
 import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.SAXParserFactory;
+import javax.xml.parsers.ParserConfigurationException;
+import org.xml.sax.SAXException;
+import org.xml.sax.Attributes;
+import org.xml.sax.InputSource;
+import org.xml.sax.ext.DefaultHandler2;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
@@ -30,6 +36,9 @@ import org.w3c.dom.NodeList;
 public final class UdfReader {
     private static final int MAX_ENTRIES = 2048;
     private static final int MAX_CONTENT_XML = 4 * 1024 * 1024;
+    private static final int MAX_XML_DEPTH = 128;
+    private static final int MAX_XML_NODES = 65_536;
+    private static final int MAX_XML_ATTRIBUTES = 256;
     private static final long MAX_TOTAL_UNCOMPRESSED = 32L * 1024 * 1024;
     private static final int MAX_MEDIA_FILES = 64;
     private static final int MAX_MEDIA_TOTAL = 8 * 1024 * 1024;
@@ -148,6 +157,10 @@ public final class UdfReader {
     private static DocumentSpec parse(byte[] xml, String name, Map<String,byte[]> media) throws Exception {
         if (xml == null || xml.length == 0 || xml.length > MAX_CONTENT_XML)
             throw new IllegalArgumentException("UDF XML boyutu geçersiz");
+        // A 4 MiB XML file can contain hundreds of thousands of tiny elements,
+        // comments or deeply nested tags. Check SAX event budgets BEFORE
+        // allocating a full DOM or recursively examining its elements.
+        preflightXmlComplexity(xml);
         DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
         factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
         factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
@@ -271,6 +284,66 @@ public final class UdfReader {
             throw new IllegalArgumentException("UDF içeriğinde PDF\u0027ye aktarılmayan metin var");
         if (blocks.isEmpty()) throw new IllegalArgumentException("Dönüştürülebilir belge öğesi bulunamadı");
         return new DocumentSpec(name, version, paragraphs, blocks, DocumentElements.page(properties));
+    }
+
+    /**
+     * Reject complexity bombs before the DOM allocates one object per XML node.
+     * SAX sees elements, text events, comments and processing instructions;
+     * the depth limit also bounds rejectUnsupportedXmlNodes recursion.
+     * This is an input safety check, not support for any native UYAP schema.
+     */
+    private static void preflightXmlComplexity(byte[] xml) {
+        try {
+            SAXParserFactory factory = SAXParserFactory.newInstance();
+            factory.setFeature(XMLConstants.FEATURE_SECURE_PROCESSING, true);
+            factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            factory.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            factory.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            factory.setXIncludeAware(false);
+            var sax = factory.newSAXParser();
+            sax.setProperty(XMLConstants.ACCESS_EXTERNAL_DTD, "");
+            sax.setProperty(XMLConstants.ACCESS_EXTERNAL_SCHEMA, "");
+            class Budget extends DefaultHandler2 {
+                int depth, nodes;
+                void count() throws SAXException {
+                    if (++nodes > MAX_XML_NODES)
+                        throw new SAXException("UDF_XML_NODE_LIMIT");
+                }
+                @Override public void startElement(String uri, String local, String qName,
+                                                    Attributes attributes) throws SAXException {
+                    count();
+                    if (++depth > MAX_XML_DEPTH)
+                        throw new SAXException("UDF_XML_DEPTH_LIMIT");
+                    if (attributes.getLength() > MAX_XML_ATTRIBUTES)
+                        throw new SAXException("UDF_XML_ATTRIBUTE_LIMIT");
+                }
+                @Override public void endElement(String uri, String local, String qName) {
+                    depth--;
+                }
+                @Override public void characters(char[] ch, int start, int length) throws SAXException {
+                    if (length > 0) count();
+                }
+                @Override public void ignorableWhitespace(char[] ch, int start, int length)
+                        throws SAXException {
+                    if (length > 0) count();
+                }
+                @Override public void comment(char[] ch, int start, int length) throws SAXException {
+                    count();
+                }
+                @Override public void processingInstruction(String target, String data)
+                        throws SAXException {
+                    count();
+                }
+            }
+            Budget handler = new Budget();
+            var saxReader = sax.getXMLReader();
+            saxReader.setContentHandler(handler);
+            saxReader.setProperty("http://xml.org/sax/properties/lexical-handler", handler);
+            saxReader.parse(new InputSource(new ByteArrayInputStream(xml)));
+        } catch (SAXException | IOException | ParserConfigurationException e) {
+            // Never report untrusted XML text, parser internals or a path.
+            throw new IllegalArgumentException("UDF XML karmaşıklık veya güvenli ayrıştırma sınırı", e);
+        }
     }
 
     /** Fail closed on XML nodes outside the explicitly supported synthetic subset. */

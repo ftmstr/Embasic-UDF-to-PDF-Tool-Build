@@ -45,6 +45,36 @@ final class StructuredUdfRegressionTest {
         return "<image mime='image/png' encoding='base64' width='52' height='52'>"+
             Base64.getEncoder().encodeToString(pngBytes())+"</image>";
     }
+    @Test void xmlElementFloodIsRejectedBeforeDomAllocation() {
+        // Under 4 MiB despite 70,000 nodes: a byte limit alone is insufficient.
+        String xml = "<template format_id='1.0'><content>OK</content><elements>"
+                + "<x/>".repeat(70_000) + "</elements></template>";
+        assertTrue(xml.getBytes(StandardCharsets.UTF_8).length < 4 * 1024 * 1024);
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> UdfReader.parse(xml.getBytes(StandardCharsets.UTF_8), "flood.udf"));
+        assertTrue(error.getMessage().contains("karmaşıklık"), error.getMessage());
+    }
+
+    @Test void xmlDeepNestingIsRejectedBeforeRecursiveNodeWalk() {
+        String xml = "<template format_id='1.0'><content>OK</content><elements>"
+                + "<x>".repeat(140) + "</x>".repeat(140)
+                + "</elements></template>";
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> UdfReader.parse(xml.getBytes(StandardCharsets.UTF_8), "deep.udf"));
+        assertTrue(error.getMessage().contains("karmaşıklık"), error.getMessage());
+    }
+
+    @Test void xmlCommentFloodIsRejectedBeforeDomAllocation() {
+        // SAX lexical events matter: comments also become DOM nodes, even
+        // though this synthetic PDF subset later rejects comments outright.
+        String xml = "<template format_id='1.0'><content>OK</content><elements>"
+                + "<!---->".repeat(70_000) + "</elements></template>";
+        assertTrue(xml.getBytes(StandardCharsets.UTF_8).length < 4 * 1024 * 1024);
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> UdfReader.parse(xml.getBytes(StandardCharsets.UTF_8), "comments.udf"));
+        assertTrue(error.getMessage().contains("karmaşıklık"), error.getMessage());
+    }
+
     @Test void unsupportedXmlMetadataMustNotSilentlyDisappear() throws Exception {
         String valid = "<template format_id='1.0'><content>HELLO</content><elements>"
                 + "<paragraph><content startOffset='0' length='5'/></paragraph>"
