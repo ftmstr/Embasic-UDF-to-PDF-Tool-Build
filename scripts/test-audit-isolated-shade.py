@@ -17,7 +17,17 @@ def archive(path: Path, entries: dict[str, bytes]):
     path.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
         for name, data in entries.items():
-            zf.writestr(name, data)
+            # These synthetic upstream and relocated JARs are compared by
+            # exact archive SHA, not just their class contents. ZipFile.writestr
+            # with a plain filename injects the wall-clock DOS ZIP timestamp,
+            # so two otherwise identical jars can differ at a two-second tick.
+            # Pin a deterministic timestamp and file metadata; never weaken
+            # the production byte-parity auditor to accommodate flaky fixtures.
+            member = zipfile.ZipInfo(name, date_time=(2020, 1, 1, 0, 0, 0))
+            member.compress_type = zipfile.ZIP_DEFLATED
+            member.create_system = 3
+            member.external_attr = 0o100644 << 16
+            zf.writestr(member, data)
 
 class ShadedAuditTest(unittest.TestCase):
     def setUp(self):
