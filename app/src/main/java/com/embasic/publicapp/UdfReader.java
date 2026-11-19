@@ -199,9 +199,13 @@ public final class UdfReader {
                         throw new IllegalArgumentException("UDF ZIP yerel giriş veri sınırı aşıldı");
                 }
                 local.closeEntry();
-                if (decoded != central.getSize() || entry.getSize() != central.getSize()
-                        || entry.getCrc() != central.getCrc())
-                    throw new IllegalArgumentException("UDF ZIP yerel giriş bütünlüğü uyuşmuyor");
+                // Preserve the specific fail-closed CRC/size error categories
+                // already relied upon by the existing TUR393 regression tests.
+                // This does not expose member names or source document data.
+                if (decoded != central.getSize() || entry.getSize() != central.getSize())
+                    throw new IllegalArgumentException("UDF ZIP yerel giriş veri boyutu tutarsız");
+                if (entry.getCrc() != central.getCrc())
+                    throw new IllegalArgumentException("UDF ZIP yerel giriş CRC-32 bütünlüğü uyuşmuyor");
             }
         } catch (IOException ex) {
             // ZIP streams can report document/member names in exceptions.
