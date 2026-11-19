@@ -162,9 +162,9 @@ final class StructuredUdfRegressionTest {
             archive.putNextEntry(new ZipEntry("content.xml"));
             archive.write(container(para(0,2), "").getBytes(StandardCharsets.UTF_8));
             archive.closeEntry();
-            archive.putNextEntry(new ZipEntry("media/asset.png/"));
+            archive.putNextEntry(new ZipEntry("media/"));
             archive.closeEntry();
-            archive.putNextEntry(new ZipEntry("media/asset.png"));
+            archive.putNextEntry(new ZipEntry("media"));
             archive.write(pngBytes());
             archive.closeEntry();
         }
