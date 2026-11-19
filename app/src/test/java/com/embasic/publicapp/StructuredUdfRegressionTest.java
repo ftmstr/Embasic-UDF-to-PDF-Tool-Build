@@ -426,6 +426,39 @@ final class StructuredUdfRegressionTest {
     }
 
 
+
+    @Test void skippedAsciiIndentBeforeNewParagraphPreservesPdfGeometry() throws Exception {
+        // A paragraph startOffset may skip plain source spaces that are
+        // visually meaningful indentation. TUR395 preserved gaps inside the
+        // same paragraph but left this first-run gap silently unpainted.
+        var spec = parse("<template format_id='1.0'><content>INDENT   INDENT</content>"
+                + "<elements>" + para(0, 6) + para(9, 6)
+                + "</elements></template>");
+        assertEquals("   INDENT", spec.paragraphs().get(1).runs().get(0).text(),
+                "The second paragraph's leading spaces must survive UTF-16 range parsing");
+        try (PDDocument pdf = PdfExporter.render(List.of(spec))) {
+            List<Float> firstGlyphX = new ArrayList<>();
+            var stripper = new PDFTextStripper() {
+                @Override protected void processTextPosition(
+                        org.apache.pdfbox.text.TextPosition glyph) {
+                    if ("I".equals(glyph.getUnicode())) firstGlyphX.add(glyph.getXDirAdj());
+                    super.processTextPosition(glyph);
+                }
+            };
+            assertTrue(stripper.getText(pdf).contains("INDENT"));
+            assertEquals(2, firstGlyphX.size());
+            assertTrue(firstGlyphX.get(1) > firstGlyphX.get(0) + 5f,
+                    "Skipped ASCII spaces must shift the next paragraph's actual PDF glyphs: "
+                            + firstGlyphX);
+        }
+        // Preserve the existing documented pretty-printed XML contract:
+        // a structural LF before the first referenced run is not a new
+        // paragraph or extra visible page.
+        var prettyPrinted = parse("<template format_id='1.0'><content>\nINDENT</content>"
+                + "<elements>" + para(1, 6) + "</elements></template>");
+        assertEquals("INDENT", prettyPrinted.paragraphs().get(0).runs().get(0).text());
+    }
+
     @Test void utf16RangesCannotSkipDuplicateOrReorderVisibleContent() throws Exception {
         String prefix = "<template format_id='1.0'><content>";
         String middle = "</content><elements><paragraph>";

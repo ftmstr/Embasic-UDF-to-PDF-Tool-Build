@@ -391,7 +391,14 @@ public final class UdfReader {
                 // Gaps before the first run retain the documented structural
                 // whitespace behavior of the synthetic UTF-16 subset.
                 String text = raw.substring(start, end);
-                if (!runs.isEmpty()) text = gap + text;
+                // ASCII spaces before a paragraph's FIRST referenced range
+                // are visible indentation, not formatting-only XML whitespace.
+                // TUR396: preserve their horizontal geometry just as we already
+                // preserve skipped spaces between runs. Keep CR/LF/TAB-only
+                // structural gaps at a new paragraph boundary unchanged.
+                if (!runs.isEmpty()
+                        || (!gap.isEmpty() && gap.chars().allMatch(ch -> ch == ' ')))
+                    text = gap + text;
                 runs.add(new Run(text, resolve(e, base)));
                 coveredUntil = end;
             }
