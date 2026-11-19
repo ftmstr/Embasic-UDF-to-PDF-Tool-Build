@@ -114,3 +114,28 @@ All fifteen Public app/ Java source ownership and redistribution permissions rem
 At exact Public pre-change HEAD `26804527d38f0957435a6d61fa391c243b774c5f`, the UDF synthetic parser dropped ASCII-only whitespace before the first referenced run of each new paragraph, so visible second-paragraph indentation was lost in PDF output. The implementation now preserves only ASCII-space-only first-run gaps; structural LF/CR/TAB first-run gaps retain their prior documented handling. `UdfReader.java` new Git blob SHA-1 `ea0bfcd62f7b927574e1f7d7935a162df3e5dce2`, and `StructuredUdfRegressionTest.java` new Git blob SHA-1 `d32475c247ab033b1f756fcf29015a81aa6af1d4`. The regression compares the real PDF first-glyph X coordinates and preserves a pretty-printed XML case. Git blob identities and JUnit success do NOT establish copyright provenance or publishing authorization.
 
 All 15 Public app/ Java source origins and redistribution permissions, fonts, dependencies, full LICENSE/NOTICE inventory and independent source authorization remain NOT_VERIFIED; legacy `src/main` SOURCE_GATE BLOCKED. Actual native UYAP + authorized official PDF golden NOT_RUN, hostile target CAS NO-GO, physical exFAT NOT_RUN, outside Windows beta NOT_RUN. Release remains NO-GO. Do not treat this document or `PUBLIC_SOURCE_APPROVED_SHA` as a permission grant. No Private, main merge, tag, release, installer, ZIP or binary publication.
+
+
+## TUR398 — exact-HEAD independent Public source identity reconciliation (2026-11-20 02:56 TRT)
+
+Baseline Public branch HEAD `5ff9aa0574e65ad4ea9f0c0f8514b9b809d8ccdd` (TUR396). Full Public Git tree was enumerated at this exact SHA. The 15 source identities below are Git blob SHA-1 identifiers, **not** SHA-256 artifact checksums, author/ownership evidence, or permission to publish. All 15 rights and NOTICE decisions remain **NOT_VERIFIED / BLOCKED**. Earlier inventories are historical, especially `UdfReader.java`, whose baseline blob is now `ea0bfcd62f7b927574e1f7d7935a162df3e5dce2` after ZIP and UTF-16 fixes.
+
+| Public Java source | Git blob SHA-1 | Independent rights decision |
+|---|---|---|
+| `DesktopApp.java` | `c5619856c10306f9a79524cd0aa894dadfa60179` | NOT_VERIFIED / BLOCKED |
+| `DocumentElements.java` | `739206ec97f1a522bb3c3c7ac73b0d3b969a0596` | NOT_VERIFIED / BLOCKED |
+| `FileImportPolicy.java` | `b903f69d311f28972ee3623583a4e94c6da40949` | NOT_VERIFIED / BLOCKED |
+| `GridDropIndicator.java` | `c8659cf92efd85ca03cfd35a628ebb28ffb3ca7d` | NOT_VERIFIED / BLOCKED |
+| `GridKeyboardSelection.java` | `729c774f5c8fc898ae26f7bfcd3b26a02947d067` | NOT_VERIFIED / BLOCKED |
+| `GridPointerSelection.java` | `c69931a6794d34c31ac730ee6acea6c20fd8032e` | NOT_VERIFIED / BLOCKED |
+| `GridReorder.java` | `d462e5dbed05688b6ff5e12ddb0914655dc04948` | NOT_VERIFIED / BLOCKED |
+| `OfficialPdfReferenceAudit.java` | `e01f1097c35d6bdc6970fffb52f76d914f9810b8` | NOT_VERIFIED / BLOCKED |
+| `OfflinePdfGlyphAudit.java` | `26430bcca931c600cbff0a8e77533334844b36c0` | NOT_VERIFIED / BLOCKED |
+| `PdfBoxFontCacheDirectory.java` | `15d9fb3b3c550071362268456d2085f531ef96ce` | NOT_VERIFIED / BLOCKED |
+| `PdfExporter.java` | `6e99ab9e6df518e2debe5e7e12929b6d85aec0e8` | NOT_VERIFIED / BLOCKED |
+| `TableLayout.java` | `54dda2e34cac43ec17210ddeef2fbc64583d41dd` | NOT_VERIFIED / BLOCKED |
+| `ThumbnailSizing.java` | `fa7042d9e46252569f09d644b5fce339173f6f36` | NOT_VERIFIED / BLOCKED |
+| `UdfReader.java` | `ea0bfcd62f7b927574e1f7d7935a162df3e5dce2` | NOT_VERIFIED / BLOCKED |
+| `VirtualGridLayout.java` | `f629e9e86857df7428226e2ef84d4a77f128b232` | NOT_VERIFIED / BLOCKED |
+
+This reconciles source **identity only**, not authorship, acquisition rights, fonts, dependencies, embedded assets, scripts, workflows, fixtures or complete app-image provenance. Release authorization requires independent file-by-file evidence, pinned third-party license/NOTICE verification and explicit approval for the proposed exact release SHA. This documentation commit changes the branch HEAD; therefore the baseline SHA above is not the post-commit release SHA and CI must be checked again. Legacy `src/main` remains BLOCKED separately; `PUBLIC_SOURCE_APPROVED_SHA` is not sufficient. Native UYAP NOT_VERIFIED, authorized offline native golden NOT_RUN, physical exFAT NOT_RUN, hostile CAS NO-GO, external Windows beta NOT_RUN. No merge, tag, release, ZIP, installer or distribution is authorized.
