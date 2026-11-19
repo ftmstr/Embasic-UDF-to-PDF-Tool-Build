@@ -179,7 +179,7 @@ final class StructuredUdfRegressionTest {
         Path udf = folder.resolve("images-root.udf");
         try (ZipOutputStream archive = new ZipOutputStream(Files.newOutputStream(udf))) {
             archive.putNextEntry(new ZipEntry("content.xml"));
-            archive.write(container(para(0, 2), "").getBytes(StandardCharsets.UTF_8));
+            archive.write(container(para(0, 6), "").getBytes(StandardCharsets.UTF_8));
             archive.closeEntry();
             archive.putNextEntry(new ZipEntry("images/"));
             archive.closeEntry();

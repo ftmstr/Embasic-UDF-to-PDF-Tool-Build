@@ -18,3 +18,5 @@ Date: 2026-11-19 Europe/Istanbul. Public repository ftmstr/Embasic-UDF-to-PDF-To
 Native UYAP equivalence NOT_VERIFIED, independent Public app source/LICENSE/NOTICE approval NOT_VERIFIED, physical exFAT NOT_RUN, external Windows beta NOT_RUN, hostile CAS NO-GO, legacy SOURCE_GATE BLOCKED and release NO-GO. Existing engineering completion gauge 44.3% not increased. Do not access Private repository or publish any binary, installer, ZIP, tag or release.
 
 Append exact final commit and live Windows/Linux JUnit/physical Windows JDI results only after confirmed CI.
+## TUR380 first CI test-fixture correction
+First repair SHA 22b5c1e0ea649385ad6a3b95617eff85e8d4d8c3 on Linux run 44473150126 showed ReferencedMediaRegressionTest SUCCESS and intended duplicate alias test SUCCESS. However the newly added canonicalImagesRootDirectoryMarkerRemainsValid test used a paragraph length 2 against the literal 6-character 'ÖN SON' test string. The parser correctly refused unmatched non-whitespace text. Fixed ONLY this fixture length from 2 to 6; no product code rollback, bypass or weakening of text-coverage validation. Rerun exact SHA Windows/Linux to confirm.
