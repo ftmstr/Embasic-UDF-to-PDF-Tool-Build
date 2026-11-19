@@ -5,6 +5,8 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -192,9 +194,11 @@ public final class UdfReader {
                     throw new IllegalArgumentException("UDF ZIP yerel başlık ile merkez dizini uyuşmuyor");
                 long decoded = 0;
                 int length;
+                MessageDigest localSha = zipSha256();
                 while ((length = local.read(buffer)) != -1) {
                     decoded += length;
                     aggregate += length;
+                    localSha.update(buffer, 0, length);
                     if (decoded > central.getSize() || aggregate > MAX_TOTAL_UNCOMPRESSED)
                         throw new IllegalArgumentException("UDF ZIP yerel giriş veri sınırı aşıldı");
                 }
@@ -206,6 +210,24 @@ public final class UdfReader {
                     throw new IllegalArgumentException("UDF ZIP yerel giriş veri boyutu tutarsız");
                 if (entry.getCrc() != central.getCrc())
                     throw new IllegalArgumentException("UDF ZIP yerel giriş CRC-32 bütünlüğü uyuşmuyor");
+                // Metadata equality is not byte identity: two different ZIP
+                // payloads can share length and CRC-32. A manipulated CENTRAL
+                // local-header offset may point to a different payload than
+                // ZipInputStream reads. Compare both bounded decoded streams.
+                MessageDigest centralSha = zipSha256();
+                long centralDecoded = 0;
+                try (InputStream centralInput = zip.getInputStream(central)) {
+                    while ((length = centralInput.read(buffer)) != -1) {
+                        centralDecoded += length;
+                        if (centralDecoded > central.getSize())
+                            throw new IllegalArgumentException("UDF ZIP merkez giriş veri sınırı aşıldı");
+                        centralSha.update(buffer, 0, length);
+                    }
+                }
+                if (centralDecoded != central.getSize())
+                    throw new IllegalArgumentException("UDF ZIP merkez giriş veri boyutu tutarsız");
+                if (!MessageDigest.isEqual(localSha.digest(), centralSha.digest()))
+                    throw new IllegalArgumentException("UDF ZIP yerel ve merkez giriş SHA-256 içeriği uyuşmuyor");
             }
         } catch (IOException ex) {
             // ZIP streams can report document/member names in exceptions.
@@ -214,6 +236,14 @@ public final class UdfReader {
         }
         if (localCount != centralCount || !declared.isEmpty())
             throw new IllegalArgumentException("UDF ZIP yerel başlık sayısı uyuşmuyor");
+    }
+
+    private static MessageDigest zipSha256() {
+        try {
+            return MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException ex) {
+            throw new IllegalStateException("SHA-256 kullanılamıyor", ex);
+        }
     }
 
     /**
