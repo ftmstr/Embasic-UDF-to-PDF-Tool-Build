@@ -310,6 +310,79 @@ final class PdfImagePixelFidelityTest {
         }
     }
 
+
+    private static byte[] syntheticFourMegapixelGrayscalePng() throws Exception {
+        // An extremely compressible, rights-clean PNG (4000x1000) has a tiny
+        // source file but expands to four million pixels when ImageIO decodes
+        // it. Avoid actually decoding any of the five test images.
+        int width = 4000, height = 1000;
+        byte[] scanlines = new byte[(width + 1) * height]; // PNG filter None, gray 0.
+        java.util.zip.Deflater compressor = new java.util.zip.Deflater(9);
+        ByteArrayOutputStream zlib = new ByteArrayOutputStream();
+        try {
+            compressor.setInput(scanlines);
+            compressor.finish();
+            byte[] buffer = new byte[8192];
+            while (!compressor.finished()) {
+                int n = compressor.deflate(buffer);
+                assertTrue(n > 0, "Synthetic compressor must make progress");
+                zlib.write(buffer, 0, n);
+            }
+        } finally {
+            compressor.end();
+        }
+        ByteBuffer ihdr = ByteBuffer.allocate(13);
+        ihdr.putInt(width).putInt(height).put((byte) 8).put((byte) 0)
+                .put((byte) 0).put((byte) 0).put((byte) 0);
+        ByteArrayOutputStream png = new ByteArrayOutputStream();
+        png.write(new byte[]{(byte) 137, 80, 78, 71, 13, 10, 26, 10});
+        png.write(pngChunk("IHDR", ihdr.array()));
+        png.write(pngChunk("IDAT", zlib.toByteArray()));
+        png.write(pngChunk("IEND", new byte[0]));
+        assertTrue(png.size() < 1_048_576, "Fits original PNG byte budget");
+        return png.toByteArray();
+    }
+
+    @Test void mergedFourMegapixelPngFloodMustFailBeforeRasterAllocationOrPdfOverwrite()
+            throws Exception {
+        byte[] source = syntheticFourMegapixelGrayscalePng();
+        List<DocumentElements.Block> blocks = new ArrayList<>();
+        for (int i = 0; i < 5; i++)
+            blocks.add(new DocumentElements.ImageBlock(source, 60f, 60f));
+        var four = new UdfReader.DocumentSpec("four-grays.udf", "1.0", List.of(),
+                List.copyOf(blocks.subList(0, 4)), DocumentElements.PageSpec.a4());
+        var five = new UdfReader.DocumentSpec("five-grays.udf", "1.0", List.of(),
+                blocks, DocumentElements.PageSpec.a4());
+        // Four individually valid 4MP PNGs fit exactly; a fifth exceeds
+        // the global budget although every source image fits the 1 MiB byte
+        // budget and 4MP per-image IHDR gate.
+        assertEquals(16_000_000L,
+                PdfExporter.preflightMergedImagePixels(List.of(four), 16_000_000L));
+        var error = assertThrows(IllegalArgumentException.class,
+                () -> PdfExporter.preflightMergedImagePixels(List.of(five), 16_000_000L));
+        assertTrue(error.getMessage().contains("toplam PNG piksel"), error.getMessage());
+        // A different document does not reset the merged-image accounting.
+        assertThrows(IllegalArgumentException.class,
+                () -> PdfExporter.preflightMergedImagePixels(List.of(four,
+                        imageOnly("one-more.udf", source, DocumentElements.PageSpec.a4())),
+                        16_000_000L));
+
+        Path approved = folder.resolve("approved.pdf");
+        assertEquals(1, PdfExporter.save(List.of(imageOnly("small.udf",
+                fourColorPng(), DocumentElements.PageSpec.a4())), approved, false));
+        byte[] before = Files.readAllBytes(approved);
+        var exportError = assertThrows(IllegalArgumentException.class,
+                () -> PdfExporter.save(List.of(five), approved, true));
+        assertTrue(exportError.getMessage().contains("toplam PNG piksel"));
+        assertArrayEquals(before, Files.readAllBytes(approved),
+                "Page-raster budget violation must preserve approved PDF bytes");
+        try (var pending = Files.list(folder)) {
+            assertEquals(List.of("approved.pdf"),
+                    pending.map(path -> path.getFileName().toString()).sorted().toList(),
+                    "Budget failure must leave no staged PDF files");
+        }
+    }
+
     @Test void malformedLaterImageCannotReplaceAnAlreadyPublishedPdf() throws Exception {
         byte[] valid = fourColorPng();
         var first = imageOnly("first.udf", valid, DocumentElements.PageSpec.a4());

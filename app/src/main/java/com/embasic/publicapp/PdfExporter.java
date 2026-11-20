@@ -32,6 +32,11 @@ public final class PdfExporter {
     // Enforce one global limit over the COMPLETE merged output, before
     // allocating each next PDPage; never publish a truncated PDF.
     private static final int MAX_PDF_PAGES = 2048;
+    // TUR425: individual 4MP PNG and 160-file limits still allow up to
+    // 640 million decoded pixels (about 2.56 GiB at 4 bytes/pixel).
+    // Bound the ENTIRE merged PDF's image-raster exposure before PDFBox
+    // allocates any pages or decodes/embeds images.
+    private static final long MAX_MERGED_IMAGE_PIXELS = 16_000_000L;
     private PdfExporter() {}
 
     public static Path systemFont(boolean bold) {
@@ -151,6 +156,46 @@ public final class PdfExporter {
                     || (Math.abs(width - size[1]) < 0.01f && Math.abs(height - size[0]) < 0.01f))
                 return true;
         return false;
+    }
+
+    /**
+     * A PNG byte budget is not a raster budget: a small, highly compressed
+     * 4MP RGBA image expands in PDFBox, and 160 independent valid images can
+     * exhaust a 512 MiB Windows heap. Check every IHDR's pixel count once
+     * across the ENTIRE merge, before creating the first PDDocument page.
+     * The strict PNG decoder still validates CRC, zlib, pixel filters and
+     * colors when each admitted image is actually rendered.
+     *
+     * Package-private budget parameter supports focused low-cost regression
+     * tests. Production always supplies MAX_MERGED_IMAGE_PIXELS.
+     */
+    static long preflightMergedImagePixels(List<UdfReader.DocumentSpec> docs, long limit) {
+        if (docs == null || limit < 1 || limit > MAX_MERGED_IMAGE_PIXELS)
+            throw new IllegalArgumentException("Geçersiz PDF toplam görsel piksel bütçesi");
+        long pixels = 0;
+        for (UdfReader.DocumentSpec doc : docs) {
+            if (doc == null) throw new IllegalArgumentException("Boş UDF belgesi");
+            for (DocumentElements.Block block : doc.blocks()) {
+                if (!(block instanceof DocumentElements.ImageBlock image)) continue;
+                byte[] png = image.png();
+                if (png.length < 33
+                        || java.nio.ByteBuffer.wrap(png, 8, 4).getInt() != 13
+                        || png[12] != 'I' || png[13] != 'H'
+                        || png[14] != 'D' || png[15] != 'R')
+                    throw new IllegalArgumentException("PNG IHDR piksel bütçesi doğrulanamadı");
+                long width = java.nio.ByteBuffer.wrap(png, 16, 4).getInt();
+                long height = java.nio.ByteBuffer.wrap(png, 20, 4).getInt();
+                long count = width * height;
+                if (width < 1 || height < 1 || count > 4_000_000L)
+                    throw new IllegalArgumentException("PNG tek görsel piksel sınırı aşıldı");
+                if (count > limit - pixels)
+                    throw new IllegalArgumentException(
+                            "Birleştirilmiş PDF toplam PNG piksel güvenlik sınırı aşıldı: "
+                                    + limit);
+                pixels += count;
+            }
+        }
+        return pixels;
     }
 
     private static void preflightPageGeometry(UdfReader.DocumentSpec document) {
@@ -315,6 +360,10 @@ public final class PdfExporter {
                         "PDF'ye aktarılacak görünür UDF içeriği bulunamadı: " + document.fileName());
             preflightPageGeometry(document);
         }
+        // A first-page thumbnail must remain lazy: it never decodes images
+        // located only on later pages. Full exports check the ENTIRE merge
+        // before opening PDDocument or allocating any PDF image raster.
+        if (!previewOnly) preflightMergedImagePixels(docs, MAX_MERGED_IMAGE_PIXELS);
         PDDocument pdf = new PDDocument();
         try {
             // Load each style only on first actual use, sharing embedded fonts
