@@ -2,8 +2,11 @@ package com.embasic.publicapp;
 
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.zip.CRC32;
+import java.util.zip.Inflater;
+import java.util.zip.DataFormatException;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
@@ -209,7 +212,8 @@ public final class DocumentElements {
             throw new IllegalArgumentException("PNG imzası geçersiz");
         int offset = 8;
         boolean ihdr = false, palette = false, idat = false, idatEnded = false, iend = false;
-        int colorType = -1, bitDepth = -1;
+        int colorType = -1, bitDepth = -1, pixelWidth = -1, pixelHeight = -1;
+        ByteArrayOutputStream idatPayload = new ByteArrayOutputStream();
         while (offset < bytes.length) {
             if (bytes.length - offset < 12)
                 throw new IllegalArgumentException("PNG parçası eksik");
@@ -227,8 +231,8 @@ public final class DocumentElements {
                 ihdr = true;
                 bitDepth = bytes[offset + 16] & 0xff;
                 colorType = bytes[offset + 17] & 0xff;
-                int pixelWidth = java.nio.ByteBuffer.wrap(bytes, offset + 8, 4).getInt();
-                int pixelHeight = java.nio.ByteBuffer.wrap(bytes, offset + 12, 4).getInt();
+                pixelWidth = java.nio.ByteBuffer.wrap(bytes, offset + 8, 4).getInt();
+                pixelHeight = java.nio.ByteBuffer.wrap(bytes, offset + 12, 4).getInt();
                 // ImageIO can normalize unsupported/high-precision source samples
                 // without preserving their exact PDF appearance. This audited
                 // synthetic subset accepts only 8-bit, non-interlaced PNGs.
@@ -275,6 +279,9 @@ public final class DocumentElements {
                 if (colorType == 3 && !palette)
                     throw new IllegalArgumentException("İndeksli PNG paleti eksik");
                 if (idatEnded) throw new IllegalArgumentException("PNG IDAT sırası geçersiz");
+                // PNG allows consecutive IDAT chunks, but exactly one zlib
+                // datastream must consume every one of their payload bytes.
+                idatPayload.write(bytes, offset + 8, length);
                 idat = true;
             } else if (idat) idatEnded = true;
             int crcAt = offset + 8 + length;
@@ -293,6 +300,52 @@ public final class DocumentElements {
             if (iend) break;
         }
         if (!iend) throw new IllegalArgumentException("PNG IEND eksik");
+        requireExactIdatZlib(idatPayload.toByteArray(), pixelWidth, pixelHeight, colorType);
+    }
+
+    /**
+     * Reject bytes after the PNG's single complete zlib stream. ImageIO accepts
+     * validly CRC-repacked IDAT chunks containing garbage or a second zlib
+     * stream after Adler-32, silently discarding source data on PDF export.
+     * Also bound the decompressed size to the exact noninterlaced 8-bit rows.
+     */
+    private static void requireExactIdatZlib(byte[] compressed, int width,
+                                             int height, int colorType) {
+        int channels = switch (colorType) {
+            case 0, 3 -> 1;
+            case 4 -> 2;
+            case 2 -> 3;
+            case 6 -> 4;
+            default -> throw new IllegalArgumentException("Desteklenmeyen PNG renk türü");
+        };
+        long expected = ((long) width * channels + 1) * height;
+        long decoded = 0;
+        Inflater inflater = new Inflater();
+        try {
+            inflater.setInput(compressed);
+            byte[] buffer = new byte[8192];
+            while (!inflater.finished()) {
+                int read;
+                try {
+                    read = inflater.inflate(buffer);
+                } catch (DataFormatException e) {
+                    throw new IllegalArgumentException("PNG IDAT zlib bütünlüğü geçersiz", e);
+                }
+                if (read == 0) {
+                    // No further PNG IDAT is allowed beyond the collected
+                    // stream; dictionary requests or no progress fail closed.
+                    throw new IllegalArgumentException("PNG IDAT zlib akışı eksik veya geçersiz");
+                }
+                decoded += read;
+                if (decoded > expected)
+                    throw new IllegalArgumentException("PNG IDAT tarama verisi boyutu aşıldı");
+            }
+            if (decoded != expected || inflater.getRemaining() != 0)
+                throw new IllegalArgumentException(
+                        "PNG IDAT zlib sonrasında veri var veya tarama boyutu tutarsız");
+        } finally {
+            inflater.end();
+        }
     }
 
     static BufferedImage decodeBoundedPng(byte[] bytes) throws java.io.IOException {

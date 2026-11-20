@@ -5,6 +5,11 @@ import static org.junit.jupiter.api.Assertions.*;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
+import java.io.ByteArrayInputStream;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.zip.CRC32;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -54,6 +59,89 @@ final class PdfImagePixelFidelityTest {
                 () -> assertEquals(expected.getRed(), found.getRed(), 8),
                 () -> assertEquals(expected.getGreen(), found.getGreen(), 8),
                 () -> assertEquals(expected.getBlue(), found.getBlue(), 8));
+    }
+
+
+    /** A standard one-IDAT ImageIO fixture is split or CRC-repacked without UYAP data. */
+    private static byte[] idatChunk(byte[] payload) {
+        byte[] type = "IDAT".getBytes(StandardCharsets.US_ASCII);
+        ByteBuffer chunk = ByteBuffer.allocate(payload.length + 12);
+        chunk.putInt(payload.length);
+        chunk.put(type);
+        chunk.put(payload);
+        CRC32 crc = new CRC32();
+        crc.update(type);
+        crc.update(payload);
+        chunk.putInt((int) crc.getValue());
+        return chunk.array();
+    }
+
+    private static byte[] rebuiltIdat(byte[] source, boolean appendGarbage,
+                                      boolean splitIdat) throws Exception {
+        // The rights-clean TYPE_INT_RGB 8x8 fixture has IHDR directly before
+        // one IDAT, followed by IEND. Verify that structure before modifying.
+        int position = 33;
+        int length = ByteBuffer.wrap(source, position, 4).getInt();
+        assertEquals("IDAT", new String(source, position + 4, 4, StandardCharsets.US_ASCII));
+        int after = position + 12 + length;
+        assertEquals("IEND", new String(source, after + 4, 4, StandardCharsets.US_ASCII));
+        byte[] zlib = Arrays.copyOfRange(source, position + 8, position + 8 + length);
+        ByteArrayOutputStream result = new ByteArrayOutputStream();
+        result.write(source, 0, position);
+        if (splitIdat) {
+            int mid = zlib.length / 2;
+            result.write(idatChunk(Arrays.copyOfRange(zlib, 0, mid)));
+            result.write(idatChunk(Arrays.copyOfRange(zlib, mid, zlib.length)));
+        } else {
+            byte[] payload = appendGarbage
+                    ? Arrays.copyOf(zlib, zlib.length + 7) : zlib;
+            if (appendGarbage) {
+                // Valid PNG CRC, but content following the finished zlib
+                // Adler-32 stream must not disappear during PDF export.
+                System.arraycopy(new byte[]{71,65,82,66,65,71,69}, 0,
+                        payload, zlib.length, 7);
+            }
+            result.write(idatChunk(payload));
+        }
+        result.write(source, after, source.length - after);
+        return result.toByteArray();
+    }
+
+    @Test void pngIdatRequiresExactSingleZlibStreamWithoutDiscardingHiddenBytes()
+            throws Exception {
+        byte[] valid = fourColorPng();
+        byte[] twoIdat = rebuiltIdat(valid, false, true);
+        byte[] hiddenBytes = rebuiltIdat(valid, true, false);
+
+        // Multiple consecutive IDAT chunks are legal; do not regress their
+        // normal pixel content or reject a valid split stream.
+        assertEquals(QUADRANTS[0].getRGB() & 0x00ffffff,
+                DocumentElements.decodeBoundedPng(twoIdat).getRGB(1, 1) & 0x00ffffff);
+
+        // Independently reproduce the platform's silent data-loss behavior.
+        assertEquals(QUADRANTS[0].getRGB() & 0x00ffffff,
+                ImageIO.read(new ByteArrayInputStream(hiddenBytes)).getRGB(1, 1)
+                        & 0x00ffffff,
+                "ImageIO accepts trailing IDAT data and ignores it");
+        var error = assertThrows(IllegalArgumentException.class,
+                () -> DocumentElements.decodeBoundedPng(hiddenBytes));
+        assertTrue(error.getMessage().contains("zlib"), error.getMessage());
+
+        Path output = folder.resolve("existing-approved.pdf");
+        assertEquals(1, PdfExporter.save(List.of(imageOnly(
+                "valid.udf", twoIdat, DocumentElements.PageSpec.a4())), output, false));
+        byte[] approved = Files.readAllBytes(output);
+        assertThrows(IllegalArgumentException.class,
+                () -> PdfExporter.save(List.of(imageOnly(
+                        "hidden-png.udf", hiddenBytes, DocumentElements.PageSpec.a4())),
+                        output, true));
+        assertArrayEquals(approved, Files.readAllBytes(output),
+                "Rejected malformed IDAT must preserve an already approved PDF");
+        try (var files = Files.list(folder)) {
+            assertEquals(List.of("existing-approved.pdf"),
+                    files.map(path -> path.getFileName().toString()).sorted().toList(),
+                    "Failed source must never leave a published staging PDF");
+        }
     }
 
     @Test void savedImageKeepsQuadrantPixelsAndPointPlacementOnBothPageSizes()
