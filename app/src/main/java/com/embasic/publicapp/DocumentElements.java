@@ -213,6 +213,7 @@ public final class DocumentElements {
         int offset = 8;
         boolean ihdr = false, palette = false, idat = false, idatEnded = false, iend = false;
         int colorType = -1, bitDepth = -1, pixelWidth = -1, pixelHeight = -1;
+        int paletteEntries = 0;
         ByteArrayOutputStream idatPayload = new ByteArrayOutputStream();
         while (offset < bytes.length) {
             if (bytes.length - offset < 12)
@@ -274,6 +275,7 @@ public final class DocumentElements {
                                 || length / 3 > (1 << bitDepth))))
                     throw new IllegalArgumentException("PNG paleti geçersiz veya tekrarlanmış");
                 palette = true;
+                paletteEntries = length / 3;
             }
             if ("IDAT".equals(type)) {
                 if (colorType == 3 && !palette)
@@ -300,7 +302,8 @@ public final class DocumentElements {
             if (iend) break;
         }
         if (!iend) throw new IllegalArgumentException("PNG IEND eksik");
-        requireExactIdatZlib(idatPayload.toByteArray(), pixelWidth, pixelHeight, colorType);
+        requireExactIdatZlib(idatPayload.toByteArray(), pixelWidth, pixelHeight,
+                colorType, paletteEntries);
     }
 
     /**
@@ -310,7 +313,8 @@ public final class DocumentElements {
      * Also bound the decompressed size to the exact noninterlaced 8-bit rows.
      */
     private static void requireExactIdatZlib(byte[] compressed, int width,
-                                             int height, int colorType) {
+                                             int height, int colorType,
+                                             int paletteEntries) {
         int channels = switch (colorType) {
             case 0, 3 -> 1;
             case 4 -> 2;
@@ -319,6 +323,10 @@ public final class DocumentElements {
             default -> throw new IllegalArgumentException("Desteklenmeyen PNG renk türü");
         };
         long expected = ((long) width * channels + 1) * height;
+        // TUR410: only indexed PNGs need reconstructed scanlines. Other
+        // accepted RGB/RGBA/grayscale sources retain streaming validation.
+        // The existing 4 MP IHDR gate bounds this indexed buffer to 8 MiB.
+        byte[] indexedRows = colorType == 3 ? new byte[(int) expected] : null;
         long decoded = 0;
         Inflater inflater = new Inflater();
         try {
@@ -336,15 +344,66 @@ public final class DocumentElements {
                     // stream; dictionary requests or no progress fail closed.
                     throw new IllegalArgumentException("PNG IDAT zlib akışı eksik veya geçersiz");
                 }
-                decoded += read;
-                if (decoded > expected)
+                if (decoded + read > expected)
                     throw new IllegalArgumentException("PNG IDAT tarama verisi boyutu aşıldı");
+                if (indexedRows != null)
+                    System.arraycopy(buffer, 0, indexedRows, (int) decoded, read);
+                decoded += read;
             }
             if (decoded != expected || inflater.getRemaining() != 0)
                 throw new IllegalArgumentException(
                         "PNG IDAT zlib sonrasında veri var veya tarama boyutu tutarsız");
         } finally {
             inflater.end();
+        }
+        if (indexedRows != null)
+            validateIndexedPaletteSamples(indexedRows, width, height, paletteEntries);
+    }
+
+    /**
+     * PNG 8-bit palette indices are filter-reconstructed pixel samples, not
+     * raw IDAT bytes. A syntactically valid PLTE with an out-of-range pixel
+     * index is silently painted black by Java ImageIO; that is not source
+     * fidelity. Reject every invalid sample before the raster reaches PDFBox.
+     */
+    private static void validateIndexedPaletteSamples(byte[] filtered, int width,
+                                                       int height, int paletteEntries) {
+        if (paletteEntries < 1 || paletteEntries > 256)
+            throw new IllegalArgumentException("PNG paleti eksik veya geçersiz");
+        byte[] prior = new byte[width];
+        byte[] current = new byte[width];
+        int position = 0;
+        for (int row = 0; row < height; row++) {
+            int filter = filtered[position++] & 0xff;
+            if (filter > 4)
+                throw new IllegalArgumentException("Desteklenmeyen PNG tarama filtresi");
+            for (int column = 0; column < width; column++) {
+                int left = column == 0 ? 0 : current[column - 1] & 0xff;
+                int above = prior[column] & 0xff;
+                int upperLeft = column == 0 ? 0 : prior[column - 1] & 0xff;
+                int predictor = switch (filter) {
+                    case 0 -> 0;
+                    case 1 -> left;
+                    case 2 -> above;
+                    case 3 -> (left + above) / 2;
+                    case 4 -> {
+                        int p = left + above - upperLeft;
+                        int pa = Math.abs(p - left), pb = Math.abs(p - above),
+                                pc = Math.abs(p - upperLeft);
+                        yield pa <= pb && pa <= pc ? left
+                                : pb <= pc ? above : upperLeft;
+                    }
+                    default -> throw new IllegalArgumentException("PNG tarama filtresi geçersiz");
+                };
+                int index = ((filtered[position++] & 0xff) + predictor) & 0xff;
+                if (index >= paletteEntries)
+                    throw new IllegalArgumentException(
+                            "PNG paletinde bulunmayan renk indeksi");
+                current[column] = (byte) index;
+            }
+            byte[] completed = prior;
+            prior = current;
+            current = completed;
         }
     }
 

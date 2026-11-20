@@ -10,6 +10,7 @@ import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.zip.CRC32;
+import java.util.zip.Deflater;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -141,6 +142,89 @@ final class PdfImagePixelFidelityTest {
             assertEquals(List.of("existing-approved.pdf"),
                     files.map(path -> path.getFileName().toString()).sorted().toList(),
                     "Failed source must never leave a published staging PDF");
+        }
+    }
+
+
+    private static byte[] pngChunk(String type, byte[] payload) throws Exception {
+        byte[] name = type.getBytes(StandardCharsets.US_ASCII);
+        ByteBuffer chunk = ByteBuffer.allocate(payload.length + 12);
+        chunk.putInt(payload.length);
+        chunk.put(name);
+        chunk.put(payload);
+        CRC32 crc = new CRC32();
+        crc.update(name);
+        crc.update(payload);
+        chunk.putInt((int) crc.getValue());
+        return chunk.array();
+    }
+
+    private static byte[] indexedPng(byte[] filteredRows, int height) throws Exception {
+        // Fresh, rights-clean 1-column 8-bit indexed fixture, two PLTE colors.
+        // No reliance on real native UYAP documents or external images.
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        output.write(new byte[]{(byte) 137, 80, 78, 71, 13, 10, 26, 10});
+        ByteBuffer header = ByteBuffer.allocate(13);
+        header.putInt(1).putInt(height).put((byte) 8).put((byte) 3)
+                .put((byte) 0).put((byte) 0).put((byte) 0);
+        output.write(pngChunk("IHDR", header.array()));
+        output.write(pngChunk("PLTE", new byte[]{
+                (byte) 210, 30, 50, 20, (byte) 190, 70}));
+        Deflater deflater = new Deflater();
+        byte[] compressed = new byte[128];
+        try {
+            deflater.setInput(filteredRows);
+            deflater.finish();
+            int size = deflater.deflate(compressed);
+            assertTrue(deflater.finished(), "Synthetic zlib must fit the buffer");
+            output.write(pngChunk("IDAT", Arrays.copyOf(compressed, size)));
+        } finally {
+            deflater.end();
+        }
+        output.write(pngChunk("IEND", new byte[0]));
+        return output.toByteArray();
+    }
+
+    @Test void indexedPngFilterReconstructionMustRejectOutOfRangePaletteColors()
+            throws Exception {
+        // Five independently filtered scanlines all reconstruct legal index 1:
+        // None, Sub, Up, Average and Paeth. Keep these supported for PDF.
+        byte[] filtered = {0, 1, 1, 1, 2, 0, 3, 1, 4, 0};
+        byte[] valid = indexedPng(filtered, 5);
+        BufferedImage decoded = DocumentElements.decodeBoundedPng(valid);
+        for (int row = 0; row < 5; row++)
+            assertEquals(new Color(20, 190, 70).getRGB(), decoded.getRGB(0, row),
+                    "Valid PNG filter mode " + row + " must preserve palette color");
+
+        byte[] unknownIndex = indexedPng(new byte[]{0, 5}, 1);
+        BufferedImage ignored = ImageIO.read(new ByteArrayInputStream(unknownIndex));
+        assertNotNull(ignored, "Independent ImageIO decoder accepts invalid index");
+        assertEquals(Color.BLACK.getRGB(), ignored.getRGB(0, 0),
+                "ImageIO silently invents black when the source palette has no index 5");
+        var error = assertThrows(IllegalArgumentException.class,
+                () -> DocumentElements.decodeBoundedPng(unknownIndex));
+        assertTrue(error.getMessage().contains("palet"), error.getMessage());
+
+        // The invalid sample may be hidden behind a valid PNG Up filter.
+        byte[] filteredInvalid = filtered.clone();
+        filteredInvalid[5] = 4; // row 2: previous index 1 + encoded 4 -> index 5
+        byte[] invalidFiltered = indexedPng(filteredInvalid, 5);
+        assertThrows(IllegalArgumentException.class,
+                () -> DocumentElements.decodeBoundedPng(invalidFiltered));
+
+        Path output = folder.resolve("approved-indexed.pdf");
+        assertEquals(1, PdfExporter.save(List.of(imageOnly("valid.udf", valid,
+                DocumentElements.PageSpec.a4())), output, false));
+        byte[] approved = Files.readAllBytes(output);
+        assertThrows(IllegalArgumentException.class,
+                () -> PdfExporter.save(List.of(imageOnly("bad-index.udf", invalidFiltered,
+                        DocumentElements.PageSpec.a4())), output, true));
+        assertArrayEquals(approved, Files.readAllBytes(output),
+                "Rejected indexed PNG must not overwrite approved PDF bytes");
+        try (var files = Files.list(folder)) {
+            assertEquals(List.of("approved-indexed.pdf"),
+                    files.map(p -> p.getFileName().toString()).sorted().toList(),
+                    "Failed PDF export must remove staging files");
         }
     }
 
