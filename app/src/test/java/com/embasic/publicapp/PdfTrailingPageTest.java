@@ -27,6 +27,42 @@ final class PdfTrailingPageTest {
         return new UdfReader.DocumentSpec("synthetic.udf", "1.0", paragraphs);
     }
 
+
+    @Test void totalPdfPageBudgetFailsClosedBeforeAllocatingExcessPages() throws Exception {
+        // A merge consumes one shared budget: it cannot restart for each UDF.
+        var one = paragraphs(1);
+        try (PDDocument allowed = PdfExporter.renderWithPageBudgetForTest(
+                List.of(one, one), 2)) {
+            assertEquals(2, allowed.getNumberOfPages());
+        }
+        var mergedFailure = assertThrows(IllegalArgumentException.class,
+                () -> { try (PDDocument ignored =
+                        PdfExporter.renderWithPageBudgetForTest(List.of(one, one, one), 2)) {} });
+        assertTrue(mergedFailure.getMessage().contains("sayfa"),
+                "The third document must not silently disappear: " + mergedFailure);
+
+        // A valid, tiny synthetic source can induce thousands of empty/interior
+        // PDF pages via line breaks. Exercise the REAL newPage() guard with a
+        // small test-only limit, not a 2049-page stress run in every CI build.
+        var style = new UdfReader.Style(11f, false, Color.BLACK);
+        var manyBreaks = new UdfReader.DocumentSpec("page-flood.udf", "1.0",
+                List.of(new UdfReader.Paragraph(List.of(
+                        new UdfReader.Run("START\n" + "\n".repeat(120) + "FINISH", style)))));
+        var rejected = assertThrows(IllegalArgumentException.class,
+                () -> { try (PDDocument ignored =
+                        PdfExporter.renderWithPageBudgetForTest(List.of(manyBreaks), 2)) {} });
+        assertTrue(rejected.getMessage().contains("sayfa"), rejected.getMessage());
+
+        // First-page thumbnails must continue short-circuiting normally, even
+        // if the full document is rejected when its merged page budget fills.
+        try (PDDocument preview = PdfExporter.renderPreview(manyBreaks)) {
+            assertEquals(1, preview.getNumberOfPages());
+            assertTrue(new PDFTextStripper().getText(preview).contains("START"));
+        }
+        assertThrows(IllegalArgumentException.class,
+                () -> PdfExporter.renderWithPageBudgetForTest(List.of(one), 0));
+    }
+
     @Test void whitespaceOnlyUdfCannotSilentlyProduceBlankPdf(@TempDir Path folder) throws Exception {
         // Terminal whitespace is trimmed to avoid spurious pages, but an entire
         // whitespace-only UDF must not be reported as a successful conversion.

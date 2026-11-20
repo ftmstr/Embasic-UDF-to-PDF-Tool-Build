@@ -27,6 +27,11 @@ import org.apache.pdfbox.rendering.PDFRenderer;
 public final class PdfExporter {
     private static final float LEFT = 48f, RIGHT = PDRectangle.A4.getWidth() - 48f;
     private static final float TOP = PDRectangle.A4.getHeight() - 48f, BOTTOM = 48f;
+    // TUR405: a bounded synthetic archive can otherwise expand into an
+    // unbounded number of blank/interior PDF pages via repeated line breaks.
+    // Enforce one global limit over the COMPLETE merged output, before
+    // allocating each next PDPage; never publish a truncated PDF.
+    private static final int MAX_PDF_PAGES = 2048;
     private PdfExporter() {}
 
     public static Path systemFont(boolean bold) {
@@ -238,6 +243,21 @@ public final class PdfExporter {
     private static PDDocument renderInternal(List<UdfReader.DocumentSpec> docs,
                                              boolean previewOnly,
                                              RenderBoundary boundary) throws Exception {
+        return renderInternal(docs, previewOnly, boundary, MAX_PDF_PAGES);
+    }
+
+    /** Test-only smaller budget: validate the production guard without building 2049 pages. */
+    static PDDocument renderWithPageBudgetForTest(List<UdfReader.DocumentSpec> docs,
+                                                  int pageBudget) throws Exception {
+        return renderInternal(docs, false, completed -> {}, pageBudget);
+    }
+
+    private static PDDocument renderInternal(List<UdfReader.DocumentSpec> docs,
+                                             boolean previewOnly,
+                                             RenderBoundary boundary,
+                                             int pageBudget) throws Exception {
+        if (pageBudget < 1 || pageBudget > MAX_PDF_PAGES)
+            throw new IllegalArgumentException("Geçersiz PDF sayfa bütçesi");
         if (boundary == null) throw new IllegalArgumentException("PDF render sınır kontrolü eksik");
         if (docs == null || docs.isEmpty()) throw new IllegalArgumentException("PDF için en az bir UDF gerekli");
         // Match the 160-card desktop limit for direct API/CLI merges as well.
@@ -304,7 +324,7 @@ public final class PdfExporter {
             try {
                 int completedDocuments = 0;
                 for (UdfReader.DocumentSpec document : docs) {
-                try (Layout layout = new Layout(pdf, fonts, document.page(), previewOnly)) {
+                try (Layout layout = new Layout(pdf, fonts, document.page(), previewOnly, pageBudget)) {
                     layout.newPage();
                     List<DocumentElements.Block> blocks = document.blocks();
                     // Trailing empty editor paragraphs must not allocate an otherwise blank page.
@@ -1036,6 +1056,7 @@ public final class PdfExporter {
         private final PDDocument pdf;
         private final FontSet fonts;
         private final boolean previewOnly;
+        private final int pageBudget;
         private final DocumentElements.PageSpec page;
         private final float left, right, top, bottom;
         private PDPageContentStream stream;
@@ -1049,9 +1070,10 @@ public final class PdfExporter {
         // inside one uninterrupted word. Track the previous run's last codepoint.
         private boolean previousRunEndsInWord;
         private Layout(PDDocument pdf, FontSet fonts,
-                       DocumentElements.PageSpec page, boolean previewOnly) {
+                       DocumentElements.PageSpec page, boolean previewOnly, int pageBudget) {
             this.pdf = pdf; this.fonts = fonts; this.page = page;
             this.previewOnly = previewOnly;
+            this.pageBudget = pageBudget;
             left = page.margin(); right = page.width() - page.margin();
             top = page.height() - page.margin(); bottom = page.margin();
         }
@@ -1059,6 +1081,9 @@ public final class PdfExporter {
             // Stop before allocating page two. The try-with-resources caller
             // closes the first page stream even when this short-circuit fires.
             if (previewOnly && stream != null) throw new PreviewPageComplete();
+            if (pdf.getNumberOfPages() >= pageBudget)
+                throw new IllegalArgumentException("PDF sayfa sayısı güvenlik sınırı aşıldı: "
+                        + pageBudget);
             if (stream != null) stream.close();
             PDPage newPage = new PDPage(new PDRectangle(page.width(), page.height()));
             pdf.addPage(newPage);
