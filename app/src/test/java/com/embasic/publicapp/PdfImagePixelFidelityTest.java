@@ -199,8 +199,11 @@ final class PdfImagePixelFidelityTest {
         byte[] unknownIndex = indexedPng(new byte[]{0, 5}, 1);
         BufferedImage ignored = ImageIO.read(new ByteArrayInputStream(unknownIndex));
         assertNotNull(ignored, "Independent ImageIO decoder accepts invalid index");
-        assertEquals(Color.BLACK.getRGB(), ignored.getRGB(0, 0),
-                "ImageIO silently invents black when the source palette has no index 5");
+        // Actual ImageIO remapping differs with PLTE size: for two entries
+        // the unsupported source index 5 may be aliased to declared green.
+        // The security regression is that no error was raised at all.
+        assertEquals(new Color(20, 190, 70).getRGB(), ignored.getRGB(0, 0),
+                "ImageIO silently aliases invalid index 5 to palette entry 1");
         var error = assertThrows(IllegalArgumentException.class,
                 () -> DocumentElements.decodeBoundedPng(unknownIndex));
         assertTrue(error.getMessage().contains("palet"), error.getMessage());
