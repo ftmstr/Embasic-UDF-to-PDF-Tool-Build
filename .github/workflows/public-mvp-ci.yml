@@ -1,0 +1,259 @@
+name: Public-only Desktop MVP Proof
+
+on:
+  push:
+    branches: [main, "ci/**"]
+    paths:
+      - "app/**"
+      - "scripts/**"
+      - ".github/workflows/public-mvp-ci.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "app/**"
+      - "scripts/**"
+      - ".github/workflows/public-mvp-ci.yml"
+  workflow_dispatch:
+    inputs:
+      run_gui_robot:
+        description: "Opt-in real Windows desktop Robot smoke (requires interactive runner)"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  java-mvp:
+    name: Build and smoke public MVP (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+          cache-dependency-path: app/pom.xml
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install system font for Linux smoke
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y fonts-dejavu-core
+      - name: Inspect exact-commit Public app source/NOTICE evidence (no release)
+        run: |
+          python scripts/test-audit-public-app-readiness.py
+          python scripts/audit-public-app-readiness.py --expect-blocked
+      # Opt-in PDFBox timing in CI only: identify font lookup vs embedding cost
+      # without logging document text or font paths. This is instrumentation,
+      # not a performance improvement or a release approval.
+      - name: Synthetic runtime-shade license evidence regression
+        run: python scripts/test-audit-public-shaded-runtime.py
+      # Local-only compatibility shape; synthetic bytes and fixed vocabulary.
+      # No genuine UYAP source, competitor code or private output in CI.
+      - name: Test private local UDF structural inventory (no native UYAP)
+        run: python app/scripts/test-inspect-local-udf-shape.py
+      - name: Validate offline rights-gated PDF audit result parsing (no native fixtures)
+        run: python app/scripts/test-run-offline-golden-pdf-metrics.py
+      - name: Compile + JUnit test + audit actual shaded runtime JARs (NO-GO)
+        run: python scripts/audit-public-shaded-runtime.py --build
+      # Record the actual resolved runtime graph at this exact checkout, not merely
+      # the direct POM declarations. This is evidence only: no artifact upload,
+      # redistribution permission, or UYAP compatibility assertion.
+      - name: Record resolved Public app runtime Maven dependency tree (NO-GO)
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "PUBLIC_APP_EVIDENCE_COMMIT=$(git rev-parse HEAD)"
+          mvn -B -ntp -f app/pom.xml org.apache.maven.plugins:maven-dependency-plugin:3.7.1:tree -Dscope=runtime -DoutputType=text
+
+      # Capture all six component-specific legal records from the exact Maven
+      # cache resolved by this checkout. Fail closed if any upstream member is
+      # absent; never upload these legal texts as distributable artifacts.
+      - name: Extract upstream FontBox/PDFBox IO legal evidence (NO-GO)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/extract-public-app-upstream-notices.py --out "${RUNNER_TEMP}/public-app-legal-evidence"
+          python -c 'import json,os,pathlib,sys; p=pathlib.Path(os.environ["RUNNER_TEMP"])/"public-app-legal-evidence"/"manifest.json"; m=json.loads(p.read_text(encoding="utf-8")); r=m["shaded_reconciliation"]; findings=r["findings"]; valid={"EXACT","DIFFERENT","ABSENT","AMBIGUOUS","INVALID_SIZE"}; ok=len(m["members"])==6 and not m["missing"] and m["release_approved"] is False and m["legal_review"]=="NOT_VERIFIED" and r["status"]=="REVIEW_REQUIRED" and len(findings)==6 and all(f["status"] in valid for f in findings) and {(f["component"],f["member"]) for f in findings}=={(f["component"],f["member"]) for f in m["members"]}; print("SHADED_LEGAL_RECONCILIATION="+r["status"]+" FINDINGS="+str(len(findings))+" STATUS_COUNTS="+str({k:sum(f["status"]==k for f in findings) for k in sorted(valid)})); sys.exit(0 if ok else 1)'
+
+      - name: CLI synthetic UDF to PDF smoke
+        run: python app/scripts/smoke_cli.py app/target/embasic-public-desktop-0.1.0-SNAPSHOT-all.jar
+
+      # Verify the *new* offline custody+PDFBox bridge end-to-end using only
+      # rights-clean synthetic inputs, not a native UYAP reference. Fail closed
+      # on a changed PDF or forged exact JAR SHA; never upload evidence.
+      - name: Verify offline PDF golden bridge integration (synthetic evidence only)
+        run: python app/scripts/test-offline-golden-bridge-integration.py app/target/embasic-public-desktop-0.1.0-SNAPSHOT-all.jar
+
+      # Measure a real, valid 160-file batch on both OS runners. This is a
+      # performance baseline (wall time, Java CPU and peak RSS), not a claim of
+      # physical Windows acceptance or a new JUnit pass count.
+      - name: Profile 160 valid public synthetic UDF files (512 MiB heap)
+        run: python app/scripts/profile_160.py app/target/embasic-public-desktop-0.1.0-SNAPSHOT-all.jar
+
+      # Three isolated JVM launches prove PDFBox reads a persistent metadata cache
+      # and rebuilds corrupted metadata without disabling font checksums.
+      # Run only on explicitly marked commits to conserve hosted runner minutes.
+      - name: Profile Windows PDFBox cold, warm and corrupt font metadata (CI only)
+        if: runner.os == 'Windows' && github.event_name == 'push' && contains(github.event.head_commit.message, '[fontcache-3x]')
+        run: python app/scripts/profile_fontcache.py
+
+      # This separate opt-in experiment is NOT the explicit pdfbox.fontcache
+      # cache used in the 3x probe above. It leaves the cache property unset,
+      # overrides user.home only inside each disposable Surefire child JVM,
+      # and verifies cold/update/corrupt/bad-font behavior across four JVMs.
+      # Run on both Windows and Linux, but only for deliberate tagged pushes.
+      - name: Probe true PDFBox default-cache fallback over four JVMs (CI only)
+        if: github.event_name == 'push' && contains(github.event.head_commit.message, '[fontcache-default-4x]')
+        run: python app/scripts/profile_fontcache_default.py
+
+      # Robot remains opt-in: a deliberate [gui-robot] push on this Public
+      # branch, or a manual workflow_dispatch input, runs the actual Windows
+      # keyboard/mouse acceptance on the hosted desktop. Default CI skips it.
+      # A noninteractive/locked desktop or JUnit skip MUST fail this opt-in job;
+      # the script deletes stale XML and checks non-skipped Surefire evidence.
+      - name: Opt-in interactive Windows Robot acceptance (no release)
+        if: runner.os == 'Windows' && ((github.event_name == 'workflow_dispatch' && inputs.run_gui_robot) || (github.event_name == 'push' && github.ref == 'refs/heads/ci/secure-windows-bootstrap-20261018' && contains(github.event.head_commit.message, '[gui-robot]')))
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          & pwsh -NoProfile -File app/scripts/Run-Windows-GuiRobotSmoke.ps1 -AllowGui
+          if ($LASTEXITCODE -ne 0) { throw "Physical Windows GUI acceptance not verified (failed, skipped or noninteractive)" }
+
+
+      - name: Validate colorful PowerShell dashboard, JSON score and forecast
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $raw = & pwsh -NoProfile -File app/scripts/Show-EmbasicProgress.ps1 -Offline -AsJson
+          if ($LASTEXITCODE -ne 0) { throw "PowerShell dashboard failed" }
+          $dashboard = $raw | ConvertFrom-Json
+          if ($dashboard.SchemaVersion -ne 1 -or $dashboard.ProgressPercent -lt 0 -or $dashboard.ProgressPercent -gt 100) {
+            throw "Dashboard score invalid"
+          }
+          if ((($dashboard.Milestones | Measure-Object -Property Weight -Sum).Sum) -ne 100) {
+            throw "Dashboard weights invalid"
+          }
+          if ($dashboard.GuiAcceptance.Status -ne "CI_VERIFIED_LIMITED" -or $dashboard.GuiAcceptance.VerifiedPhysicalWindows -ne $true -or $dashboard.GuiAcceptance.Mode -notmatch "not an external user beta") {
+            throw "Packaged Windows CI evidence must remain limited and external beta must not be reported as PASS"
+          }
+          if ($dashboard.ReleaseReadiness.PublicationAllowed -ne $false -or
+              $dashboard.ReleaseReadiness.NativeUyapGolden -ne 'NOT_VERIFIED' -or
+              $dashboard.ReleaseReadiness.LocalUdfShapeInspection -ne 'OFFLINE_STRUCTURE_ONLY_NATIVE_NOT_VERIFIED' -or
+              $dashboard.ReleaseReadiness.OfflineGoldenVisualMetrics -ne 'EXACT_SHA_LOCAL_RENDER_PROVENANCE_SYNTHETIC_ONLY_NATIVE_GOLDEN_NOT_RUN' -or
+              $dashboard.ReleaseReadiness.RuntimeShadedLicenseEvidence -ne 'EXACT_UPSTREAM_AND_SHADED_JAR_SHA256_NO_GO' -or
+              $dashboard.ReleaseReadiness.SourceAndNotices -ne 'NO_GO' -or
+              $dashboard.ReleaseReadiness.LegalSharedNamespace -ne 'BLOCKED_COMPONENT_ATTRIBUTION_REVIEW' -or
+              $dashboard.ReleaseReadiness.LocalWindowsBetaEvidence -ne 'FULL_APP_IMAGE_SHA_MANIFEST_USER_BETA_UNVERIFIED' -or
+              $dashboard.ReleaseReadiness.PhysicalUnsupportedHardlinkExfat -ne 'NOT_RUN' -or
+              $dashboard.ReleaseReadiness.LegacySourceGate -notmatch 'independent_public_mvp_source_review_required') {
+            throw 'Public MVP readiness must stay fail-closed without independent evidence'
+          }
+          if ([DateTime]$dashboard.Forecast.FinalEarliest -ge [DateTime]$dashboard.Forecast.FinalLatest) {
+            throw "Invalid final release forecast window"
+          }
+          & pwsh -NoProfile -File app/scripts/Show-EmbasicProgress.ps1 -Offline
+          if ($LASTEXITCODE -ne 0) { throw "Color dashboard display failed" }
+
+      - name: Build portable Windows app-image (CI validation only)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $packageInput = Join-Path $env:RUNNER_TEMP "embasic-mvp-input"
+          $packageOutput = Join-Path $env:RUNNER_TEMP "embasic-mvp-output"
+          New-Item -ItemType Directory -Force -Path $packageInput | Out-Null
+          New-Item -ItemType Directory -Force -Path $packageOutput | Out-Null
+          Copy-Item -LiteralPath "app/target/embasic-public-desktop-0.1.0-SNAPSHOT-all.jar" -Destination $packageInput
+          & jpackage --type app-image --name EmbasicUdfToPdfPublicMVP --app-version 0.1.0 --input $packageInput --main-jar embasic-public-desktop-0.1.0-SNAPSHOT-all.jar --main-class com.embasic.publicapp.DesktopApp --dest $packageOutput
+          if ($LASTEXITCODE -ne 0) { throw "Windows app-image packaging failed" }
+          $launcher = Join-Path $packageOutput "EmbasicUdfToPdfPublicMVP/EmbasicUdfToPdfPublicMVP.exe"
+          if (-not (Test-Path -LiteralPath $launcher)) { throw "Packaged launcher not found" }
+          & python app/scripts/smoke_packaged.py $launcher
+          if ($LASTEXITCODE -ne 0) { throw "Packaged launcher conversion failed" }
+
+      - name: Validate local-only Windows beta evidence collector without a user-beta claim
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $app = Join-Path $env:RUNNER_TEMP 'embasic-mvp-output/EmbasicUdfToPdfPublicMVP/EmbasicUdfToPdfPublicMVP.exe'
+          if (-not (Test-Path -LiteralPath $app -PathType Leaf)) { throw 'Physical Windows evidence launcher missing' }
+          $out = Join-Path $env:RUNNER_TEMP 'embasic-local-beta-evidence'
+          & pwsh -NoProfile -File scripts/Collect-PublicWindowsBetaEvidence.ps1 -AppExecutable $app -OutputDirectory $out
+          if ($LASTEXITCODE -ne 0) { throw 'Local beta evidence collector failed on packaged launcher' }
+          $evidenceFiles = @(Get-ChildItem -LiteralPath $out -File -Filter 'public-windows-beta-*.json')
+          if ($evidenceFiles.Count -ne 1) { throw 'Expected exactly one unuploaded evidence JSON' }
+          $evidence = Get-Content -LiteralPath $evidenceFiles[0].FullName -Raw | ConvertFrom-Json
+          $actualHash = (Get-FileHash -LiteralPath $app -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($evidence.app_image_manifest_schema -ne 'embasic-app-image-sha256-v1' -or
+              $evidence.app_image_manifest_sha256 -notmatch '^[a-f0-9]{64}$' -or
+              $evidence.app_image_file_count -lt 10 -or
+              $evidence.app_image_files.Count -ne $evidence.app_image_file_count -or
+              $evidence.bundled_java_runtime_in_manifest -ne $true -or
+              $evidence.bundled_java_runtime_license_review -ne 'NOT_VERIFIED' -or
+              $evidence.executable_sha256 -ne $actualHash -or
+              $evidence.executable_bytes -ne (Get-Item -LiteralPath $app).Length -or
+              $evidence.W01 -ne 'NOT_RUN' -or $evidence.W07 -ne 'NOT_RUN' -or
+              $evidence.release -ne 'NO-GO' -or $evidence.native_UYAP -ne 'NOT_VERIFIED' -or
+              $evidence.exFAT_physical -ne 'NOT_RUN') {
+            throw 'Unverified beta evidence fields must stay NO-GO'
+          }
+          $forbidden = Join-Path (Split-Path -Parent $app) 'no-evidence-inside-image'
+          if (Test-Path -LiteralPath $forbidden) { throw 'Unexpected pre-existing forbidden directory' }
+          & pwsh -NoProfile -File scripts/Collect-PublicWindowsBetaEvidence.ps1 -AppExecutable $app -OutputDirectory $forbidden *> $null
+          if ($LASTEXITCODE -eq 0 -or (Test-Path -LiteralPath $forbidden)) {
+            throw 'Forbidden beta output must be rejected before directory creation'
+          }
+          # The expected negative subprocess exits 1. Clear its native exit
+          # status or the otherwise successful GitHub Actions pwsh step fails.
+          $global:LASTEXITCODE = 0
+          # Independent per-file SHA and membership check on the real
+          # disposable jpackage app-image. No file or JSON is uploaded.
+          $root = Split-Path -Parent $app
+          $seen = @{}
+          foreach ($entry in $evidence.app_image_files) {
+            $rel = [string]$entry.path
+            if ($seen.ContainsKey($rel)) { throw 'Duplicate image manifest path' }
+            $seen[$rel] = $true
+            $file = Join-Path $root ($rel.Replace('/', [IO.Path]::DirectorySeparatorChar))
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf) -or
+                $entry.bytes -ne (Get-Item -LiteralPath $file).Length -or
+                $entry.sha256 -ne (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant()) {
+              throw ('App-image file mismatched: ' + $rel)
+            }
+          }
+          if (@(Get-ChildItem -LiteralPath $root -Recurse -File -Force).Count -ne $evidence.app_image_file_count -or
+              -not $seen.ContainsKey('runtime/lib/modules')) { throw 'Incomplete bundled Java image evidence' }
+          $matched = Join-Path $env:RUNNER_TEMP 'embasic-matched-app-image'
+          & pwsh -NoProfile -File scripts/Collect-PublicWindowsBetaEvidence.ps1 -AppExecutable $app -OutputDirectory $matched -ExpectedAppImageSha256 $evidence.app_image_manifest_sha256 *> $null
+          if ($LASTEXITCODE -ne 0) { throw 'Matching app-image SHA was rejected' }
+          $extra = Join-Path $root 'app/embasic-tamper-probe.txt'
+          $reject = Join-Path $env:RUNNER_TEMP 'embasic-tampered-app-image'
+          if (Test-Path -LiteralPath $extra) { throw 'Unexpected tamper probe file present' }
+          try {
+            [IO.File]::WriteAllText($extra, 'rights-clean synthetic package change')
+            & pwsh -NoProfile -File scripts/Collect-PublicWindowsBetaEvidence.ps1 -AppExecutable $app -OutputDirectory $reject -ExpectedAppImageSha256 $evidence.app_image_manifest_sha256 *> $null
+            if ($LASTEXITCODE -eq 0 -or @(Get-ChildItem -LiteralPath $reject -File -ErrorAction SilentlyContinue).Count -gt 0) {
+              throw 'Tampered app-image must fail before evidence creation'
+            }
+          } finally { if (Test-Path -LiteralPath $extra) { Remove-Item -LiteralPath $extra -Force } }
+          $global:LASTEXITCODE = 0
+          Write-Host 'WINDOWS_FULL_APP_IMAGE_SHA_PASS: launcher, app files and bundled JRE verified; added file rejected; NO-GO'
+          Write-Host 'WINDOWS_BETA_EVIDENCE_PREFLIGHT_PASS: packaged exe stable SHA/bytes; forbidden output leaves no directory; W01/W07=NOT_RUN; release=NO-GO'
+          # No human operator, external beta, zip, install or uploaded document.
+
+# Does not publish executable artifacts or bypass source/license/rights release gates.

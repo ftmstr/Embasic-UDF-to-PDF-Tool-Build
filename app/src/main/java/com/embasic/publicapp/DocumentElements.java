@@ -1,0 +1,450 @@
+package com.embasic.publicapp;
+
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.zip.CRC32;
+import java.util.zip.Inflater;
+import java.util.zip.DataFormatException;
+import java.util.ArrayList;
+import java.util.Base64;
+import java.util.List;
+import java.util.Locale;
+import javax.imageio.ImageIO;
+import org.w3c.dom.Element;
+import org.w3c.dom.NodeList;
+
+/**
+ * Strictly synthetic, documented additional XML subset.
+ * This is NOT a declaration that authentic UYAP uses these XML structures.
+ */
+public final class DocumentElements {
+    private DocumentElements() {}
+    public sealed interface Block permits ParagraphBlock, TableBlock, ImageBlock {}
+    public record ParagraphBlock(UdfReader.Paragraph paragraph) implements Block {}
+    public record Cell(String text, int colspan, int rowspan) {}
+    public record Row(List<Cell> cells, float height) {
+        public Row { cells = List.copyOf(cells); }
+    }
+    public record TableBlock(List<Float> widths, List<Row> rows) implements Block {
+        public TableBlock {
+            widths = List.copyOf(widths);
+            rows = List.copyOf(rows);
+        }
+    }
+    public record ImageBlock(byte[] png, float width, float height) implements Block {
+        public ImageBlock { png = png.clone(); }
+        @Override public byte[] png() { return png.clone(); }
+    }
+    public record PageSpec(float width, float height, float margin) {
+        public static PageSpec a4() { return new PageSpec(595.28f, 841.89f, 48f); }
+    }
+    private static void onlyAttributes(Element element, String... allowed) {
+        var names = java.util.Set.of(allowed);
+        var attributes = element.getAttributes();
+        for (int i = 0; i < attributes.getLength(); i++)
+            if (!names.contains(attributes.item(i).getNodeName()))
+                throw new IllegalArgumentException("Desteklenmeyen " + element.getTagName()
+                        + " özelliği: " + attributes.item(i).getNodeName());
+    }
+    /**
+     * Only the synthetic subset's ASCII layout whitespace may be ignored
+     * between XML elements. String.isBlank() also accepts Unicode separators
+     * that PDF layout rejects; dropping those would silently lose content.
+     */
+    static boolean isStructuralWhitespace(String value) {
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c != ' ' && c != '\t' && c != '\r' && c != '\n') return false;
+        }
+        return true;
+    }
+
+    /** Structural nodes may contain formatting whitespace, never hidden text. */
+    private static void rejectDirectText(Element element) {
+        NodeList nodes = element.getChildNodes();
+        for (int i = 0; i < nodes.getLength(); i++) {
+            var node = nodes.item(i);
+            if ((node.getNodeType() == org.w3c.dom.Node.TEXT_NODE
+                    || node.getNodeType() == org.w3c.dom.Node.CDATA_SECTION_NODE)
+                    && !isStructuralWhitespace(node.getNodeValue()))
+                throw new IllegalArgumentException("Desteklenmeyen " + element.getTagName()
+                        + " doğrudan metni");
+        }
+    }
+    private static List<Element> children(Element parent) {
+        List<Element> list = new ArrayList<>();
+        NodeList nodes = parent.getChildNodes();
+        for (int i = 0; i < nodes.getLength(); i++)
+            if (nodes.item(i) instanceof Element e) list.add(e);
+        return list;
+    }
+    private static float positive(String value, String name, float max) {
+        try {
+            float x = Float.parseFloat(value.trim());
+            if (!Float.isFinite(x) || x <= 0 || x > max)
+                throw new IllegalArgumentException(name + " aralık dışında");
+            return x;
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Geçersiz " + name, e);
+        }
+    }
+    private static int span(Element cell, String name, int max) {
+        if (!cell.hasAttribute(name)) return 1;
+        try {
+            int value = Integer.parseInt(cell.getAttribute(name));
+            if (value < 1 || value > max) throw new IllegalArgumentException(name + " aralık dışında");
+            return value;
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("Geçersiz " + name, e);
+        }
+    }
+    public static PageSpec page(Element properties) {
+        if (properties == null) return PageSpec.a4();
+        onlyAttributes(properties, "pageSize", "orientation", "margin");
+        if (!children(properties).isEmpty() || !isStructuralWhitespace(properties.getTextContent()))
+            throw new IllegalArgumentException("Bilinmeyen UDF sayfa ayarı");
+        String size = properties.hasAttribute("pageSize") ? properties.getAttribute("pageSize") : "A4";
+        float w, h;
+        switch (size.toUpperCase(Locale.ROOT)) {
+            case "A4" -> { w = 595.28f; h = 841.89f; }
+            case "LETTER" -> { w = 612f; h = 792f; }
+            case "LEGAL" -> { w = 612f; h = 1008f; }
+            case "A5" -> { w = 419.53f; h = 595.28f; }
+            default -> throw new IllegalArgumentException("Desteklenmeyen sayfa boyutu: " + size);
+        }
+        String orientation = properties.hasAttribute("orientation")
+                ? properties.getAttribute("orientation") : "portrait";
+        if (orientation.equals("landscape")) { float swap = w; w = h; h = swap; }
+        else if (!orientation.equals("portrait"))
+            throw new IllegalArgumentException("Desteklenmeyen sayfa yönü: " + orientation);
+        float margin = properties.hasAttribute("margin")
+                ? positive(properties.getAttribute("margin"), "sayfa marjı", 100) : 48f;
+        return new PageSpec(w, h, margin);
+    }
+    public static TableBlock table(Element table) {
+        onlyAttributes(table, "widths");
+        rejectDirectText(table);
+        String widthsValue = table.getAttribute("widths");
+        if (widthsValue.isBlank()) throw new IllegalArgumentException("Tablo sütun genişlikleri eksik");
+        String[] parts = widthsValue.split(",", -1);
+        if (parts.length < 1 || parts.length > 32) throw new IllegalArgumentException("Tablo sütun sayısı");
+        List<Float> widths = new ArrayList<>();
+        for (String part : parts) widths.add(positive(part, "sütun genişliği", 1000));
+        List<Row> rows = new ArrayList<>();
+        for (Element row : children(table)) {
+            if (!row.getTagName().equals("row")) throw new IllegalArgumentException("Desteklenmeyen tablo satırı");
+            onlyAttributes(row, "height");
+            rejectDirectText(row);
+            if (rows.size() >= 500) throw new IllegalArgumentException("Tablo çok fazla satır içeriyor");
+            float height = positive(row.getAttribute("height"), "satır yüksekliği", 180);
+            if (height < 18f) throw new IllegalArgumentException("Satır yüksekliği yetersiz");
+            List<Cell> cells = new ArrayList<>();
+            for (Element cell : children(row)) {
+                if (!cell.getTagName().equals("cell")) throw new IllegalArgumentException("Desteklenmeyen tablo hücresi");
+                onlyAttributes(cell, "colspan", "rowspan");
+                if (!children(cell).isEmpty()) throw new IllegalArgumentException("İç içe tablo hücresi desteklenmiyor");
+                String text = cell.getTextContent();
+                if (text.length() > 400 || text.indexOf('\n') >= 0 || text.indexOf('\r') >= 0)
+                    throw new IllegalArgumentException("Çok satırlı tablo hücresi desteklenmiyor");
+                cells.add(new Cell(text, span(cell, "colspan", parts.length), span(cell, "rowspan", 500)));
+            }
+            if (cells.isEmpty()) throw new IllegalArgumentException("Boş tablo satırı");
+            rows.add(new Row(cells, height));
+        }
+        if (rows.isEmpty()) throw new IllegalArgumentException("Boş tablo");
+        return new TableBlock(widths, rows);
+    }
+    /** Only literal ZIP-local synthetic PNG resource paths; no URLs or filesystem fallbacks. */
+    public static String mediaPath(String reference) {
+        if (reference == null || reference.isBlank() || reference.length() > 240
+                || reference.contains("\\") || reference.contains("%") || reference.contains(":")
+                || reference.startsWith("/") || reference.endsWith("/")
+                || reference.contains("//") || reference.contains("?") || reference.contains("#"))
+            throw new IllegalArgumentException("Güvensiz PNG kaynak yolu");
+        String[] segments=reference.split("/",-1);
+        if (segments.length < 2 || segments.length > 8
+                || !(segments[0].equals("media") || segments[0].equals("images")))
+            throw new IllegalArgumentException("PNG yalnız media/ veya images/ içinden okunabilir");
+        for (String s:segments)
+            if (s.isBlank() || s.equals(".") || s.equals("..")
+                    || !s.matches("[a-zA-Z0-9_ .-]+"))
+                throw new IllegalArgumentException("Geçersiz PNG kaynak yolu");
+        if (!reference.toLowerCase(Locale.ROOT).endsWith(".png"))
+            throw new IllegalArgumentException("Yalnız PNG referansına izin verilir");
+        return reference.toLowerCase(Locale.ROOT);
+    }
+    /** ZIP referenced image or inline base64, never a silent fallback between the two. */
+    public static ImageBlock image(Element image, java.util.Map<String,byte[]> media) throws Exception {
+        if (!image.hasAttribute("ref")) return image(image);
+        onlyAttributes(image,"ref","mime","width","height");
+        if (!"image/png".equals(image.getAttribute("mime"))
+                || !children(image).isEmpty() || !isStructuralWhitespace(image.getTextContent()))
+            throw new IllegalArgumentException("PNG referansı içerik ve encoding ile karıştırılamaz");
+        String ref=mediaPath(image.getAttribute("ref"));
+        byte[] data=media.get(ref);
+        if(data==null)throw new IllegalArgumentException("UDF ZIP içinde PNG bulunamadı: "+ref);
+        float w=positive(image.getAttribute("width"),"görsel genişliği",1000);
+        float h=positive(image.getAttribute("height"),"görsel yüksekliği",1000);
+        return validatePng(data,w,h);
+    }
+    private static ImageBlock validatePng(byte[] bytes,float w,float h) throws Exception {
+        decodeBoundedPng(bytes);
+        return new ImageBlock(bytes,w,h);
+    }
+
+    /**
+     * Apply the same byte, format and decoded-pixel budgets at PDF export.
+     * ImageBlock is a public record and can be constructed without XML parsing;
+     * a tiny compressed PNG must never allocate an unbounded raster there.
+     */
+    /**
+     * ImageIO can silently render only the first APNG frame or ignore bytes
+     * after IEND. Both would misrepresent a synthetic source in a static PDF.
+     * Validate framing and CRC before allocating the image raster.
+     */
+    private static void requireSingleFramePng(byte[] bytes) {
+        if (bytes.length < 8 || (bytes[0] & 255) != 0x89
+                || bytes[1] != 'P' || bytes[2] != 'N' || bytes[3] != 'G'
+                || bytes[4] != 13 || bytes[5] != 10
+                || bytes[6] != 26 || bytes[7] != 10)
+            throw new IllegalArgumentException("PNG imzası geçersiz");
+        int offset = 8;
+        boolean ihdr = false, palette = false, idat = false, idatEnded = false, iend = false;
+        int colorType = -1, bitDepth = -1, pixelWidth = -1, pixelHeight = -1;
+        int paletteEntries = 0;
+        ByteArrayOutputStream idatPayload = new ByteArrayOutputStream();
+        while (offset < bytes.length) {
+            if (bytes.length - offset < 12)
+                throw new IllegalArgumentException("PNG parçası eksik");
+            int length = java.nio.ByteBuffer.wrap(bytes, offset, 4).getInt();
+            if (length < 0 || length > bytes.length - offset - 12)
+                throw new IllegalArgumentException("PNG parça boyutu geçersiz");
+            String type = new String(bytes, offset + 4, 4, StandardCharsets.US_ASCII);
+            if (!type.matches("[A-Za-z]{4}"))
+                throw new IllegalArgumentException("PNG parça türü geçersiz");
+            if (!ihdr && (!"IHDR".equals(type) || length != 13))
+                throw new IllegalArgumentException("PNG IHDR eksik veya geçersiz");
+            if ("IHDR".equals(type)) {
+                if (ihdr || length != 13)
+                    throw new IllegalArgumentException("Tekrarlanan PNG IHDR");
+                ihdr = true;
+                bitDepth = bytes[offset + 16] & 0xff;
+                colorType = bytes[offset + 17] & 0xff;
+                pixelWidth = java.nio.ByteBuffer.wrap(bytes, offset + 8, 4).getInt();
+                pixelHeight = java.nio.ByteBuffer.wrap(bytes, offset + 12, 4).getInt();
+                // ImageIO can normalize unsupported/high-precision source samples
+                // without preserving their exact PDF appearance. This audited
+                // synthetic subset accepts only 8-bit, non-interlaced PNGs.
+                // Validate the IHDR before any raster allocation or PDF staging.
+                if (pixelWidth <= 0 || pixelHeight <= 0
+                        || (long) pixelWidth * pixelHeight > 4_000_000L
+                        || bitDepth != 8
+                        || !(colorType == 0 || colorType == 2 || colorType == 3
+                                || colorType == 4 || colorType == 6)
+                        || bytes[offset + 18] != 0  // compression method
+                        || bytes[offset + 19] != 0  // filter method
+                        || bytes[offset + 20] != 0) // Adam7 not yet pixel-audited
+                    throw new IllegalArgumentException("Desteklenmeyen PNG IHDR piksel geometrisi veya örnekleme biçimi");
+            }
+            if ("acTL".equals(type) || "fcTL".equals(type) || "fdAT".equals(type))
+                throw new IllegalArgumentException("Animasyonlu PNG PDF'ye sessizce düzleştirilemez");
+            // Color-managed PNGs may be interpreted differently by ImageIO
+            // and the PDF raster output. This synthetic subset has no audited
+            // color transform, so reject rather than silently alter colors.
+            if ("iCCP".equals(type) || "sRGB".equals(type)
+                    || "gAMA".equals(type) || "cHRM".equals(type)
+                    || "sBIT".equals(type) || "bKGD".equals(type))
+                throw new IllegalArgumentException("Desteklenmeyen PNG renk profili/metaverisi");
+            // Unknown critical chunks can alter the image interpretation.
+            // ImageIO may ignore them, so a PDF must not silently omit them.
+            if (type.charAt(0) >= 'A' && type.charAt(0) <= 'Z'
+                    && !("IHDR".equals(type) || "PLTE".equals(type)
+                            || "IDAT".equals(type) || "IEND".equals(type)))
+                throw new IllegalArgumentException("Desteklenmeyen kritik PNG parçası");
+            // The synthetic PDF subset has no audited interpretation for
+            // ancillary chunks (including transparency, pixel aspect and EXIF).
+            // Reject rather than silently discard appearance-affecting metadata.
+            if (type.charAt(0) >= 'a' && type.charAt(0) <= 'z')
+                throw new IllegalArgumentException("Desteklenmeyen PNG yardımcı parçası: " + type);
+            if ("PLTE".equals(type)) {
+                if (palette || idat || colorType == 0 || colorType == 4
+                        || length < 3 || length > 768 || length % 3 != 0
+                        || (colorType == 3 && (bitDepth > 8
+                                || length / 3 > (1 << bitDepth))))
+                    throw new IllegalArgumentException("PNG paleti geçersiz veya tekrarlanmış");
+                palette = true;
+                paletteEntries = length / 3;
+            }
+            if ("IDAT".equals(type)) {
+                if (colorType == 3 && !palette)
+                    throw new IllegalArgumentException("İndeksli PNG paleti eksik");
+                if (idatEnded) throw new IllegalArgumentException("PNG IDAT sırası geçersiz");
+                // PNG allows consecutive IDAT chunks, but exactly one zlib
+                // datastream must consume every one of their payload bytes.
+                idatPayload.write(bytes, offset + 8, length);
+                idat = true;
+            } else if (idat) idatEnded = true;
+            int crcAt = offset + 8 + length;
+            CRC32 crc = new CRC32();
+            crc.update(bytes, offset + 4, length + 4);
+            long declared = Integer.toUnsignedLong(
+                    java.nio.ByteBuffer.wrap(bytes, crcAt, 4).getInt());
+            if (crc.getValue() != declared)
+                throw new IllegalArgumentException("PNG CRC doğrulaması başarısız");
+            if ("IEND".equals(type)) {
+                if (length != 0 || !idat || crcAt + 4 != bytes.length)
+                    throw new IllegalArgumentException("PNG IEND sonrası veri veya eksik görüntü");
+                iend = true;
+            }
+            offset = crcAt + 4;
+            if (iend) break;
+        }
+        if (!iend) throw new IllegalArgumentException("PNG IEND eksik");
+        requireExactIdatZlib(idatPayload.toByteArray(), pixelWidth, pixelHeight,
+                colorType, paletteEntries);
+    }
+
+    /**
+     * Reject bytes after the PNG's single complete zlib stream. ImageIO accepts
+     * validly CRC-repacked IDAT chunks containing garbage or a second zlib
+     * stream after Adler-32, silently discarding source data on PDF export.
+     * Also bound the decompressed size to the exact noninterlaced 8-bit rows.
+     */
+    private static void requireExactIdatZlib(byte[] compressed, int width,
+                                             int height, int colorType,
+                                             int paletteEntries) {
+        int channels = switch (colorType) {
+            case 0, 3 -> 1;
+            case 4 -> 2;
+            case 2 -> 3;
+            case 6 -> 4;
+            default -> throw new IllegalArgumentException("Desteklenmeyen PNG renk türü");
+        };
+        long expected = ((long) width * channels + 1) * height;
+        // TUR410: only indexed PNGs need reconstructed scanlines. Other
+        // accepted RGB/RGBA/grayscale sources retain streaming validation.
+        // The existing 4 MP IHDR gate bounds this indexed buffer to 8 MiB.
+        byte[] indexedRows = colorType == 3 ? new byte[(int) expected] : null;
+        long decoded = 0;
+        Inflater inflater = new Inflater();
+        try {
+            inflater.setInput(compressed);
+            byte[] buffer = new byte[8192];
+            while (!inflater.finished()) {
+                int read;
+                try {
+                    read = inflater.inflate(buffer);
+                } catch (DataFormatException e) {
+                    throw new IllegalArgumentException("PNG IDAT zlib bütünlüğü geçersiz", e);
+                }
+                if (read == 0) {
+                    // No further PNG IDAT is allowed beyond the collected
+                    // stream; dictionary requests or no progress fail closed.
+                    throw new IllegalArgumentException("PNG IDAT zlib akışı eksik veya geçersiz");
+                }
+                if (decoded + read > expected)
+                    throw new IllegalArgumentException("PNG IDAT tarama verisi boyutu aşıldı");
+                if (indexedRows != null)
+                    System.arraycopy(buffer, 0, indexedRows, (int) decoded, read);
+                decoded += read;
+            }
+            if (decoded != expected || inflater.getRemaining() != 0)
+                throw new IllegalArgumentException(
+                        "PNG IDAT zlib sonrasında veri var veya tarama boyutu tutarsız");
+        } finally {
+            inflater.end();
+        }
+        if (indexedRows != null)
+            validateIndexedPaletteSamples(indexedRows, width, height, paletteEntries);
+    }
+
+    /**
+     * PNG 8-bit palette indices are filter-reconstructed pixel samples, not
+     * raw IDAT bytes. A syntactically valid PLTE with an out-of-range pixel
+     * index is silently painted black by Java ImageIO; that is not source
+     * fidelity. Reject every invalid sample before the raster reaches PDFBox.
+     */
+    private static void validateIndexedPaletteSamples(byte[] filtered, int width,
+                                                       int height, int paletteEntries) {
+        if (paletteEntries < 1 || paletteEntries > 256)
+            throw new IllegalArgumentException("PNG paleti eksik veya geçersiz");
+        byte[] prior = new byte[width];
+        byte[] current = new byte[width];
+        int position = 0;
+        for (int row = 0; row < height; row++) {
+            int filter = filtered[position++] & 0xff;
+            if (filter > 4)
+                throw new IllegalArgumentException("Desteklenmeyen PNG tarama filtresi");
+            for (int column = 0; column < width; column++) {
+                int left = column == 0 ? 0 : current[column - 1] & 0xff;
+                int above = prior[column] & 0xff;
+                int upperLeft = column == 0 ? 0 : prior[column - 1] & 0xff;
+                int predictor = switch (filter) {
+                    case 0 -> 0;
+                    case 1 -> left;
+                    case 2 -> above;
+                    case 3 -> (left + above) / 2;
+                    case 4 -> {
+                        int p = left + above - upperLeft;
+                        int pa = Math.abs(p - left), pb = Math.abs(p - above),
+                                pc = Math.abs(p - upperLeft);
+                        yield pa <= pb && pa <= pc ? left
+                                : pb <= pc ? above : upperLeft;
+                    }
+                    default -> throw new IllegalArgumentException("PNG tarama filtresi geçersiz");
+                };
+                int index = ((filtered[position++] & 0xff) + predictor) & 0xff;
+                if (index >= paletteEntries)
+                    throw new IllegalArgumentException(
+                            "PNG paletinde bulunmayan renk indeksi");
+                current[column] = (byte) index;
+            }
+            byte[] completed = prior;
+            prior = current;
+            current = completed;
+        }
+    }
+
+    static BufferedImage decodeBoundedPng(byte[] bytes) throws java.io.IOException {
+        if (bytes == null || bytes.length < 24 || bytes.length > 1_048_576
+                || (bytes[0] & 0xff) != 0x89 || bytes[1] != 'P'
+                || bytes[2] != 'N' || bytes[3] != 'G')
+            throw new IllegalArgumentException("PNG biçimi veya boyutu geçersiz");
+        requireSingleFramePng(bytes);
+        try (var input = ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))) {
+            if (input == null) throw new IllegalArgumentException("PNG akışı açılamadı");
+            var readers = ImageIO.getImageReaders(input);
+            if (!readers.hasNext()) throw new IllegalArgumentException("PNG çözücü bulunamadı");
+            var reader = readers.next();
+            try {
+                if (!"png".equalsIgnoreCase(reader.getFormatName()))
+                    throw new IllegalArgumentException("PNG olmayan görüntü");
+                reader.setInput(input, true, true);
+                int width = reader.getWidth(0), height = reader.getHeight(0);
+                if (width < 1 || height < 1 || (long) width * height > 4_000_000L)
+                    throw new IllegalArgumentException("PNG piksel sınırı aşıldı");
+                BufferedImage decoded = reader.read(0);
+                if (decoded == null) throw new IllegalArgumentException("PNG çözümlenemedi");
+                return decoded;
+            } finally { reader.dispose(); }
+        }
+    }
+    public static ImageBlock image(Element image) throws Exception {
+        onlyAttributes(image, "mime", "encoding", "width", "height");
+        if (!children(image).isEmpty()) throw new IllegalArgumentException("İç içe görsel elemanı desteklenmiyor");
+        if (!"image/png".equals(image.getAttribute("mime"))
+                || !"base64".equals(image.getAttribute("encoding")))
+            throw new IllegalArgumentException("Yalnız sentetik base64 PNG görseli destekleniyor");
+        float w = positive(image.getAttribute("width"), "görsel genişliği", 1000);
+        float h = positive(image.getAttribute("height"), "görsel yüksekliği", 1000);
+        String encoded = image.getTextContent().replaceAll("\\s+", "");
+        if (encoded.isEmpty() || encoded.length() > 1_400_000)
+            throw new IllegalArgumentException("PNG veri sınırı");
+        byte[] bytes;
+        try { bytes = Base64.getDecoder().decode(encoded); }
+        catch (IllegalArgumentException e) { throw new IllegalArgumentException("Geçersiz PNG base64", e); }
+        return validatePng(bytes,w,h);
+    }
+}
