@@ -561,6 +561,10 @@ public final class DesktopApp extends JFrame {
      */
     static List<Path> chooserPaths(java.io.File[] multiple, java.io.File single) {
         if (multiple != null && multiple.length > 0) {
+            // A native chooser may supply far more than 160 filenames.
+            // Reject by O(1) length before allocating/copying any Paths
+            // on the Swing EDT. Keep its batch atomic.
+            requireBoundedImportBatch(multiple.length, "Dosya seçimi");
             List<Path> paths = new ArrayList<>(multiple.length);
             for (java.io.File file : multiple) {
                 if (file == null)
@@ -606,6 +610,12 @@ public final class DesktopApp extends JFrame {
 
     private boolean addFiles(List<Path> paths, boolean nativeDrop) {
         if (converting) return false;
+        if (paths == null)
+            throw new IllegalArgumentException("UDF dosya listesi eksik");
+        // Direct/native callers must not ask FileImportPolicy.plan to walk
+        // millions of entries on the EDT for a UI capped at 160 cards.
+        requireBoundedImportBatch(paths.size(),
+                nativeDrop ? "Explorer bırakması" : "Dosya seçimi");
         FileImportPolicy.Selection plan = FileImportPolicy.plan(
                 items.stream().map(item -> item.path).toList(), paths);
         // A chooser multi-selection and an Explorer drop both represent one
@@ -781,9 +791,28 @@ public final class DesktopApp extends JFrame {
      * unknown entry could produce an incomplete merged PDF without warning.
      * Path/extension filtering remains in FileImportPolicy.plan().
      */
+    /**
+     * An import action must fit the same 160-card cap as export. This is
+     * deliberately O(1) in the provider's list/array length: validation
+     * runs on the Swing event dispatch thread during a native drag/drop.
+     * Keep all-or-nothing semantics, even for a list whose elements have
+     * expensive, blocked, or malicious accessors.
+     */
+    static void requireBoundedImportBatch(int count, String source) {
+        if (count < 0 || source == null)
+            throw new IllegalArgumentException("Dosya seçimi boyutu geçersiz");
+        if (count > FileImportPolicy.MAX_CARDS)
+            throw new IllegalArgumentException(source + " "
+                    + FileImportPolicy.MAX_CARDS
+                    + " UDF kartı sınırını aşıyor; hiçbir dosya eklenmedi");
+    }
+
     static List<Path> extractDroppedPaths(Object payload) {
         if (!(payload instanceof List<?> files) || files.isEmpty())
             throw new IllegalArgumentException("Explorer dosya listesi boş veya geçersiz");
+        // javaFileListFlavor is provider-owned and may expose a huge List.
+        // Never allocate a huge ArrayList or iterate that List on the EDT.
+        requireBoundedImportBatch(files.size(), "Explorer bırakması");
         List<Path> paths = new ArrayList<>(files.size());
         for (Object entry : files) {
             if (!(entry instanceof java.io.File file))
