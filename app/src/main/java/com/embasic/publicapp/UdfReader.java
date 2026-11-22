@@ -8,6 +8,10 @@ import java.io.InputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.nio.file.Files;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.channels.FileChannel;
+import java.nio.file.StandardOpenOption;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Enumeration;
@@ -84,6 +88,11 @@ public final class UdfReader {
         // Direct reader callers must share the GUI/CLI compressed-size limit.
         // Reject oversized archives before ZIP central-directory processing.
         FileImportPolicy.requireBoundedArchive(file);
+        // ZipFile and ZipInputStream both ignore data beyond a valid EOCD.
+        // The synthetic UDF contract has no semantics for archive trailers,
+        // self-extracting prefixes or ZIP comments; silently dropping them
+        // while producing a successful PDF would misrepresent input bytes.
+        requireCanonicalZipEnvelope(file);
         byte[] data = null;
         long total = 0;
         int mediaTotal = 0;
@@ -166,6 +175,63 @@ public final class UdfReader {
         }
         if (data == null) throw new IllegalArgumentException("UDF içinde content.xml bulunamadı");
         return parse(data, file.getFileName().toString(), media);
+    }
+
+    /**
+     * A complete supported ZIP ends at its fixed 22-byte End of Central
+     * Directory record. Java ZipFile and ZipInputStream BOTH accept appended
+     * non-ZIP bytes: their member-by-member SHA comparison cannot see that
+     * information. Fail closed before interpreting any XML or media.
+     *
+     * Only single-disk non-ZIP64 archives without comments or self-extracting
+     * prefixes are in this independently specified synthetic subset. Normal
+     * Java ZipOutputStream archives, including DEFLATE data descriptors and
+     * directory markers, satisfy this envelope exactly.
+     */
+    private static void requireCanonicalZipEnvelope(Path source) throws IOException {
+        long fileSize = Files.size(source);
+        if (fileSize < 22)
+            throw new IllegalArgumentException("UDF ZIP son kaydı eksik veya açıklanmamış ek veri var");
+        try (FileChannel channel = FileChannel.open(source, StandardOpenOption.READ)) {
+            ByteBuffer eocd = ByteBuffer.allocate(22).order(ByteOrder.LITTLE_ENDIAN);
+            channel.position(fileSize - 22);
+            while (eocd.hasRemaining()) {
+                if (channel.read(eocd) < 0)
+                    throw new IllegalArgumentException("UDF ZIP son kaydı eksik");
+            }
+            eocd.flip();
+            int signature = eocd.getInt();
+            int disk = Short.toUnsignedInt(eocd.getShort());
+            int directoryDisk = Short.toUnsignedInt(eocd.getShort());
+            int entriesOnDisk = Short.toUnsignedInt(eocd.getShort());
+            int entryCount = Short.toUnsignedInt(eocd.getShort());
+            long directorySize = Integer.toUnsignedLong(eocd.getInt());
+            long directoryOffset = Integer.toUnsignedLong(eocd.getInt());
+            int commentLength = Short.toUnsignedInt(eocd.getShort());
+            if (signature != 0x06054b50 || disk != 0 || directoryDisk != 0
+                    || entriesOnDisk != entryCount || entryCount < 1
+                    || entryCount > MAX_ENTRIES || commentLength != 0
+                    || directorySize < 46 || directoryOffset < 30
+                    || directoryOffset + directorySize != fileSize - 22)
+                throw new IllegalArgumentException(
+                        "UDF ZIP son kaydı, merkez dizini veya açıklanmamış ek veri geçersiz");
+            ByteBuffer signatureBytes = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN);
+            channel.position(0);
+            while (signatureBytes.hasRemaining())
+                if (channel.read(signatureBytes) < 0)
+                    throw new IllegalArgumentException("UDF ZIP yerel kayıt başı eksik");
+            signatureBytes.flip();
+            if (signatureBytes.getInt() != 0x04034b50)
+                throw new IllegalArgumentException("UDF ZIP ön eki desteklenmiyor");
+            signatureBytes.clear();
+            channel.position(directoryOffset);
+            while (signatureBytes.hasRemaining())
+                if (channel.read(signatureBytes) < 0)
+                    throw new IllegalArgumentException("UDF ZIP merkez dizini eksik");
+            signatureBytes.flip();
+            if (signatureBytes.getInt() != 0x02014b50)
+                throw new IllegalArgumentException("UDF ZIP merkez dizini tutarsız");
+        }
     }
 
     /**
