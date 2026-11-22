@@ -47,6 +47,11 @@ public final class UdfReader {
     private static final int MAX_MEDIA_FILES = 64;
     private static final int MAX_MEDIA_TOTAL = 8 * 1024 * 1024;
     private static final int MAX_MEDIA_PNG = 1_048_576;
+    // TUR428: ZIP storage budgets only count distinct files. A single 1 MiB
+    // PNG referenced thousands of times was decoded and cloned once per XML
+    // image node, potentially exhausting heap before PDF export's pixel gate.
+    private static final int MAX_IMAGE_BLOCKS = 64;
+    private static final long MAX_RENDERED_IMAGE_BYTES = MAX_MEDIA_TOTAL;
     public record Style(float size, boolean bold, Color color) {}
     public record Run(String text, Style style) {}
     public record Paragraph(List<Run> runs) {
@@ -345,6 +350,8 @@ public final class UdfReader {
         // A ZIP-local PNG without an XML reference would disappear from the PDF.
         // Track only references that passed the strict synthetic image validation.
         Set<String> referencedMedia = new HashSet<>();
+        int renderedImageBlocks = 0;
+        long renderedImageBytes = 0L;
         // Synthetic UTF-16 ranges must be ordered, non-overlapping and cover
         // every visible character; otherwise conversion could silently lose text.
         int coveredUntil = 0;
@@ -354,9 +361,33 @@ public final class UdfReader {
                 continue;
             }
             if ("image".equals(p.getTagName())) {
+                // Count XML IMAGE USES, not just distinct ZIP media files.
+                // Reject before expensive ImageIO decode and ImageBlock clone.
+                if (renderedImageBlocks >= MAX_IMAGE_BLOCKS)
+                    throw new IllegalArgumentException(
+                            "UDF toplam görsel kullanım sayısı sınırı aşıldı");
+                String reference = p.hasAttribute("ref")
+                        ? DocumentElements.mediaPath(p.getAttribute("ref")) : null;
+                byte[] referencedBytes = reference == null ? null : media.get(reference);
+                // A repeated reference can multiply one legal compressed PNG
+                // into hundreds of retained copies even when ZIP mediaTotal
+                // is far below its 8 MiB budget. Pre-check before decoding.
+                if (referencedBytes != null
+                        && referencedBytes.length > MAX_RENDERED_IMAGE_BYTES - renderedImageBytes)
+                    throw new IllegalArgumentException(
+                            "UDF toplam kullanılan PNG veri sınırı aşıldı");
                 DocumentElements.ImageBlock image = DocumentElements.image(p, media);
-                if (p.hasAttribute("ref"))
-                    referencedMedia.add(DocumentElements.mediaPath(p.getAttribute("ref")));
+                // Inline base64 PNGs have no ZIP media entry. Count those too
+                // after their own already-bounded decode; the next one cannot
+                // be decoded if the use count is exhausted.
+                long imageBytes = referencedBytes != null
+                        ? referencedBytes.length : image.png().length;
+                if (imageBytes > MAX_RENDERED_IMAGE_BYTES - renderedImageBytes)
+                    throw new IllegalArgumentException(
+                            "UDF toplam kullanılan PNG veri sınırı aşıldı");
+                renderedImageBytes += imageBytes;
+                renderedImageBlocks++;
+                if (reference != null) referencedMedia.add(reference);
                 blocks.add(image);
                 continue;
             }
