@@ -311,6 +311,14 @@ public final class UdfReader {
             ZipEntry entry = entries.nextElement();
             if (++centralCount > MAX_ENTRIES || declared.putIfAbsent(entry.getName(), entry) != null)
                 throw new IllegalArgumentException("UDF ZIP merkez dizini girişleri tutarsız");
+            // Unlike the archive-level EOCD comment rejected by TUR430,
+            // per-member comments live inside CENTRAL records. ZipInputStream
+            // has no per-member comment and drops this input on the floor;
+            // converting a commented source to PDF would silently erase it.
+            // No comment-to-PDF mapping exists in the audited synthetic subset.
+            if (entry.getComment() != null && !entry.getComment().isEmpty())
+                throw new IllegalArgumentException(
+                        "UDF ZIP giriş açıklaması PDF'ye aktarılmıyor; açıklamalı giriş desteklenmiyor");
             if (entry.getSize() < 0 || entry.getSize() > MAX_TOTAL_UNCOMPRESSED
                     || entry.getCrc() < 0)
                 throw new IllegalArgumentException("UDF ZIP merkez dizini boyutu veya CRC geçersiz");
