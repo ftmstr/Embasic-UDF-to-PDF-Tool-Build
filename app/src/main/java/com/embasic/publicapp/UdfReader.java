@@ -92,7 +92,7 @@ public final class UdfReader {
         // The synthetic UDF contract has no semantics for archive trailers,
         // self-extracting prefixes or ZIP comments; silently dropping them
         // while producing a successful PDF would misrepresent input bytes.
-        requireCanonicalZipEnvelope(file);
+        long centralOffset = requireCanonicalZipEnvelope(file);
         byte[] data = null;
         long total = 0;
         int mediaTotal = 0;
@@ -101,7 +101,7 @@ public final class UdfReader {
             // ZipFile trusts CENTRAL names, whereas other ZIP readers trust LOCAL
             // headers. A mismatch can reclassify a source XML or image without
             // changing its payload or CRC; reject such ambiguous archives.
-            requireConsistentLocalZipRecords(file, zip);
+            requireConsistentLocalZipRecords(file, zip, centralOffset);
             Enumeration<? extends ZipEntry> entries = zip.entries();
             int count = 0;
             Set<String> seen = new HashSet<>();
@@ -188,7 +188,7 @@ public final class UdfReader {
      * Java ZipOutputStream archives, including DEFLATE data descriptors and
      * directory markers, satisfy this envelope exactly.
      */
-    private static void requireCanonicalZipEnvelope(Path source) throws IOException {
+    private static long requireCanonicalZipEnvelope(Path source) throws IOException {
         long fileSize = Files.size(source);
         if (fileSize < 22)
             throw new IllegalArgumentException("UDF ZIP son kaydı eksik veya açıklanmamış ek veri var");
@@ -231,6 +231,63 @@ public final class UdfReader {
             signatureBytes.flip();
             if (signatureBytes.getInt() != 0x02014b50)
                 throw new IllegalArgumentException("UDF ZIP merkez dizini tutarsız");
+            return directoryOffset;
+        }
+    }
+
+    /**
+     * ZIP can contain unaccounted bytes BETWEEN the last local member and
+     * the central directory. Both Java ZIP readers ignore that interstitial
+     * data, and TUR430's EOCD-at-EOF check still passes if the central offset
+     * is updated. Use each already-verified central entry's compressed size
+     * and the actual local header/data-descriptor layout to account for every
+     * byte in the local record region without decompressing or allocating
+     * any extra source body.
+     */
+    private static long nextPackedLocalZipOffset(
+            FileChannel channel, long offset, ZipEntry central, long directoryOffset)
+            throws IOException {
+        if (offset < 0 || offset > directoryOffset - 30
+                || central.getCompressedSize() < 0)
+            throw new IllegalArgumentException("UDF ZIP yerel kayıt aralığı geçersiz");
+        ByteBuffer header = ByteBuffer.allocate(30).order(ByteOrder.LITTLE_ENDIAN);
+        readAt(channel, header, offset);
+        header.flip();
+        if (header.getInt() != 0x04034b50)
+            throw new IllegalArgumentException(
+                    "UDF ZIP yerel kayıtlar arasında açıklanmamış veri var");
+        header.position(6);
+        int flags = Short.toUnsignedInt(header.getShort());
+        int method = Short.toUnsignedInt(header.getShort());
+        if (method != central.getMethod() || (flags & 0x1) != 0)
+            throw new IllegalArgumentException("UDF ZIP yerel sıkıştırma kaydı uyuşmuyor");
+        header.position(26);
+        int nameLength = Short.toUnsignedInt(header.getShort());
+        int extraLength = Short.toUnsignedInt(header.getShort());
+        long afterData = offset + 30L + nameLength + extraLength
+                + central.getCompressedSize();
+        if (nameLength == 0 || afterData < offset || afterData > directoryOffset)
+            throw new IllegalArgumentException("UDF ZIP yerel veri sınırı geçersiz");
+        if ((flags & 0x8) == 0) return afterData;
+        if (afterData > directoryOffset - 12)
+            throw new IllegalArgumentException("UDF ZIP veri tanımlayıcısı eksik");
+        ByteBuffer descriptorSignature = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN);
+        readAt(channel, descriptorSignature, afterData);
+        descriptorSignature.flip();
+        long length = descriptorSignature.getInt() == 0x08074b50 ? 16L : 12L;
+        if (afterData + length > directoryOffset)
+            throw new IllegalArgumentException("UDF ZIP veri tanımlayıcısı sınırı geçersiz");
+        // ZipInputStream below still validates the full descriptor CRC and
+        // both decoded lengths. This bounds ONLY the physical ZIP layout.
+        return afterData + length;
+    }
+
+    private static void readAt(FileChannel channel, ByteBuffer bytes, long offset)
+            throws IOException {
+        while (bytes.hasRemaining()) {
+            int read = channel.read(bytes, offset);
+            if (read <= 0) throw new IllegalArgumentException("UDF ZIP yerel kayıt okunamadı");
+            offset += read;
         }
     }
 
@@ -245,7 +302,8 @@ public final class UdfReader {
      * decoded budget as the reader. A Map avoids depending on ZIP entry
      * ordering, which need not match local header order.
      */
-    private static void requireConsistentLocalZipRecords(Path file, ZipFile zip) {
+    private static void requireConsistentLocalZipRecords(
+            Path file, ZipFile zip, long directoryOffset) {
         Map<String, ZipEntry> declared = new HashMap<>();
         Enumeration<? extends ZipEntry> entries = zip.entries();
         int centralCount = 0;
@@ -258,15 +316,19 @@ public final class UdfReader {
                 throw new IllegalArgumentException("UDF ZIP merkez dizini boyutu veya CRC geçersiz");
         }
         long aggregate = 0;
+        long nextLocalOffset = 0;
         int localCount = 0;
         byte[] buffer = new byte[64 * 1024];
-        try (ZipInputStream local = new ZipInputStream(Files.newInputStream(file))) {
+        try (FileChannel packedBytes = FileChannel.open(file, StandardOpenOption.READ);
+             ZipInputStream local = new ZipInputStream(Files.newInputStream(file))) {
             ZipEntry entry;
             while ((entry = local.getNextEntry()) != null) {
                 ZipEntry central = declared.remove(entry.getName());
                 if (++localCount > MAX_ENTRIES || central == null
                         || entry.getMethod() != central.getMethod())
                     throw new IllegalArgumentException("UDF ZIP yerel başlık ile merkez dizini uyuşmuyor");
+                nextLocalOffset = nextPackedLocalZipOffset(
+                        packedBytes, nextLocalOffset, central, directoryOffset);
                 long decoded = 0;
                 int length;
                 MessageDigest localSha = zipSha256();
@@ -311,6 +373,9 @@ public final class UdfReader {
         }
         if (localCount != centralCount || !declared.isEmpty())
             throw new IllegalArgumentException("UDF ZIP yerel başlık sayısı uyuşmuyor");
+        if (nextLocalOffset != directoryOffset)
+            throw new IllegalArgumentException(
+                    "UDF ZIP yerel kayıtlar ile merkez dizini arasında açıklanmamış veri var");
     }
 
     private static MessageDigest zipSha256() {
