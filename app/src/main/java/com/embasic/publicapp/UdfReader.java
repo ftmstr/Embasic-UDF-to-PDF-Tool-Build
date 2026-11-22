@@ -558,14 +558,14 @@ public final class UdfReader {
                 // Gaps before the first run retain the documented structural
                 // whitespace behavior of the synthetic UTF-16 subset.
                 String text = raw.substring(start, end);
-                // ASCII spaces before a paragraph's FIRST referenced range
-                // are visible indentation, not formatting-only XML whitespace.
-                // TUR396: preserve their horizontal geometry just as we already
-                // preserve skipped spaces between runs. Keep CR/LF/TAB-only
-                // structural gaps at a new paragraph boundary unchanged.
-                if (!runs.isEmpty()
-                        || (!gap.isEmpty() && gap.chars().allMatch(ch -> ch == ' ')))
-                    text = gap + text;
+                // Interior gaps belong to the next styled run. At the FIRST
+                // run of a paragraph, prior CR/LF/TAB are structural, but
+                // ASCII spaces AFTER the last structural separator are visible
+                // leading indentation. TUR396 covered only all-space gaps;
+                // "\\n    " used to drop four visible spaces and shift PDF
+                // glyphs left without reporting a conversion error.
+                if (!runs.isEmpty()) text = gap + text;
+                else text = paragraphLeadingSpaces(gap) + text;
                 runs.add(new Run(text, resolve(e, base)));
                 coveredUntil = end;
             }
@@ -581,6 +581,21 @@ public final class UdfReader {
             throw new IllegalArgumentException("UDF içeriğinde PDF\u0027ye aktarılmayan metin var");
         if (blocks.isEmpty()) throw new IllegalArgumentException("Dönüştürülebilir belge öğesi bulunamadı");
         return new DocumentSpec(name, version, paragraphs, blocks, DocumentElements.page(properties));
+    }
+
+    /**
+     * Do not create extra PDF lines from structural CR/LF/TAB between XML
+     * paragraphs, but preserve the literal ASCII indentation after the LAST
+     * such separator. An all-space gap (TUR396) is preserved unchanged.
+     */
+    private static String paragraphLeadingSpaces(String gap) {
+        if (gap.isEmpty()) return "";
+        int structural = Math.max(gap.lastIndexOf('\\n'),
+                Math.max(gap.lastIndexOf('\\r'), gap.lastIndexOf('\\t')));
+        String indent = gap.substring(structural + 1);
+        for (int i = 0; i < indent.length(); i++)
+            if (indent.charAt(i) != ' ') return "";
+        return indent;
     }
 
     /**
