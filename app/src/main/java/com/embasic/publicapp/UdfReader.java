@@ -52,6 +52,10 @@ public final class UdfReader {
     // image node, potentially exhausting heap before PDF export's pixel gate.
     private static final int MAX_IMAGE_BLOCKS = 64;
     private static final long MAX_RENDERED_IMAGE_BYTES = MAX_MEDIA_TOTAL;
+    // TUR429: the compressed reference-byte budget does not bound raster
+    // decoding during UDF import. Align with PDF export's global 16MP gate,
+    // but reject BEFORE decoding even the first image of an oversized UDF.
+    private static final long MAX_IMPORT_IMAGE_PIXELS = 16_000_000L;
     public record Style(float size, boolean bold, Color color) {}
     public record Run(String text, Style style) {}
     public record Paragraph(List<Run> runs) {
@@ -328,6 +332,7 @@ public final class UdfReader {
         onlyAttributes(content);
         onlyAttributes(body);
         rejectDirectText(body);
+        preflightImportImagePixels(body, media);
         if (!children(content).isEmpty())
             throw new IllegalArgumentException("İç içe metin elemanı desteklenmiyor");
         String raw = content.getTextContent();
@@ -445,6 +450,49 @@ public final class UdfReader {
             throw new IllegalArgumentException("UDF içeriğinde PDF\u0027ye aktarılmayan metin var");
         if (blocks.isEmpty()) throw new IllegalArgumentException("Dönüştürülebilir belge öğesi bulunamadı");
         return new DocumentSpec(name, version, paragraphs, blocks, DocumentElements.page(properties));
+    }
+
+    /**
+     * ImageIO decodes each PNG while importing UDF XML, before the exporter
+     * enforces TUR425's 16MP aggregate budget. A UDF with five DISTINCT,
+     * highly compressible 4MP images fits both the 8MiB ZIP media-byte budget
+     * and TUR428's 64-use budget, yet unnecessarily allocates large rasters.
+     *
+     * Scan only the XML's direct image children and IHDRs before decoding ANY
+     * PNG. This method cannot approve an image: ordinary strict CRC, IDAT,
+     * palette, color and XML schema validation still run afterward.
+     */
+    private static void preflightImportImagePixels(
+            Element body, Map<String, byte[]> media) {
+        long total = 0L;
+        for (Element element : children(body)) {
+            if (!"image".equals(element.getTagName())) continue;
+            byte[] png;
+            if (element.hasAttribute("ref")) {
+                // The regular image parser still rejects malformed/missing refs;
+                // this step only prevents excess decoded pixel allocation.
+                png = media.get(DocumentElements.mediaPath(element.getAttribute("ref")));
+                if (png == null) continue;
+            } else {
+                // XML already has a strict 4MiB source cap. Read the same
+                // bounded base64 syntax as DocumentElements.image(), but do
+                // not call ImageIO or allocate a 4MP BufferedImage here.
+                String encoded = element.getTextContent().replaceAll("\\s+", "");
+                if (encoded.isEmpty() || encoded.length() > 1_400_000)
+                    throw new IllegalArgumentException("PNG veri sınırı");
+                try {
+                    png = java.util.Base64.getDecoder().decode(encoded);
+                } catch (IllegalArgumentException ex) {
+                    throw new IllegalArgumentException("Geçersiz PNG base64", ex);
+                }
+            }
+            long pixels = DocumentElements.pngPixelCount(png);
+            if (pixels > MAX_IMPORT_IMAGE_PIXELS - total)
+                throw new IllegalArgumentException(
+                        "UDF toplam çözümlenmiş PNG piksel sınırı aşıldı: "
+                                + MAX_IMPORT_IMAGE_PIXELS);
+            total += pixels;
+        }
     }
 
     /**

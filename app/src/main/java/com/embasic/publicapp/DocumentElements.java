@@ -407,6 +407,29 @@ public final class DocumentElements {
         }
     }
 
+    /**
+     * Cheap, fail-closed PNG IHDR pixel budget probe. No ImageIO raster decode,
+     * IDAT inflation or source-byte cloning. Strict chunk/CRC/color checks are
+     * still mandatory in decodeBoundedPng after the aggregate preflight.
+     */
+    static long pngPixelCount(byte[] bytes) {
+        if (bytes == null || bytes.length < 33 || bytes.length > 1_048_576
+                || (bytes[0] & 0xff) != 0x89 || bytes[1] != 'P'
+                || bytes[2] != 'N' || bytes[3] != 'G'
+                || bytes[4] != 13 || bytes[5] != 10
+                || bytes[6] != 26 || bytes[7] != 10
+                || java.nio.ByteBuffer.wrap(bytes, 8, 4).getInt() != 13
+                || bytes[12] != 'I' || bytes[13] != 'H'
+                || bytes[14] != 'D' || bytes[15] != 'R')
+            throw new IllegalArgumentException("PNG IHDR piksel bütçesi doğrulanamadı");
+        long width = java.nio.ByteBuffer.wrap(bytes, 16, 4).getInt();
+        long height = java.nio.ByteBuffer.wrap(bytes, 20, 4).getInt();
+        long pixels = width * height;
+        if (width < 1 || height < 1 || pixels > 4_000_000L)
+            throw new IllegalArgumentException("PNG tek görsel piksel sınırı aşıldı");
+        return pixels;
+    }
+
     static BufferedImage decodeBoundedPng(byte[] bytes) throws java.io.IOException {
         if (bytes == null || bytes.length < 24 || bytes.length > 1_048_576
                 || (bytes[0] & 0xff) != 0x89 || bytes[1] != 'P'
