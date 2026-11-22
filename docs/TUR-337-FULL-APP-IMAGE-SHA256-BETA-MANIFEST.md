@@ -1,0 +1,9 @@
+# TUR337 — Full Windows app-image SHA-256 local beta evidence (NO-GO)
+
+2026-11-17 Europe/Istanbul. Only Public ftmstr/Embasic-UDF-to-PDF-Tool-Build branch ci/secure-windows-bootstrap-20261018. Baseline 4f77abf9c18e142816788936d41098c716c05fe0 (TUR336). TUR313 exact-final baf90c72c2b01914656bc00237378e53ec54fbc6 and Drive report verified; TUR314–336 not repeated.
+
+The standalone beta collector previously bound only the launcher exe SHA. It now checks app/, runtime/ and runtime/lib/modules and hashes every regular app-image file in a bounded read-only stream (file SHA and size), rejects junctions/symlinks/reparse nodes, ambiguous names, case-insensitive collisions, oversized data and file set drift. It records an ordered full file manifest and domain-separated UTF-8 LF SHA-256 digest of ordinal-sorted path|bytes|SHA records. Optional independently supplied ExpectedAppImageSha256 rejects a changed image before writing beta evidence. This is not an atomic filesystem snapshot or a signed release attestation.
+
+Windows CI rehashes each actual jpackage packaged file, confirms bundled runtime inclusion, verifies expected digest and rejects an added synthetic file in an ephemeral image without writing false evidence. The independent packaged GUI/JDI workflow additionally triggers when the collector script changes; the dashboard retains source/NOTICE NO-GO and user beta UNVERIFIED and unchanged 44.3 weighted engineering estimate.
+
+Source rights/LICENSE/NOTICE/third-party attribution still NOT_VERIFIED, source gate BLOCKED. Native UYAP golden/all versions NOT_VERIFIED, external physical user beta NOT_RUN, hostile existing-target CAS NO-GO, physical exFAT NOT_RUN. No private repo, main merge, tag, release, installer, ZIP, binary or real UYAP upload. Exact CI readback required after commit.
