@@ -590,8 +590,8 @@ public final class UdfReader {
      */
     private static String paragraphLeadingSpaces(String gap) {
         if (gap.isEmpty()) return "";
-        int structural = Math.max(gap.lastIndexOf('\\n'),
-                Math.max(gap.lastIndexOf('\\r'), gap.lastIndexOf('\\t')));
+        int structural = Math.max(gap.lastIndexOf('\n'),
+                Math.max(gap.lastIndexOf('\r'), gap.lastIndexOf('\t')));
         String indent = gap.substring(structural + 1);
         for (int i = 0; i < indent.length(); i++)
             if (indent.charAt(i) != ' ') return "";

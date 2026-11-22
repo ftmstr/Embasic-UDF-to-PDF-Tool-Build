@@ -24,7 +24,7 @@ final class UdfStructuralLineIndentTest {
     }
 
     @Test void lfThenAsciiSpacesAreVisiblePdfParagraphIndentation() throws Exception {
-        var spec = parse("X\\n    Y", 6);
+        var spec = parse("X\n    Y", 6);
         assertEquals("    Y", spec.paragraphs().get(1).runs().get(0).text());
         try (PDDocument pdf = PdfExporter.render(List.of(spec))) {
             List<Float> x = new ArrayList<>(), y = new ArrayList<>();
@@ -49,12 +49,12 @@ final class UdfStructuralLineIndentTest {
         // XML char references preserve CRLF rather than XML normalizing raw CR.
         var crlf = parse("A&#13;&#10;   B", 6);
         assertEquals("   B", crlf.paragraphs().get(1).runs().get(0).text());
-        var tab = parse("A\\n\\t  B", 5);
+        var tab = parse("A\n\t  B", 5);
         assertEquals("  B", tab.paragraphs().get(1).runs().get(0).text());
         var structural = parse("A&#13;&#10;B", 3);
         assertEquals("B", structural.paragraphs().get(1).runs().get(0).text(),
                 "A structural CRLF without spaces must not duplicate blank lines");
-        var trailing = parse("A   \\nB", 5);
+        var trailing = parse("A   \nB", 5);
         assertEquals("B", trailing.paragraphs().get(1).runs().get(0).text(),
                 "Spaces BEFORE a structural newline aren't next-paragraph indentation");
     }
